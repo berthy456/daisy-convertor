@@ -1,4 +1,4 @@
-"""Parse a DAISY 2.02 pack into chapters and the audio each chapter covers."""
+"""Parse a DAISY 2.02, DAISY 3 or EPUB pack into chapters and the audio each covers."""
 
 from __future__ import annotations
 

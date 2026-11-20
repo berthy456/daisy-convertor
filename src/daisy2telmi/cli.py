@@ -48,9 +48,11 @@ BETA = ("merlin",)
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="daisy2telmi",
-        description="Convert a DAISY 2.02 audio book pack into a Telmi story folder.",
+        description="Convert a DAISY or EPUB audio book pack into a Telmi story folder.",
     )
-    parser.add_argument("input", type=Path, help="path to a DAISY pack (.zip or already extracted folder)")
+    parser.add_argument(
+        "input", type=Path, help="path to a DAISY pack (.zip, .epub or already extracted folder)"
+    )
     parser.add_argument(
         "output",
         nargs="?",

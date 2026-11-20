@@ -13,7 +13,7 @@ _MAX_SEARCH_DEPTH = 4
 
 
 class DaisyPackError(RuntimeError):
-    """Raised when the input is not a usable DAISY 2.02 pack."""
+    """Raised when the input is not a usable DAISY or EPUB pack."""
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,7 @@ def _scan(directory: Path, max_depth: int = _MAX_SEARCH_DEPTH) -> DaisyPack | No
 
 
 def detect(path: Path) -> DaisyPack | None:
-    """Return the pack inside `path` (a folder), or None if it is not DAISY 2.02."""
+    """Return the pack inside `path` (a folder), or None if it holds no DAISY book."""
     if not path.is_dir():
         return None
     return _scan(path)
@@ -98,7 +98,7 @@ def find_telmi(path: Path, max_depth: int = _MAX_SEARCH_DEPTH) -> Path | None:
 def _already_telmi(path: Path) -> str:
     return (
         f"{path} is already a Telmi story (metadata.json, nodes.json, title.mp3, title.png), "
-        "not a DAISY 2.02 pack. A Telmi story goes straight onto the story teller; "
+        "not a DAISY pack. A Telmi story goes straight onto the story teller; "
         "convert the original DAISY pack instead."
     )
 

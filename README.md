@@ -1,14 +1,14 @@
 # daisy2telmi
 
-Converts a **DAISY 2.02 audio book pack** into a **Telmi story folder** (Telmi Sync / Telmi OS).
+Converts a **DAISY 2.02, DAISY 3 or EPUB book** into a **Telmi story folder** (Telmi Sync / Telmi OS).
 
-One Telmi chapter per top-level DAISY chapter. Audio only — no synchronised text, no TTS. Scene images are generated placeholders.
+One Telmi part per top-level heading in the book's outline. A part that carries recorded audio keeps it; a part that carries only words — a text-only DAISY pack, an EPUB — has them spoken by the TTS engine. Scene images are generated placeholders unless a cover is supplied.
 
 ```
 daisy2telmi <path-to-daisy-pack> <output-folder>
 ```
 
-Works with a `.zip` pack or an already-extracted folder.
+Works with a `.zip` or `.epub` pack or an already-extracted folder.
 
 ---
 
@@ -280,6 +280,12 @@ Against `gon-ruby-mp3.zip`:
 
 Against a second, structurally different pack (`Rachel-Corenblit-Wesh-la-fee.zip`, a French audiobook with 23 top-level entries): 23 chapters, folder `_00_Wesh la fee_292b74ca-…`, also passing `validate_story_dir`.
 
+Against three other books (third-party packs, not shipped in this repo):
+
+- `Are_you_ready_z3986.zip`, a DAISY 3 (Z39.86-2005) pack: `*.opf` + `*.ncx` + per-chapter SMIL, no `ncc.html`, capitalised `dc:` metadata. 9 chapters totalling 3027 s, 33 parts at paragraph level, 569 at sentence level; the folder passes `validate_story_dir`. Its SMIL trims with camelCase `clipBegin`/`clipEnd`; reading only 2.02's `clip-begin` leaves every clip untrimmed, so a part that plays part of a file gets the whole file.
+- `WIPO-Treaty-D202Fileset`, a text-only DAISY 2.02 pack: 22 parts, no audio anywhere. espeak-ng spoke 1280 s of scenes plus a spoken title; the folder passes `validate_story_dir`.
+- `valentin-hauy.epub`: 9 chapters, 28 paragraphs, 751 sentences. Spoken: 6716 s over 9 scenes plus a spoken title, passing `validate_story_dir`.
+
 Against a real published Telmi story (`_00_La reine des pirates_fffffd-19d14f92f57`):
 
 - `validate_story_dir` reports no problems for it, so the validator matches a pack the player accepts.
@@ -294,6 +300,7 @@ The browser converter (`web/`), run under Node against both packs:
 - Concatenated audio decodes as MP3 at the source rate; the 6 chapters total 1372.4 s against the CLI's 1369.4 s. The 3 s difference is encoder padding left at the end of each source file, which the CLI trims.
 - Conversion time: 0.5 s for the 22-minute Japanese pack, 2.7 s for the 2 h 18 French one.
 - Driven in headless Chrome against `gon-ruby-mp3.zip`: the zip picker and the folder picker each produce a downloadable zip that passes `validate_story_zip` and `validate_story_dir`, with no page errors. The download link is hidden until a story exists, and feeding a converted story back to the page reports that it is already a Telmi story.
+- Under Node it reads the same three inputs the app does: a DAISY 3 pack's `*.opf`/`*.ncx` and its camelCase clip points, a text-only pack's parts and their words, an EPUB's outline anchors. It trims clips at MP3 frame boundaries, as the CLI does.
 
 Builds:
 
@@ -302,9 +309,9 @@ Builds:
 
 ## Known limitations
 
-- **DAISY 3 is not supported.** Only DAISY 2.02 `ncc.html` is parsed in practice. There is a DAISY 2 XML `.ncx` fallback, but it has never been run against a real pack — treat it as unproven.
-- **Synchronised text is ignored completely.** Only `<audio>` elements are read; `<text>` and the XHTML files are never opened. Safe for audio+text packs, but a text-only pack produces "no chapter with audio" and exits 2.
-- **TTS speaks the cards, not the book.** A book with no recorded audio still produces no chapters. The synthesised phrases are short. The default voice is Chatterbox, which is not in the binaries; the engine the binaries do carry, espeak-ng, is robotic, and `--tts command` is the way to put any other model behind it.
+- **DAISY 3 has been run against one book.** `*.opf` + `*.ncx` + per-chapter SMIL is parsed, and verified on a single published 3.x pack; other 3.x dialects are unproven.
+- **A pack with no recorded audio is only spoken on the desktop.** Its words are read out by the TTS engine there. The web page makes no speech of its own, so it refuses such a pack rather than build a silent story.
+- **TTS speaks the cards and any part that has no audio of its own.** The default voice is Chatterbox, which is not in the binaries; the engine the binaries do carry, espeak-ng, is robotic, and `--tts command` is the way to put any other model behind it.
 - **The bundled ffmpeg is the build machine's binary**, unmodified and unsigned.
 - **No cover art comes from the pack.** DAISY 2.02 audio packs carry no usable cover, so `--cover` supplies one and `--find-cover` asks Open Library for the print book named in `dc:source`; with neither, `cover.png`, `title.png` and the chapter images are generated placeholders. A lookup needs the network, and a pack with no ISBN and no searchable title has nothing to ask with.
 - **The drawn card label is uppercase Latin.** The bitmap font in `src/daisy2telmi/images.py` covers the eight Latin-script languages plus accented letters; Chinese and Arabic cards fall back to the bare number.
@@ -312,12 +319,11 @@ Builds:
 - **Chapter granularity is fixed.** A pack with a single flat heading level becomes one chapter; there is no option to split on `h2`.
 - **No resume or bookmarking.** Telmi has no position concept in this format, so a listener restarts at chapter 1.
 - **The web page does not re-encode.** It joins MP3 frame data, so audio keeps the source sample rate and bitrate, and each source file's encoder padding survives (about 0.1 s per file). The player resamples, so it plays. Use the CLI when the audio has to meet the 44100 Hz / 64–192 kbps range exactly.
-- **The web page cannot trim clips.** A SMIL that plays part of a file yields the whole file. Both test packs use whole files, so this has not been hit in practice.
 - **The web page needs a recent browser.** It relies on `DecompressionStream`/`CompressionStream` (Chrome 80+, Firefox 113+, Safari 16.4+) and `crypto.subtle`, which requires a secure context — `https://` or `localhost`.
 
-## v3 candidates
+## Next
 
-DAISY 3 (`.opf` + `.ncx` + SMIL 2.0), configurable granularity.
+Chatterbox voice selection from a reference clip, the Merlin archive in the web page, a re-arranged Options page.
 
 ## Licence
 

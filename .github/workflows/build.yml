@@ -39,7 +39,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .[dev]
-      - name: Build daisy2telmi.exe
+      - name: Build daisy-convertor.exe
         run: |
           choco install ffmpeg -y
           $ff = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
@@ -52,11 +52,11 @@ jobs:
           python build_binary.py
           exit $LASTEXITCODE
       - name: Smoke test the exe
-        run: dist\daisy2telmi.exe --version
+        run: dist\daisy-convertor.exe --version
       - uses: actions/upload-artifact@v4
         with:
-          name: daisy2telmi-windows
-          path: dist/daisy2telmi.exe
+          name: daisy-convertor-windows
+          path: dist/daisy-convertor.exe
 
   # Pinned: the bundled libraries inherit the runner's glibc, and 22.04 is the
   # oldest Ubuntu image still published (glibc 2.35).
@@ -73,10 +73,10 @@ jobs:
           sudo apt-get update && sudo apt-get install -y ffmpeg espeak-ng espeak-ng-data
           python -m pip install --upgrade pip
           pip install -e .[dev]
-      - name: Build daisy2telmi
+      - name: Build daisy-convertor
         run: python build_binary.py
       - name: Smoke test the binary
-        run: dist/daisy2telmi --version
+        run: dist/daisy-convertor --version
       # The Tcl/Tk and espeak libraries are copied into the binary, so they carry
       # the build machine's glibc. ubuntu-latest (26.04) produced binaries that
       # died on `GLIBC_2.42 not found` on the user's machine; the floor is now
@@ -88,7 +88,7 @@ jobs:
       - name: Smoke test the spoken cards
         run: |
           sudo apt-get remove -y espeak-ng
-          dist/daisy2telmi gon-ruby-mp3.zip /tmp/smoke --announce prompt --language fr
+          dist/daisy-convertor gon-ruby-mp3.zip /tmp/smoke --announce prompt --language fr
           count=$(ls /tmp/smoke/*/audios/c*.mp3 | wc -l)
           [ "$count" -eq 6 ] || { echo "expected 6 spoken cards, found $count"; exit 1; }
       - name: Package the .deb
@@ -96,11 +96,11 @@ jobs:
           arch=$(dpkg --print-architecture)
           version=${GITHUB_REF_NAME#v}
           [ "$version" = "$GITHUB_REF_NAME" ] && version="0.0.0~dev.${GITHUB_SHA::7}"
-          python tools/make_deb.py dist/daisy2telmi "dist/daisy2telmi_${version}_${arch}.deb" \
+          python tools/make_deb.py dist/daisy-convertor "dist/daisy-convertor_${version}_${arch}.deb" \
             --version "$version" --architecture "$arch"
       - uses: actions/upload-artifact@v4
         with:
-          name: daisy2telmi-linux
+          name: daisy-convertor-linux
           path: dist/*.deb
 
   # The same binary, packaged the way Arch/Fedora/SUSE users can install it.
@@ -117,10 +117,10 @@ jobs:
           sudo apt-get update && sudo apt-get install -y ffmpeg espeak-ng espeak-ng-data squashfs-tools
           python -m pip install --upgrade pip
           pip install -e .[dev]
-      - name: Build daisy2telmi
+      - name: Build daisy-convertor
         run: python build_binary.py
       - name: Smoke test the binary
-        run: dist/daisy2telmi --version
+        run: dist/daisy-convertor --version
       # The Tcl/Tk and espeak libraries are copied into the binary, so they carry
       # the build machine's glibc. ubuntu-latest (26.04) produced binaries that
       # died on `GLIBC_2.42 not found` on the user's machine; the floor is now
@@ -136,12 +136,12 @@ jobs:
             https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool.AppImage
           ./appimagetool.AppImage --appimage-extract
-          python tools/make_appimage.py dist/daisy2telmi \
-            "dist/daisy2telmi-${version}-x86_64.AppImage" \
+          python tools/make_appimage.py dist/daisy-convertor \
+            "dist/daisy-convertor-${version}-x86_64.AppImage" \
             --appimagetool squashfs-root/AppRun
       - uses: actions/upload-artifact@v4
         with:
-          name: daisy2telmi-appimage
+          name: daisy-convertor-appimage
           path: dist/*.AppImage
 
   # PyInstaller builds for the machine it runs on, so the Intel build needs an
@@ -166,10 +166,10 @@ jobs:
           brew install ffmpeg espeak-ng
           python -m pip install --upgrade pip
           pip install -e .[dev]
-      - name: Build daisy2telmi
+      - name: Build daisy-convertor
         run: python build_binary.py
       - name: Smoke test the binary
-        run: dist/daisy2telmi --version
+        run: dist/daisy-convertor --version
       # Unsigned: Gatekeeper blocks the first run, so the dmg carries the
       # right-click > Open instruction next to the binary.
       - name: Package the .dmg
@@ -177,22 +177,22 @@ jobs:
           version=${GITHUB_REF_NAME#v}
           [ "$version" = "$GITHUB_REF_NAME" ] && version="0.0.0-dev-${GITHUB_SHA::7}"
           arch=$(uname -m)
-          image="dist/daisy2telmi-${version}-macos-${arch}.dmg"
+          image="dist/daisy-convertor-${version}-macos-${arch}.dmg"
           staging=$(mktemp -d)
-          cp dist/daisy2telmi "$staging/"
+          cp dist/daisy-convertor "$staging/"
           cat > "$staging/README.txt" <<'TXT'
-          daisy2telmi is not signed or notarised, so macOS blocks it the first time.
+          daisy-convertor is not signed or notarised, so macOS blocks it the first time.
 
           Open it with right-click > Open, or clear the quarantine flag:
-              xattr -d com.apple.quarantine daisy2telmi
+              xattr -d com.apple.quarantine daisy-convertor
 
           Then run:
-              ./daisy2telmi <daisy-pack.zip> <output-folder>
+              ./daisy-convertor <daisy-pack.zip> <output-folder>
           TXT
-          hdiutil create -volname daisy2telmi -srcfolder "$staging" -ov -format UDZO "$image"
+          hdiutil create -volname daisy-convertor -srcfolder "$staging" -ov -format UDZO "$image"
       - uses: actions/upload-artifact@v4
         with:
-          name: daisy2telmi-macos-${{ matrix.arch }}
+          name: daisy-convertor-macos-${{ matrix.arch }}
           path: dist/*.dmg
 
   # The browser converter: tested under Node, then published as static files.

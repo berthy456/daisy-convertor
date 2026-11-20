@@ -1,11 +1,11 @@
-# daisy2telmi
+# daisy-convertor
 
 Converts a **DAISY 2.02, DAISY 3 or EPUB book** into a **Telmi story folder** (Telmi Sync / Telmi OS).
 
 One Telmi part per top-level heading in the book's outline. A part that carries recorded audio keeps it; a part that carries only words — a text-only DAISY pack, an EPUB — has them spoken by the TTS engine. Scene images are generated placeholders unless a cover is supplied.
 
 ```
-daisy2telmi <path-to-daisy-pack> <output-folder>
+daisy-convertor <path-to-daisy-pack> <output-folder>
 ```
 
 Works with a `.zip` or `.epub` pack or an already-extracted folder.
@@ -28,14 +28,14 @@ ffmpeg is **mandatory**, not optional: every source MP3 in the test pack is 2205
 - macOS: `brew install ffmpeg`
 - Linux: `apt install ffmpeg`
 
-The built `daisy2telmi.exe` **bundles ffmpeg** (see Build below), so an end user running the exe does not need it installed. Only a source install needs it on PATH. The converter checks for ffmpeg before doing any work and exits with a clear message if it can find neither a bundled copy nor one on PATH.
+The built `daisy-convertor.exe` **bundles ffmpeg** (see Build below), so an end user running the exe does not need it installed. Only a source install needs it on PATH. The converter checks for ffmpeg before doing any work and exits with a clear message if it can find neither a bundled copy nor one on PATH.
 
 ## Usage
 
 ```bash
-daisy2telmi gon-ruby-mp3.zip stories
-daisy2telmi --verbose gon-ruby-mp3.zip stories   # logs every ffmpeg call
-daisy2telmi --force gon-ruby-mp3.zip stories     # overwrite an existing story folder
+daisy-convertor gon-ruby-mp3.zip stories
+daisy-convertor --verbose gon-ruby-mp3.zip stories   # logs every ffmpeg call
+daisy-convertor --force gon-ruby-mp3.zip stories     # overwrite an existing story folder
 ```
 
 Exit codes: `0` success, `1` pack unreadable or ffmpeg failed, `2` bad arguments / not a DAISY pack / story folder already exists.
@@ -43,7 +43,7 @@ Exit codes: `0` success, `1` pack unreadable or ffmpeg failed, `2` bad arguments
 ### Output format
 
 ```bash
-daisy2telmi --format lunii gon-ruby-mp3.zip stories
+daisy-convertor --format lunii gon-ruby-mp3.zip stories
 ```
 
 `--format telmi|lunii|flam|merlin` picks the player the story is written for; Telmi is the default. The story folder is always written, and one archive comes out of it: `story.zip` for the Telmi Sync and the Flam launcher, which both import TELMI folders, `<story>-lunii.zip` in the STUdio form for a Lunii, or `<story>_merlin.zip` for a Merlin story-teller. A plain Lunii has no colour panel and four grey levels, so choosing it draws a second set of cards — white ground, black ink, flattened to `0/96/192/255` — and builds the archive from those. The GUI has the same four choices under the cover field.
@@ -63,15 +63,15 @@ A Lunii archive carries one word, `nightModeAvailable`, saying the story can be 
 A chapter card can speak when it appears, so a listener who cannot see the screen knows where the book is:
 
 ```bash
-daisy2telmi --announce prompt --language fr gon-ruby-mp3.zip stories
-daisy2telmi --announce chapter --autoplay gon-ruby-mp3.zip stories
+daisy-convertor --announce prompt --language fr gon-ruby-mp3.zip stories
+daisy-convertor --announce chapter --autoplay gon-ruby-mp3.zip stories
 ```
 
 `--announce` chooses what the card says: `off`; `number` (the number alone); `number_of` (the number and how many parts the story has); `title` (the part's own name, as the DAISY outline labels it); `number_title` and `title_number` (that name with the number, either order); `chapter` ("Chapter 4"); or `prompt` (the number plus a question inviting OK, the default). A pattern that needs a name falls back to `chapter` in a pack whose parts carry no synced text. If no speech engine is found the run logs a warning and the cards stay silent — the story is still valid. The player plays a card's audio as soon as it draws the card, whether or not autoplay is on; `--autoplay` only decides whether it then advances by itself or waits for OK.
 
 `--language` sets the phrase and the voice — `ar, de, en, es, fr, it, nl, pt, tr, zh` (`src/daisy2telmi/i18n.py` holds the wording). `--tts` picks the engine: `chatterbox` (the default), `auto` (espeak-ng, then macOS `say`, then Windows speech), `espeak`, `say`, `sapi` or `command`. A run that asks for Chatterbox on a machine that does not have it logs a warning and reads the cards with `auto` instead. `--tts-voice` names a voice, and `--tts-command` is a template with `{text}`, `{out}`, `{lang}`, `{locale}` and `{voice}`, which is how any other engine gets used. Cards only get a spoken number when the cut is by chapter; at paragraph or sentence level a card plays the opening seconds of its own part instead, which is the only way to tell hundreds of cards apart.
 
-`--tts chatterbox` speaks with [Chatterbox](https://github.com/resemble-ai/chatterbox). It is not bundled — the binaries carry no torch — so daisy2telmi runs `src/daisy2telmi/chatterbox_speak.py` in an interpreter of your own: `pip install chatterbox-tts` first, and `--tts-python` picks the interpreter if the `python3` on `PATH` is not the one that has it. The app offers to do that install instead of asking you to type it: on Save, a machine without the package gets one dialog, OK runs `pip install --upgrade chatterbox-tts` in the interpreter named in the options and streams pip's output into the log, Cancel uses the machine's own voice for that story. The options page says whether the package is in the interpreter it is pointed at, and has an **Install Chatterbox** button for the same pip run. `--tts-clip` points at a few seconds of someone speaking, which the model copies as a voice; without it the model speaks in its own voice. One process speaks the whole batch, because loading the model costs more than saying a chapter number. `--tts-device auto|cpu|mps|cuda` says what it runs on: Chatterbox leaves the GPU alone unless asked, so `mps` takes the Apple GPU and `cuda` an Nvidia one. `auto` picks the fastest device it finds and logs which one it chose; a forced device the machine does not have stops the run rather than falling back. Chatterbox is retired upstream: as of August 2026 the repository is an unmaintained MIT archive.
+`--tts chatterbox` speaks with [Chatterbox](https://github.com/resemble-ai/chatterbox). It is not bundled — the binaries carry no torch — so daisy-convertor runs `src/daisy2telmi/chatterbox_speak.py` in an interpreter of your own: `pip install chatterbox-tts` first, and `--tts-python` picks the interpreter if the `python3` on `PATH` is not the one that has it. The app offers to do that install instead of asking you to type it: on Save, a machine without the package gets one dialog, OK runs `pip install --upgrade chatterbox-tts` in the interpreter named in the options and streams pip's output into the log, Cancel uses the machine's own voice for that story. The options page says whether the package is in the interpreter it is pointed at, and has an **Install Chatterbox** button for the same pip run. `--tts-clip` points at a few seconds of someone speaking, which the model copies as a voice; without it the model speaks in its own voice. One process speaks the whole batch, because loading the model costs more than saying a chapter number. `--tts-device auto|cpu|mps|cuda` says what it runs on: Chatterbox leaves the GPU alone unless asked, so `mps` takes the Apple GPU and `cuda` an Nvidia one. `auto` picks the fastest device it finds and logs which one it chose; a forced device the machine does not have stops the run rather than falling back. Chatterbox is retired upstream: as of August 2026 the repository is an unmaintained MIT archive.
 
 The built binaries carry espeak-ng, its shared libraries and its language data, so speech works with nothing installed. Windows builds rely on the speech engine that ships with Windows.
 
@@ -80,13 +80,13 @@ The built binaries carry espeak-ng, its shared libraries and its language data, 
 DAISY 2.02 audio packs carry no cover, so the user supplies one:
 
 ```bash
-daisy2telmi --cover cover.jpg gon-ruby-mp3.zip stories
+daisy-convertor --cover cover.jpg gon-ruby-mp3.zip stories
 ```
 
 The pack does name the print book it was read from: `dc:source` holds that book's ISBN (`dc:identifier` is the DAISY edition's own number, which no cover service knows). `--find-cover` asks Open Library for that ISBN, or searches by title and author when the pack has no ISBN, and uses the picture it returns:
 
 ```bash
-daisy2telmi --find-cover gon-ruby-mp3.zip stories
+daisy-convertor --find-cover gon-ruby-mp3.zip stories
 ```
 
 ffmpeg crops the picture to `640x480` for `title.png` and for every chapter card, and to `512x512` for `cover.png`. Each card gets its number drawn across the middle in white with a black border — `CHAPTER 2/23`, in the `--language` of the story — so the listener sees which chapter of how many is playing. Without `--cover` the images are the placeholders described under [Output](#output).
@@ -100,9 +100,9 @@ The GUI has the same field below the output folder, and looks a cover up by itse
 ### Listening before converting
 
 ```bash
-daisy2telmi --list gon-ruby-mp3.zip
-daisy2telmi --preview /tmp/listen gon-ruby-mp3.zip
-daisy2telmi --drop 2,5-6 gon-ruby-mp3.zip stories
+daisy-convertor --list gon-ruby-mp3.zip
+daisy-convertor --preview /tmp/listen gon-ruby-mp3.zip
+daisy-convertor --drop 2,5-6 gon-ruby-mp3.zip stories
 ```
 
 `--list` prints one line per chapter — number, length, title, clip count — and stops. It needs no output folder. `--preview FOLDER` writes one playable MP3 per chapter (`01 一.mp3`, `02 二.mp3`, ...) into FOLDER and stops, so a chapter can be heard before anything is built. The lengths come from ffmpeg's container header, not from decoding the file.
@@ -113,7 +113,7 @@ The GUI's **Chapters** button opens the same list. Each row shows the chapter's 
 
 ### GUI
 
-Running `daisy2telmi` with no arguments opens a Tkinter window: pick or drop a pack, pick an output folder and an optional cover, watch the same log the CLI writes. The conversion runs on a worker thread.
+Running `daisy-convertor` with no arguments opens a Tkinter window: pick or drop a pack, pick an output folder and an optional cover, watch the same log the CLI writes. The conversion runs on a worker thread.
 
 **Options** opens a second window with the interface language (the same ten), what the cards say, autoplay, the speech engine and the voice, and under them the Chatterbox rows: which Python runs it, which device it runs on, the voice clip, and whether the package is in that Python — with an **Install Chatterbox** button when it is not. Closing the window writes `~/.config/daisy2telmi/config.json` (`%APPDATA%\daisy2telmi\config.json` on Windows), which the CLI reads too, so a flag like `--language` only overrides what is already saved.
 
@@ -235,7 +235,7 @@ pip install -e .[dev]
 python build_binary.py
 ```
 
-Produces `dist\daisy2telmi.exe` (`dist/daisy2telmi` on macOS and Linux). `lxml.etree` and `lxml._elementpath` are passed as hidden imports; PyInstaller's own lxml hook does the rest.
+Produces `dist\daisy-convertor.exe` (`dist/daisy-convertor` on macOS and Linux). `lxml.etree` and `lxml._elementpath` are passed as hidden imports; PyInstaller's own lxml hook does the rest.
 
 `build_binary.py` locates ffmpeg on the build machine and embeds it with `--add-binary`, so the binary is self-contained. If ffmpeg is missing the script stops rather than shipping something that needs a separate install. Set `DAISY2TELMI_FFMPEG` to override the search. At runtime the converter looks for the bundled copy (`sys._MEIPASS`, then the executable's own folder) before falling back to PATH.
 
@@ -245,10 +245,10 @@ Produces `dist\daisy2telmi.exe` (`dist/daisy2telmi` on macOS and Linux). `lxml.e
 
 | Artifact | Built on | Notes |
 | :--- | :--- | :--- |
-| `daisy2telmi.exe` | `windows-latest` | ffmpeg bundled; speech uses the Windows engine |
-| `daisy2telmi_<version>_<arch>.deb` | `ubuntu-latest` | installs to `/usr/local/bin/daisy2telmi`, declares `ffmpeg` as a dependency rather than duplicating it |
-| `daisy2telmi-<version>-x86_64.AppImage` | `ubuntu-latest` | the same binary, packaged by `tools/make_appimage.py`; `appimagetool` is unpacked with `--appimage-extract` because runners have no FUSE |
-| `daisy2telmi-<version>-macos-<arch>.dmg` | `macos-latest` (arm64) and `macos-15-intel` (x86_64) | **unsigned and un-notarised**: Gatekeeper blocks the first run, so open it with right-click → Open or `xattr -d com.apple.quarantine daisy2telmi` |
+| `daisy-convertor.exe` | `windows-latest` | ffmpeg bundled; speech uses the Windows engine |
+| `daisy-convertor_<version>_<arch>.deb` | `ubuntu-latest` | installs to `/usr/local/bin/daisy-convertor`, declares `ffmpeg` as a dependency rather than duplicating it |
+| `daisy-convertor-<version>-x86_64.AppImage` | `ubuntu-latest` | the same binary, packaged by `tools/make_appimage.py`; `appimagetool` is unpacked with `--appimage-extract` because runners have no FUSE |
+| `daisy-convertor-<version>-macos-<arch>.dmg` | `macos-latest` (arm64) and `macos-15-intel` (x86_64) | **unsigned and un-notarised**: Gatekeeper blocks the first run, so open it with right-click → Open or `xattr -d com.apple.quarantine daisy-convertor` |
 
 The Linux and macOS builds also bundle espeak-ng, the libraries it links and its language data. `build_binary.py` copies them to `dist/speech/` and rewrites the macOS load commands to `@loader_path`; at runtime `tts.py` points `ESPEAK_DATA_PATH` at the copied data and, on Linux, `LD_LIBRARY_PATH` at the copied libraries. Without a data folder the script says so and ships without speech — on Debian and Ubuntu that data is a separate package, `espeak-ng-data`, which `espeak-ng` only recommends. The `linux-deb` job removes the `espeak-ng` package before its smoke test so the run has to use the bundled copy.
 
@@ -305,7 +305,7 @@ The browser converter (`web/`), run under Node against both packs:
 Builds:
 
 - A `--onefile` PyInstaller build runs the whole conversion end to end with lxml bundled, and again with `PATH=/usr/bin:/bin` using the ffmpeg embedded in the bundle. That stripped-`PATH` run also spoke 6 French chapter cards through the bundled espeak-ng, whose load commands point at `@loader_path` and whose data comes from the copied `espeak-ng-data`.
-- GitHub Actions builds and smoke-tests `daisy2telmi.exe` on a Windows runner, the `.deb` on Ubuntu and the `.dmg` on macOS.
+- GitHub Actions builds and smoke-tests `daisy-convertor.exe` on a Windows runner, the `.deb` on Ubuntu and the `.dmg` on macOS.
 
 ## Known limitations
 

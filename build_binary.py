@@ -1,4 +1,4 @@
-"""Build a self-contained daisy2telmi executable with PyInstaller.
+"""Build a self-contained daisy-convertor executable with PyInstaller.
 
 ffmpeg found on the build machine is bundled into the binary, so the end user
 does not have to install it. PyInstaller cannot cross-compile, so this produces
@@ -9,7 +9,7 @@ a binary for the machine it runs on. On Windows:
     pip install -e .[dev]
     python build_binary.py
 
-The result is dist/daisy2telmi.exe (dist/daisy2telmi on macOS and Linux).
+The result is dist/daisy-convertor.exe (dist/daisy-convertor on macOS and Linux).
 """
 
 from __future__ import annotations
@@ -185,7 +185,7 @@ def main() -> int:
         "--onefile",
         "--console",
         "--name",
-        "daisy2telmi",
+        "daisy-convertor",
         "--hidden-import",
         "lxml.etree",
         "--hidden-import",

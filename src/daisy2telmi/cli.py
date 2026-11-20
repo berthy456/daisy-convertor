@@ -1,4 +1,4 @@
-"""Command line entry point: daisy2telmi <daisy-pack> <output-folder>."""
+"""Command line entry point: daisy-convertor <daisy-pack> <output-folder>."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from .telmi_builder import (
     write_story_zip,
 )
 
-log = logging.getLogger("daisy2telmi")
+log = logging.getLogger("daisy-convertor")
 
 # The players, and the archive each one imports. Telmi and the Flam have a colour
 # screen; a plain Lunii shows four grey levels, so its cards are redrawn. The
@@ -47,7 +47,7 @@ BETA = ("merlin",)
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="daisy2telmi",
+        prog="daisy-convertor",
         description="Convert a DAISY or EPUB audio book pack into a Telmi story folder.",
     )
     parser.add_argument(
@@ -163,7 +163,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="with --format merlin, add the story to this playlist.bin read off the card "
         "instead of writing one holding only the story",
     )
-    parser.add_argument("--version", action="version", version=f"daisy2telmi {__version__}")
+    parser.add_argument("--version", action="version", version=f"daisy-convertor {__version__}")
     args = parser.parse_args(argv)
     if args.output is None and not (args.list or args.preview):
         parser.error("an output folder is required unless --list or --preview is given")
@@ -296,7 +296,7 @@ def convert(
             log.error("no such cover image: %s", cover)
             return 2
         # The looked-up cover has to outlive the lookup: the cards are drawn below.
-        with open_pack(input_path) as pack, tempfile.TemporaryDirectory(prefix="daisy2telmi-cover-") as scratch:
+        with open_pack(input_path) as pack, tempfile.TemporaryDirectory(prefix="daisy-convertor-cover-") as scratch:
             log.info("pack root: %s", pack.root)
             book = extract(pack, cut)
             if not book.chapters:
@@ -329,7 +329,7 @@ def convert(
                 # The four greys cannot be recovered from the colour cards: their
                 # ground is dark and the Lunii wants the other way round. Draw a
                 # second set in a scratch folder and build the archive from those.
-                with tempfile.TemporaryDirectory(prefix="daisy2telmi-lunii-") as scratch:
+                with tempfile.TemporaryDirectory(prefix="daisy-convertor-lunii-") as scratch:
                     grey = Path(scratch)
                     report = build_story(book, target, announce, cover, cut, crop, grey, player=fmt, view=view)
                     archive = write_studio_zip(target, image_dir=grey)

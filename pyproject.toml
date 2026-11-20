@@ -1,7 +1,7 @@
 [project]
-name = "daisy2telmi"
-version = "3.0.1"
-description = "Convert a DAISY 2.02 audio book pack into a Telmi, Lunii, Flam or Merlin story"
+name = "daisy-convertor"
+version = "4.0.0"
+description = "Convert a DAISY 2.02, DAISY 3, text-only DAISY or EPUB book into a Telmi, Lunii, Flam or Merlin story"
 requires-python = ">=3.11"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
@@ -12,7 +12,7 @@ gui = ["tkinterdnd2>=0.4"]
 dev = ["pytest>=8", "pyinstaller>=6", "tkinterdnd2>=0.4"]
 
 [project.scripts]
-daisy2telmi = "daisy2telmi.cli:main"
+daisy-convertor = "daisy2telmi.cli:main"
 
 [build-system]
 requires = ["setuptools>=77"]

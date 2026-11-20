@@ -16,7 +16,7 @@ build_appdir = make_appimage.build_appdir
 
 
 def make_binary(tmp_path: Path) -> Path:
-    binary = tmp_path / "daisy2telmi"
+    binary = tmp_path / "daisy-convertor"
     binary.write_text("#!/bin/sh\necho ok\n", encoding="utf-8")
     binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
     return binary
@@ -27,24 +27,24 @@ def test_the_appdir_has_the_layout_appimagetool_expects(tmp_path: Path) -> None:
     appdir = build_appdir(binary, tmp_path / "AppDir")
 
     assert (appdir / "AppRun").is_file()
-    assert (appdir / "usr" / "bin" / "daisy2telmi").is_file()
-    assert (appdir / "daisy2telmi.desktop").is_file()
+    assert (appdir / "usr" / "bin" / "daisy-convertor").is_file()
+    assert (appdir / "daisy-convertor.desktop").is_file()
 
 
 def test_apprun_and_the_binary_are_executable(tmp_path: Path) -> None:
     binary = make_binary(tmp_path)
     appdir = build_appdir(binary, tmp_path / "AppDir")
 
-    for name in ("AppRun", "usr/bin/daisy2telmi"):
+    for name in ("AppRun", "usr/bin/daisy-convertor"):
         mode = (appdir / name).stat().st_mode
         assert mode & stat.S_IXUSR, f"{name} is not executable"
     if os.name == "posix":
-        assert "usr/bin/daisy2telmi" in (appdir / "AppRun").read_text(encoding="utf-8")
+        assert "usr/bin/daisy-convertor" in (appdir / "AppRun").read_text(encoding="utf-8")
 
 
 def test_the_desktop_file_points_at_the_binary(tmp_path: Path) -> None:
     appdir = build_appdir(make_binary(tmp_path), tmp_path / "AppDir")
-    assert "Exec=daisy2telmi" in (appdir / "daisy2telmi.desktop").read_text(encoding="utf-8")
+    assert "Exec=daisy-convertor" in (appdir / "daisy-convertor.desktop").read_text(encoding="utf-8")
 
 
 def test_the_icon_the_desktop_file_names_is_in_the_appdir(tmp_path: Path) -> None:
@@ -52,11 +52,11 @@ def test_the_icon_the_desktop_file_names_is_in_the_appdir(tmp_path: Path) -> Non
     icon.write_text("<svg/>", encoding="utf-8")
     appdir = build_appdir(make_binary(tmp_path), tmp_path / "AppDir", icon)
 
-    desktop = (appdir / "daisy2telmi.desktop").read_text(encoding="utf-8")
-    assert "Icon=daisy2telmi" in desktop
+    desktop = (appdir / "daisy-convertor.desktop").read_text(encoding="utf-8")
+    assert "Icon=daisy-convertor" in desktop
     # appimagetool looks for the Icon= value next to the desktop file and stops
     # the build when it is missing.
-    assert (appdir / "daisy2telmi.svg").is_file()
+    assert (appdir / "daisy-convertor.svg").is_file()
 
 
 def test_rebuilding_replaces_the_previous_appdir(tmp_path: Path) -> None:

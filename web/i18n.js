@@ -69,8 +69,8 @@ export const UI = {
     desktop_p1:
       "The desktop app speaks the cards with any voice installed on your computer, re-encodes audio to Telmi's exact spec, trims clips inside a file, and lets you listen to each chapter before converting. Its window shows in English, French, Chinese, Arabic, Turkish, German, Italian, Spanish, Portuguese or Dutch.",
     desktop_line:
-      'Get it from the <a href="https://github.com/berthy456/daisy2telmi/releases">releases page</a> for Windows, Debian, Ubuntu, macOS or as an AppImage.',
-    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy2telmi">source</a>',
+      'Get it from the <a href="https://github.com/berthy456/daisy-convertor/releases">releases page</a> for Windows, Debian, Ubuntu, macOS or as an AppImage.',
+    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">source</a>',
     card_label: "Chapter {n}/{total}",
     cut_title: "Cut the book at",
     cut_chapter: "Chapters",
@@ -146,8 +146,8 @@ export const UI = {
     desktop_p1:
       "L'application de bureau fait parler les cartes avec n'importe quelle voix installée sur l'ordinateur, ré-encode l'audio aux spécifications exactes de Telmi, coupe les extraits dans un fichier et permet d'écouter chaque chapitre avant la conversion. Sa fenêtre s'affiche en anglais, français, chinois, arabe, turc, allemand, italien, espagnol, portugais ou néerlandais.",
     desktop_line:
-      'Téléchargez-le depuis la <a href="https://github.com/berthy456/daisy2telmi/releases">page des versions</a> pour Windows, Debian, Ubuntu, macOS ou en AppImage.',
-    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy2telmi">source</a>',
+      'Téléchargez-le depuis la <a href="https://github.com/berthy456/daisy-convertor/releases">page des versions</a> pour Windows, Debian, Ubuntu, macOS ou en AppImage.',
+    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">source</a>',
     card_label: "Chapitre {n}/{total}",
     cut_title: "Couper le livre au",
     cut_chapter: "Chapitres",
@@ -219,8 +219,8 @@ export const UI = {
     desktop_p1:
       "桌面版用电脑上安装的任意语音让卡片说话，按 Telmi 规格重新编码音频，可在文件内部剪切片段，并能在转换前试听每个章节。窗口界面可用英语、法语、中文、阿拉伯语、土耳其语、德语、意大利语、西班牙语、葡萄牙语和荷兰语显示。",
     desktop_line:
-      "从<a href=\"https://github.com/berthy456/daisy2telmi/releases\">发布页</a>下载，支持 Windows、Debian、Ubuntu、macOS 和 AppImage。",
-    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy2telmi">源代码</a>',
+      "从<a href=\"https://github.com/berthy456/daisy-convertor/releases\">发布页</a>下载，支持 Windows、Debian、Ubuntu、macOS 和 AppImage。",
+    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">源代码</a>',
     card_label: "第 {n}/{total} 章",
     cut_title: "切分层级",
     cut_chapter: "章节",
@@ -291,8 +291,8 @@ export const UI = {
     desktop_p1:
       "تطبيق سطح المكتب ينطق البطاقات بأي صوت مثبّت على الحاسوب، ويعيد ترميز الصوت إلى مواصفات Telmi بدقة، ويقص المقاطع داخل الملف، ويسمح بالاستماع إلى كل فصل قبل التحويل. وتُعرض نافذته بالإنجليزية والفرنسية والصينية والعربية والتركية والألمانية والإيطالية والإسبانية والبرتغالية والهولندية.",
     desktop_line:
-      'نزّله من <a href="https://github.com/berthy456/daisy2telmi/releases">صفحة الإصدارات</a> لويندوز وديبيان وأوبونتو وmacOS أو كملف AppImage.',
-    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy2telmi">المصدر</a>',
+      'نزّله من <a href="https://github.com/berthy456/daisy-convertor/releases">صفحة الإصدارات</a> لويندوز وديبيان وأوبونتو وmacOS أو كملف AppImage.',
+    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">المصدر</a>',
     card_label: "الفصل {n}/{total}",
     cut_title: "موضع القطع في الكتاب",
     cut_chapter: "فصولًا",
@@ -367,8 +367,8 @@ export const UI = {
     desktop_p1:
       "Masaüstü uygulaması kartları bilgisayarda kurulu herhangi bir sesle konuşturur, sesi Telmi'nin tam ölçütlerine göre yeniden kodlar, kırpımları dosyanın içinde keser ve dönüştürmeden önce her bölümü dinletir. Penceresi İngilizce, Fransızca, Çince, Arapça, Türkçe, Almanca, İtalyanca, İspanyolca, Portekizce ve Felemenkçe gösterilir.",
     desktop_line:
-      "<a href=\"https://github.com/berthy456/daisy2telmi/releases\">Sürümler sayfasından</a> Windows, Debian, Ubuntu, macOS veya AppImage olarak edinin.",
-    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy2telmi">kaynak</a>',
+      "<a href=\"https://github.com/berthy456/daisy-convertor/releases\">Sürümler sayfasından</a> Windows, Debian, Ubuntu, macOS veya AppImage olarak edinin.",
+    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">kaynak</a>',
     card_label: "Bölüm {n}/{total}",
     cut_title: "Kitabı nerede kesin",
     cut_chapter: "Bölümler",
@@ -444,8 +444,8 @@ export const UI = {
     desktop_p1:
       "Die Desktop-App lässt die Karten mit jeder auf dem Rechner installierten Stimme sprechen, kodiert Audio nach Telmis genauer Vorgabe neu, schneidet Ausschnitte innerhalb einer Datei und erlaubt es, jedes Kapitel vor der Konvertierung zu hören. Ihr Fenster ist auf Englisch, Französisch, Chinesisch, Arabisch, Türkisch, Deutsch, Italienisch, Spanisch, Portugiesisch und Niederländisch möglich.",
     desktop_line:
-      "Aus der <a href=\"https://github.com/berthy456/daisy2telmi/releases\">Versionsseite</a> für Windows, Debian, Ubuntu, macOS oder als AppImage holen.",
-    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy2telmi">Quellcode</a>',
+      "Aus der <a href=\"https://github.com/berthy456/daisy-convertor/releases\">Versionsseite</a> für Windows, Debian, Ubuntu, macOS oder als AppImage holen.",
+    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">Quellcode</a>',
     card_label: "Kapitel {n}/{total}",
     cut_title: "Das Buch schneiden bei",
     cut_chapter: "Kapiteln",
@@ -521,8 +521,8 @@ export const UI = {
     desktop_p1:
       "L'app per desktop fa parlare le carte con qualsiasi voce installata sul computer, ricodifica l'audio alle specifiche esatte di Telmi, taglia le clip dentro un file e permette di ascoltare ogni capitolo prima della conversione. La sua finestra si mostra in inglese, francese, cinese, arabo, turco, tedesco, italiano, spagnolo, portoghese o neerlandese.",
     desktop_line:
-      "Prendilo dalla <a href=\"https://github.com/berthy456/daisy2telmi/releases\">pagina delle versioni</a> per Windows, Debian, Ubuntu, macOS o come AppImage.",
-    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy2telmi">sorgente</a>',
+      "Prendilo dalla <a href=\"https://github.com/berthy456/daisy-convertor/releases\">pagina delle versioni</a> per Windows, Debian, Ubuntu, macOS o come AppImage.",
+    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">sorgente</a>',
     card_label: "Capitolo {n}/{total}",
     cut_title: "Taglia il libro a",
     cut_chapter: "Capitoli",
@@ -598,8 +598,8 @@ export const UI = {
     desktop_p1:
       "La aplicación de escritorio hace hablar las tarjetas con cualquier voz instalada en el ordenador, recodifica el audio a la especificación exacta de Telmi, recorta fragmentos dentro de un archivo y permite escuchar cada capítulo antes de convertir. Su ventana se muestra en inglés, francés, chino, árabe, turco, alemán, italiano, español, portugués y neerlandés.",
     desktop_line:
-      "Bájalo de la <a href=\"https://github.com/berthy456/daisy2telmi/releases\">página de versiones</a> para Windows, Debian, Ubuntu, macOS o como AppImage.",
-    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy2telmi">código fuente</a>',
+      "Bájalo de la <a href=\"https://github.com/berthy456/daisy-convertor/releases\">página de versiones</a> para Windows, Debian, Ubuntu, macOS o como AppImage.",
+    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">código fuente</a>',
     card_label: "Capítulo {n}/{total}",
     cut_title: "Cortar el libro en",
     cut_chapter: "Capítulos",
@@ -675,8 +675,8 @@ export const UI = {
     desktop_p1:
       "O aplicativo de desktop faz os cartões falarem com qualquer voz instalada no computador, recodifica o áudio à especificação exata do Telmi, corta trechos dentro de um arquivo e permite ouvir cada capítulo antes de converter. Sua janela aparece em inglês, francês, chinês, árabe, turco, alemão, italiano, espanhol, português e holandês.",
     desktop_line:
-      "Baixe da <a href=\"https://github.com/berthy456/daisy2telmi/releases\">página de versões</a> para Windows, Debian, Ubuntu, macOS ou como AppImage.",
-    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy2telmi">código fonte</a>',
+      "Baixe da <a href=\"https://github.com/berthy456/daisy-convertor/releases\">página de versões</a> para Windows, Debian, Ubuntu, macOS ou como AppImage.",
+    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">código fonte</a>',
     card_label: "Capítulo {n}/{total}",
     cut_title: "Cortar o livro em",
     cut_chapter: "Capítulos",
@@ -752,8 +752,8 @@ export const UI = {
     desktop_p1:
       "De desktop-app laat de kaarten spreken met elke stem die op de computer is geïnstalleerd, hercodeert audio naar Telmis exacte specificatie, knipt fragmenten binnen een bestand en laat je elk hoofdstuk voor de omzetting beluisteren. Zijn venster is in het Engels, Frans, Chinees, Arabisch, Turks, Duits, Italiaans, Spaans, Portugees en Nederlands te tonen.",
     desktop_line:
-      "Haal hem van de <a href=\"https://github.com/berthy456/daisy2telmi/releases\">uitgavenpagina</a> voor Windows, Debian, Ubuntu, macOS of als AppImage.",
-    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy2telmi">broncode</a>',
+      "Haal hem van de <a href=\"https://github.com/berthy456/daisy-convertor/releases\">uitgavenpagina</a> voor Windows, Debian, Ubuntu, macOS of als AppImage.",
+    footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">broncode</a>',
     card_label: "Hoofdstuk {n}/{total}",
     cut_title: "Het boek knippen bij",
     cut_chapter: "Hoofdstukken",

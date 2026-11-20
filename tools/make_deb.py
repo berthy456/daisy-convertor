@@ -117,10 +117,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary", type=Path, help="the compiled executable to install")
     parser.add_argument("output", type=Path, help="the .deb file to write")
-    parser.add_argument("--package", default="daisy2telmi")
+    parser.add_argument("--package", default="daisy-convertor")
     parser.add_argument("--version", required=True)
     parser.add_argument("--architecture", default="amd64")
-    parser.add_argument("--maintainer", default="daisy2telmi contributors")
+    parser.add_argument("--maintainer", default="daisy-convertor contributors")
     parser.add_argument(
         "--description",
         default="Convert a DAISY 2.02 audio book pack into a Telmi story folder",

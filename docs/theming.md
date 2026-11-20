@@ -24,7 +24,7 @@ Measured from `src/daisy2telmi/gui.py` (974 lines):
 `ttk.Style` appears nowhere: the app takes whatever theme Tk picks for the
 platform and configures nothing. That is the whole of the current look.
 
-The frozen macOS binary is 48.9 MB (`dist/daisy2telmi`), Tk included.
+The frozen macOS binary is 48.9 MB (`dist/daisy-convertor`), Tk included.
 
 ## What Tk theming can do
 

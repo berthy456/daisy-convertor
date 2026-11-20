@@ -1,4 +1,4 @@
-"""Show daisy2telmi's controls under every way of theming Tk, switchable live.
+"""Show daisy-convertor's controls under every way of theming Tk, switchable live.
 
     python tools/theming_demo.py            # the window
     python tools/theming_demo.py --facts    # print what this Tk offers, and stop

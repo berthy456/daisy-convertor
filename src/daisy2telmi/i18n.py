@@ -75,7 +75,7 @@ LANGUAGES: dict[str, Language] = {
 # leaves out, so a missing translation degrades to English rather than to a key.
 UI: dict[str, dict[str, str]] = {
     "en": {
-        "app_title": "daisy2telmi",
+        "app_title": "daisy-convertor",
         "pack_label": "DAISY pack",
         "browse_zip": "Browse zip...",
         "browse_folder": "Browse folder...",
@@ -142,7 +142,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": "Default",
     },
     "fr": {
-        "app_title": "daisy2telmi",
+        "app_title": "daisy-convertor",
         "pack_label": "Pack DAISY",
         "browse_zip": "Choisir un zip...",
         "browse_folder": "Choisir un dossier...",
@@ -209,7 +209,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": 'Par défaut',
     },
     "zh": {
-        "app_title": "daisy2telmi",
+        "app_title": "daisy-convertor",
         "pack_label": "DAISY 音频包",
         "browse_zip": "选择 zip...",
         "browse_folder": "选择文件夹...",
@@ -276,7 +276,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": "默认",
     },
     "ar": {
-        "app_title": "daisy2telmi",
+        "app_title": "daisy-convertor",
         "pack_label": "حزمة DAISY",
         "browse_zip": "‏اختيار ملف zip…",
         "browse_folder": "اختيار مجلد...",
@@ -343,7 +343,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": "الافتراضي",
     },
     "tr": {
-        "app_title": "daisy2telmi",
+        "app_title": "daisy-convertor",
         "pack_label": "DAISY paketi",
         "browse_zip": 'Zip seç...',
         "browse_folder": 'Klasör seç...',
@@ -410,7 +410,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": 'Varsayılan',
     },
     "de": {
-        "app_title": "daisy2telmi",
+        "app_title": "daisy-convertor",
         "pack_label": "DAISY-Paket",
         "browse_zip": 'Zip wählen...',
         "browse_folder": 'Ordner wählen...',
@@ -477,7 +477,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": "Standard",
     },
     "it": {
-        "app_title": "daisy2telmi",
+        "app_title": "daisy-convertor",
         "pack_label": "Pacchetto DAISY",
         "browse_zip": "Scegli zip...",
         "browse_folder": "Scegli cartella...",
@@ -544,7 +544,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": "Predefinita",
     },
     "es": {
-        "app_title": "daisy2telmi",
+        "app_title": "daisy-convertor",
         "pack_label": "Paquete DAISY",
         "browse_zip": "Elegir zip...",
         "browse_folder": "Elegir carpeta...",
@@ -611,7 +611,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": "Predeterminada",
     },
     "pt": {
-        "app_title": "daisy2telmi",
+        "app_title": "daisy-convertor",
         "pack_label": "Pacote DAISY",
         "browse_zip": "Escolher zip...",
         "browse_folder": "Escolher pasta...",
@@ -678,7 +678,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": 'Padrão',
     },
     "nl": {
-        "app_title": "daisy2telmi",
+        "app_title": "daisy-convertor",
         "pack_label": "DAISY-pakket",
         "browse_zip": "Kies zip...",
         "browse_folder": "Kies map...",

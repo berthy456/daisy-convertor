@@ -1,6 +1,6 @@
-"""Assemble an AppImage from the built daisy2telmi binary.
+"""Assemble an AppImage from the built daisy-convertor binary.
 
-    python tools/make_appimage.py dist/daisy2telmi dist/daisy2telmi.AppImage [--appimagetool PATH]
+    python tools/make_appimage.py dist/daisy-convertor dist/daisy-convertor.AppImage [--appimagetool PATH]
 
 The layout is the usual one: the binary under `usr/bin`, an `AppRun` entry point
 that execs it, and a `.desktop` file. `appimagetool` turns that folder into the
@@ -20,12 +20,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# The name comes from the binary: appimagetool stops on a desktop file whose
+# Exec and Icon do not match a file the AppDir carries.
 DESKTOP = """[Desktop Entry]
 Type=Application
-Name=daisy2telmi
-Comment=Convert a DAISY 2.02 audio book pack into a Telmi story
-Exec=daisy2telmi
-Icon=daisy2telmi
+Name={name}
+Comment=Convert a DAISY, EPUB or text-only book into a Telmi, Lunii, Flam or Merlin story
+Exec={name}
+Icon={name}
 Terminal=true
 Categories=Utility;
 """
@@ -52,7 +54,7 @@ def build_appdir(binary: Path, appdir: Path, icon: Path | None = None) -> Path:
     apprun.write_text(APPRUN.format(binary=name), encoding="utf-8")
     apprun.chmod(apprun.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-    (appdir / f"{name}.desktop").write_text(DESKTOP, encoding="utf-8")
+    (appdir / f"{name}.desktop").write_text(DESKTOP.format(name=name), encoding="utf-8")
     if icon is not None:
         # appimagetool stops with an error when the desktop file names an icon
         # the AppDir does not carry.

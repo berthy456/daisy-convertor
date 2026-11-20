@@ -50,7 +50,11 @@ def _scan(directory: Path, max_depth: int = _MAX_SEARCH_DEPTH) -> DaisyPack | No
             ncx = next((p for p in sorted(current.glob("*.ncx")) if p.is_file()), None)
             if ncc is None and ncx is None:
                 continue
-            opf = _child_ci(current, "package.opf")
+            # A 2.02 pack names its package document `package.opf`; a 3.x one and an
+            # EPUB name it after the book, so any .opf beside the outline will do.
+            opf = _child_ci(current, "package.opf") or next(
+                (p for p in sorted(current.glob("*.opf")) if p.is_file()), None
+            )
             return DaisyPack(root=current, ncc=ncc, opf=opf, ncx=ncx)
         frontier = [p for d in frontier for p in sorted(d.iterdir()) if p.is_dir()]
         depth += 1

@@ -71,6 +71,15 @@ def test_ncx_only_pack_is_detected(tmp_path: Path) -> None:
     assert pack.toc_file is not None and pack.toc_file.name == "book.ncx"
 
 
+def test_a_package_document_named_after_the_book_is_found(tmp_path: Path) -> None:
+    """A DAISY 3 pack and an EPUB name their .opf after the book, never `package.opf`."""
+    root = write_pack(tmp_path / "book", ncc=False, ncx=True)
+    (root / "areyouready.opf").write_text(OPF, encoding="utf-8")
+    pack = detect(tmp_path)
+    assert pack is not None
+    assert pack.opf is not None and pack.opf.name == "areyouready.opf"
+
+
 def test_opf_without_a_toc_is_not_a_pack(tmp_path: Path) -> None:
     assert detect(write_pack(tmp_path / "book", ncc=False, opf=True)) is None
 

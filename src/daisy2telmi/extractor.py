@@ -108,12 +108,17 @@ def _ncc_meta(root: etree._Element) -> dict[str, str]:
 
 
 def _opf_meta(root: etree._Element) -> dict[str, str]:
-    """Collect Dublin Core fields from a `package.opf` metadata block."""
+    """Collect Dublin Core fields from a package document's metadata block.
+
+    A 2.02 pack writes them lower case (`dc:title`), a 3.x one capitalises them
+    (`dc:Title`), so the name is matched either way.
+    """
+    wanted = {"title", "language", "creator", "publisher", "identifier", "description", "source"}
     out: dict[str, str] = {}
     for element in root.iter():
-        name = _localname(element)
-        if name in {"title", "language", "creator", "publisher", "identifier", "description", "source"}:
-            text = (element.text or "").strip()
+        name = _localname(element).lower()
+        if name in wanted:
+            text = "".join(element.itertext()).strip()
             if text and name not in out:
                 out[name] = text
     return out
@@ -137,6 +142,18 @@ def _npt(value: str | None) -> float | None:
         return float(text.rstrip("s"))
     except ValueError:
         return None
+
+
+def _clip(element: etree._Element) -> tuple[float | None, float | None]:
+    """A SMIL `<audio>`'s trim points.
+
+    DAISY 2.02 writes them `clip-begin`, DAISY 3 writes `clipBegin`; reading only
+    one spelling leaves a 3.x clip untrimmed, which repeats its whole file.
+    """
+    return (
+        _npt(element.get("clip-begin") or element.get("clipBegin")),
+        _npt(element.get("clip-end") or element.get("clipEnd")),
+    )
 
 
 def _merge(segments: list[AudioSegment]) -> list[AudioSegment]:
@@ -186,7 +203,7 @@ def _smil_segments(smil: Path, marks: _Marks) -> tuple[AudioSegment, ...]:
         if not target.is_file():
             log.warning("%s references a missing audio file: %s", smil.name, src)
             continue
-        found.append(AudioSegment(target, _npt(element.get("clip-begin")), _npt(element.get("clip-end"))))
+        found.append(AudioSegment(target, *_clip(element)))
     result = tuple(_merge(found))
     marks.segments[smil] = result
     return result
@@ -241,9 +258,7 @@ def _smil_parts(smil: Path, marks: _Marks) -> tuple[Chapter, ...]:
             found.append(
                 Chapter(
                     title="",
-                    segments=(
-                        AudioSegment(target, _npt(element.get("clip-begin")), _npt(element.get("clip-end"))),
-                    ),
+                    segments=(AudioSegment(target, *_clip(element)),),
                     text=words,
                 )
             )
@@ -287,22 +302,71 @@ def _ncc_entries(root: etree._Element) -> list[_TocEntry]:
     return entries
 
 
-def _ncx_entries(root: etree._Element, level: int = 1) -> list[_TocEntry]:
-    """Read a DAISY 2 XML `.ncx` outline as a fallback for packs without an NCC."""
+def _child(element: etree._Element, name: str) -> etree._Element | None:
+    return next((c for c in element if _localname(c).lower() == name), None)
+
+
+def _ncx_level(nav_point: etree._Element, level: int) -> int:
+    """How deep a navPoint sits: a DAISY 3 `class="h2"`, else an EPUB playLevel, else nesting."""
+    heading = next(
+        (c for c in (nav_point.get("class") or "").lower().split() if c[1:].isdigit() and c[0] == "h"), None
+    )
+    if heading is not None:
+        return int(heading[1:])
+    declared = nav_point.get("playLevel") or nav_point.get("level")
+    return int(declared) if declared and declared.isdigit() else level
+
+
+def _ncx_entries(root: etree._Element) -> list[_TocEntry]:
+    """Read an NCX outline: the table of contents of a DAISY 3 pack or an EPUB.
+
+    Both spell the element `navPoint` and put the label inside a `navLabel`, so
+    names are matched without regard to case. A DAISY 3 label carries an `<audio>`
+    of its own, which is the chapter's name already recorded by its producer.
+    """
+    nav_map = next((c for c in root if _localname(c).lower() == "navmap"), None)
+    return _ncx_points(nav_map) if nav_map is not None else []
+
+
+def _ncx_points(nav_map: etree._Element, level: int = 1) -> list[_TocEntry]:
     entries: list[_TocEntry] = []
-    for nav_point in root:
-        if _localname(nav_point) != "navpoint":
+    for nav_point in nav_map:
+        if _localname(nav_point).lower() != "navpoint":
             continue
-        declared = nav_point.get("playLevel") or nav_point.get("level")
-        current_level = int(declared) if declared and declared.isdigit() else level
-        text = next((c for c in nav_point if _localname(c) == "text"), None)
-        content = next((c for c in nav_point if _localname(c) == "content"), None)
-        title = (text.get("value") or (text.text or "")).strip() if text is not None else ""
+        current_level = _ncx_level(nav_point, level)
+        label = _child(nav_point, "navlabel")
+        if label is None:
+            label = nav_point
+        text = _child(label, "text")
+        title = (text.get("value") or "".join(text.itertext())).strip() if text is not None else ""
+        content = _child(nav_point, "content")
         target = content.get("src", "") if content is not None else ""
         if target:
             entries.append(_TocEntry(level=current_level, title=title, target=target))
-        entries.extend(_ncx_entries(nav_point, current_level + 1))
+        entries.extend(_ncx_points(nav_point, current_level + 1))
     return entries
+
+
+def _ncx_front_matter(root: etree._Element, base: Path) -> list[AudioSegment]:
+    """The spoken title and author a DAISY 3 NCX carries, as the book's front matter.
+
+    A 2.02 pack puts its front matter in the NCC outline; a 3.x pack has no NCC and
+    says it once, in the NCX header, as clips of its first audio file.
+    """
+    segments: list[AudioSegment] = []
+    for element in root:
+        if _localname(element).lower() not in {"doctitle", "docauthor"}:
+            continue
+        audio = _child(element, "audio")
+        src = audio.get("src") if audio is not None else None
+        if not src:
+            continue
+        target = (base / unquote(src)).resolve()
+        if not target.is_file():
+            log.warning("%s names a missing front matter clip: %s", root.tag, src)
+            continue
+        segments.append(AudioSegment(target, *_clip(audio)))
+    return segments
 
 
 def _opening_text(parts: tuple[Chapter, ...]) -> str:
@@ -311,13 +375,27 @@ def _opening_text(parts: tuple[Chapter, ...]) -> str:
     return next((t for t in texts if len(t) >= 5), texts[0] if texts else "")
 
 
+def _chapter_level(entries: list[_TocEntry]) -> int:
+    """The outline level that holds the book's chapters.
+
+    The shallowest level is usually it, but a DAISY 3 outline often has one `h1`
+    wrapping everything, which would give a single part as long as the book; the
+    level below it holds the real chapters.
+    """
+    levels = sorted({e.level for e in entries if not e.is_front_matter})
+    for level in levels:
+        if sum(1 for e in entries if not e.is_front_matter and e.level == level) > 1:
+            return level
+    return levels[0] if levels else 1
+
+
 def _group(
     entries: list[_TocEntry], pack_root: Path, marks: _Marks, level: str = "chapter"
 ) -> tuple[list[_Draft], list[AudioSegment]]:
     """Cut the book at `level`: one part per chapter heading, per TOC entry, or per synced mark."""
     chapters: list[_Draft] = []
     front_matter: list[AudioSegment] = []
-    chapter_level = min((e.level for e in entries if not e.is_front_matter), default=1)
+    chapter_level = _chapter_level(entries)
     for entry in entries:
         smil = _split_target(entry.target)
         if smil is None:
@@ -342,7 +420,7 @@ def _group(
                     text=_opening_text(parts),
                 )
             )
-    return chapters, _merge(front_matter)
+    return chapters, front_matter
 
 
 def _toc_entries(pack: DaisyPack) -> tuple[list[_TocEntry], etree._Element]:
@@ -377,6 +455,9 @@ def extract(pack: DaisyPack, level: str = "chapter") -> Book:
 
     marks = _Marks()
     drafts, front_matter = _group(entries, pack.root, marks, level)
+    if not front_matter and pack.ncc is None:
+        front_matter = _ncx_front_matter(root, pack.root)
+    front_matter = _merge(front_matter)
     chapters = tuple(
         Chapter(
             title=d.title or f"Part {index + 1}",

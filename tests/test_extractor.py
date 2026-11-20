@@ -211,3 +211,140 @@ def test_the_sentence_level_gives_one_part_per_synced_clip(marked) -> None:
 def test_an_unknown_cut_level_is_refused(marked) -> None:
     with pytest.raises(DaisyPackError, match="unknown cut level"):
         extract(marked, "verse")
+
+
+# A DAISY 3 (ANSI/NISO Z39.86-2005) pack: no ncc.html, an outline in an NCX whose
+# package document is named after the book, and SMIL that trims with `clipBegin`.
+DAISY3_OPF = """<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2006/01/opf" unique-identifier="uid">
+  <metadata>
+    <dc-metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <dc:Title>ARE YOU READY?</dc:Title>
+      <dc:Creator>WikiHow</dc:Creator>
+      <dc:Language>en</dc:Language>
+    </dc-metadata>
+  </metadata>
+  <manifest><item id="ncx" href="areyouready.ncx" media-type="application/x-dtbncx+xml"/></manifest>
+  <spine><itemref idref="c1"/></spine>
+</package>
+"""
+
+DAISY3_NCX = """<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head><meta content="0:00:20" name="dtb:totalTime"/></head>
+  <docTitle>
+    <text>ARE YOU READY?</text>
+    <audio clipBegin="0:00:00" clipEnd="0:00:02.029" src="front.mp3"/>
+  </docTitle>
+  <docAuthor>
+    <text>WikiHow</text>
+    <audio clipBegin="0:00:02.029" clipEnd="0:00:04.878" src="front.mp3"/>
+  </docAuthor>
+  <navMap>
+    <navPoint class="h1" id="n1" playOrder="1">
+      <navLabel><text>The whole book</text></navLabel>
+      <content src="one.smil#n1"/>
+      <navPoint class="h2" id="n2" playOrder="2">
+        <navLabel><text>Chapter One</text><audio src="one.mp3"/></navLabel>
+        <content src="two.smil#n2"/>
+        <navPoint class="h3" id="n3" playOrder="3">
+          <navLabel><text>Steps</text></navLabel>
+          <content src="three.smil#n3"/>
+        </navPoint>
+      </navPoint>
+      <navPoint class="h2" id="n4" playOrder="4">
+        <navLabel><text>Chapter Two</text></navLabel>
+        <content src="four.smil#n4"/>
+      </navPoint>
+    </navPoint>
+  </navMap>
+</ncx>
+"""
+
+DTBOOK = """<?xml version="1.0" encoding="UTF-8"?>
+<dtbook xmlns="http://www.daisy.org/z3986/2005/struct/"><book><doc>
+  <p id="d1">Make a plan for your family.</p>
+  <p id="d2">Pack water first.</p>
+</doc></book></dtbook>
+"""
+
+
+def smil3(*pairs: tuple[str, str, str, str]) -> str:
+    """A DAISY 3 SMIL: camelCase clip points, text anchored in the DTBook body."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<smil><body><seq>\n'
+        + "\n".join(
+            f'<par id="{par}"><text src="book.xml#{word}"/>'
+            f'<audio clipBegin="0:00:{begin}" clipEnd="0:00:{end}" src="{audio}"/></par>'
+            for par, word, audio, begin, end in pairs
+        )
+        + "\n</seq></body></smil>\n"
+    )
+
+
+@pytest.fixture()
+def daisy3(tmp_path: Path):
+    root = tmp_path / "Are_you_ready_z3986"
+    root.mkdir()
+    (root / "areyouready.opf").write_text(DAISY3_OPF, encoding="utf-8")
+    (root / "areyouready.ncx").write_text(DAISY3_NCX, encoding="utf-8")
+    (root / "book.xml").write_text(DTBOOK, encoding="utf-8")
+    (root / "one.smil").write_text(smil3(("p1", "d1", "one.mp3", "00", "05")), encoding="utf-8")
+    (root / "two.smil").write_text(smil3(("p2", "d1", "two.mp3", "00", "04")), encoding="utf-8")
+    (root / "three.smil").write_text(smil3(("p3", "d2", "three.mp3", "04", "09")), encoding="utf-8")
+    (root / "four.smil").write_text(smil3(("p4", "d2", "four.mp3", "00", "07")), encoding="utf-8")
+    for name in ("front", "one", "two", "three", "four"):
+        (root / f"{name}.mp3").write_bytes(b"\xff\xfb")
+    pack = detect(tmp_path)
+    assert pack is not None
+    return pack
+
+
+def test_a_daisy3_pack_is_detected_without_an_ncc(daisy3) -> None:
+    assert daisy3.ncc is None
+    assert daisy3.ncx is not None and daisy3.ncx.name == "areyouready.ncx"
+    assert daisy3.opf is not None and daisy3.opf.name == "areyouready.opf"
+
+
+def test_a_single_h1_wrapper_does_not_swallow_the_book(daisy3) -> None:
+    """One `h1` over the whole book is a wrapper, not a chapter: the h2s below it are."""
+    book = extract(daisy3)
+    assert [c.title for c in book.chapters] == ["The whole book", "Chapter One", "Chapter Two"]
+
+
+def test_daisy3_clips_are_trimmed_by_their_camel_case_clip_points(daisy3) -> None:
+    book = extract(daisy3)
+    assert [(s.src.name, s.begin, s.end) for s in book.chapters[1].segments] == [
+        ("two.mp3", 0.0, 4.0),
+        ("three.mp3", 4.0, 9.0),
+    ]
+
+
+def test_daisy3_front_matter_is_the_ncx_header(daisy3) -> None:
+    """The spoken title and author, which a 2.02 pack keeps in its outline instead."""
+    book = extract(daisy3)
+    assert [(s.src.name, s.begin, s.end) for s in book.front_matter] == [("front.mp3", 0.0, 4.878)]
+
+
+def test_daisy3_metadata_comes_from_the_package_document(daisy3) -> None:
+    book = extract(daisy3)
+    assert (book.title, book.author, book.language) == ("ARE YOU READY?", "WikiHow", "en")
+
+
+def test_daisy3_cards_show_the_dtbook_body(daisy3) -> None:
+    book = extract(daisy3)
+    assert [c.text for c in book.chapters] == [
+        "Make a plan for your family.",
+        "Make a plan for your family.",
+        "Pack water first.",
+    ]
+
+
+def test_daisy3_paragraph_level_keeps_every_nav_point(daisy3) -> None:
+    book = extract(daisy3, "paragraph")
+    assert [c.title for c in book.chapters] == [
+        "The whole book",
+        "Chapter One",
+        "Steps",
+        "Chapter Two",
+    ]

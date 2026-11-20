@@ -1,6 +1,8 @@
 # daisy-convertor
 
-Converts a **DAISY 2.02, DAISY 3 or EPUB book** into a **Telmi story folder** (Telmi Sync / Telmi OS).
+Converts a **DAISY 2.02, DAISY 3, text-only DAISY or EPUB book** into a **Telmi story folder** (Telmi Sync / Telmi OS), a **Lunii STUdio zip**, **Flam** pictures, or a **Merlin** card (beta).
+
+`berthy456/daisy2telmi` is this tool under its old name, left at v3.0.1.
 
 One Telmi part per top-level heading in the book's outline. A part that carries recorded audio keeps it; a part that carries only words — a text-only DAISY pack, an EPUB — has them spoken by the TTS engine. Scene images are generated placeholders unless a cover is supplied.
 

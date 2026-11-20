@@ -229,7 +229,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+      # Only the Merlin card is beta, and the card's own note says so; the
+      # release itself is not a preview.
       - uses: softprops/action-gh-release@v2
         with:
-          prerelease: true
+          prerelease: false
           files: artifacts/*/*

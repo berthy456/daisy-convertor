@@ -410,13 +410,15 @@ def build_story(
     def draw(target: Path, style: str) -> None:
         """The title image, the cover and every card, at one player's sizes."""
         scene, cover_size = images.screen(player)
+        # A four-grey card is the Lunii's, and carries its number alone.
+        cards = [str(k + 1) for k in range(count)] if style == "bw" else labels
         if cover is not None:
-            images.write_cover(cover, target, labels, texts, crop, style, scene, cover_size, view)
+            images.write_cover(cover, target, cards, texts, crop, style, scene, cover_size, view)
             return
         (target / "images").mkdir(parents=True, exist_ok=True)
         for index, text in enumerate(texts):
             (target / "images" / f"m{index}.png").write_bytes(
-                images.card_png(labels[index], text, *scene, style=style)
+                images.card_png(cards[index], text, *scene, style=style)
             )
         (target / images.TITLE_IMAGE).write_bytes(images.placeholder_png(*scene, style=style))
         (target / images.COVER_IMAGE).write_bytes(images.placeholder_png(*cover_size, style=style))

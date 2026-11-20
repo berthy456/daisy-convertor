@@ -86,7 +86,8 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
     files.push({
       name: `${dirName}/images/m${k}.png`,
       data: await cardPng(
-        cardLabel(k + 1, partCount, cut === "chapter"),
+        // A four-grey card is the Lunii's, and carries its number alone.
+        style === "bw" ? String(k + 1) : cardLabel(k + 1, partCount, cut === "chapter"),
         chapter.text,
         cover,
         view,

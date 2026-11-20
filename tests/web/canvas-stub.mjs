@@ -14,6 +14,11 @@ export const TEXTS = [];
 // Every rectangle the page fills: where, and the card it was filled on.
 export const FILLS = [];
 
+/** The point size a canvas font string asks for, as the page writes them. */
+export function fontSize(font) {
+  return Number(/(\d+(?:\.\d+)?)px/.exec(font)?.[1] ?? 0);
+}
+
 export class StubCanvas {
   constructor(width, height) {
     this.width = width;
@@ -23,16 +28,19 @@ export class StubCanvas {
 
   getContext() {
     const card = this;
-    return {
+    const ctx = {
+      font: "",
       fillRect: (left, top, width, height) =>
         FILLS.push([left, top, width, height, card.width, card.height]),
       drawImage: (...args) => DRAWS.push({ width: card.width, height: card.height, args }),
       fillText: (line, x, y) => {
         card.text.push([line, x, y]);
-        TEXTS.push([line, x, y, card.width, card.height]);
+        TEXTS.push([line, x, y, card.width, card.height, ctx.font]);
       },
       strokeText: () => {},
-      measureText: (line) => ({ width: [...line].length * 10 }),
+      // Half an em by a character: enough for a test to follow what the page
+      // measures a line at, and to resize its font by it.
+      measureText: (line) => ({ width: [...line].length * 0.5 * fontSize(ctx.font) }),
       // A brightness ramp across each row, so a test can see which level every
       // shade lands on once the page has flattened the picture.
       getImageData: (left, top, width, height) => ({
@@ -47,6 +55,7 @@ export class StubCanvas {
       putImageData: (image) =>
         FLATTENS.push([card.width, card.height, [...new Set(image.data.filter((_v, at) => at % 4 !== 3))]]),
     };
+    return ctx;
   }
 
   convertToBlob({ type = "image/png" } = {}) {

@@ -322,7 +322,7 @@ def test_a_four_grey_card_fills_its_screen_with_the_cover(tmp_path: Path) -> Non
         _tall_cover(tmp_path), out, ["1/1"], [""], "center", "bw", (320, 240), (320, 240)
     )
     card = out / "images" / "m0.png"
-    assert _pixel(card, 160, 120) == _pixel(out / images.TITLE_IMAGE, 160, 120)
+    assert _pixel(card, 160, 10) == _pixel(out / images.TITLE_IMAGE, 160, 10)
 
 
 @NO_FFMPEG
@@ -341,15 +341,32 @@ def _inked(ink: list[bytearray], top: int, bottom: int) -> tuple[int, int]:
     return min(columns), max(columns)
 
 
-def test_a_four_grey_card_centres_its_number_and_its_words() -> None:
-    ink = images._card_grid("3/12", "the second of six parts", 320, 240, band=True)
-    margin, _, scale, number_scale = images._layout(320)
-    left, right = _inked(ink, margin, margin + 7 * number_scale)
+def _inked_rows(ink: list[bytearray]) -> list[int]:
+    """The rows that carry any lettering."""
+    return [y for y, line in enumerate(ink) if any(cell in (1, 2) for cell in line)]
+
+
+def test_a_four_grey_card_carries_its_number_alone() -> None:
+    ink = images._card_grid("23", "the second of six parts", 320, 240, band=True)
+    rows = _inked_rows(ink)
+    left, right = _inked(ink, rows[0], rows[-1] + 1)
     assert abs(left + right - 319) <= 1, "the number sits in the middle of its screen"
-    assert ink[0][0] == 3 and ink[239][319] == 3, "the lettering strips reach the edges"
-    assert ink[120][160] == 0, "the cover keeps the middle of the card"
-    words_left, words_right = _inked(ink, 240 - margin - 7 * scale, 240)
-    assert abs(words_left + words_right - 319) <= 1, "the words are centred too"
+    assert abs(rows[0] + rows[-1] - 239) <= 1, "and in the middle of it the other way"
+    strip = [y for y, line in enumerate(ink) if line[0] == 3]
+    assert ink[strip[0]][319] == 3, "the strip behind it reaches the edges"
+    assert 3 not in ink[0] and 3 not in ink[239], "the cover keeps the top and the bottom"
+    assert len(strip) < 240, "and the strip leaves the cover room"
+    bare = images._card_grid("23", "", 320, 240, band=True)
+    assert _inked_rows(bare) == rows, "the card draws no opening words"
+
+
+def test_a_three_digit_number_fills_a_lunii_screen() -> None:
+    """The Lunii screen sits behind a plastic window, so its number is as big as it gets."""
+    one = images._card_grid("7", "", 320, 240, band=True)
+    three = images._card_grid("888", "", 320, 240, band=True)
+    left, right = _inked(three, 0, 240)
+    assert left <= 12 and right >= 304, "three digits reach the edges of the screen"
+    assert _inked_rows(one) == _inked_rows(three), "every card of a story is the same height"
 
 
 def test_a_colour_card_still_numbers_itself_in_the_corner() -> None:

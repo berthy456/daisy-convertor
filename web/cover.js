@@ -13,6 +13,8 @@ export const MERLIN_PICTURE = 128;
 export const CARD_MARGIN = 24;
 export const CARD_LINES = 3;
 export const CARD_WORDS = 20;
+// A digit's ink is about three quarters of the font size, in any of them.
+const DIGIT_INK = 0.72;
 
 // What each player's screen shows, so the picture is drawn where it will be seen:
 // a cover cropped for a 320x240 Lunii keeps the band that Lunii displays.
@@ -206,8 +208,8 @@ export function cardWords(ctx, text, width) {
  *
  * A colour card keeps a small thumbnail rather than the whole cover: a book cut to
  * the sentence level has hundreds of cards, and that is what keeps the zip
- * importable. A four-grey card shows the cover across the whole screen instead,
- * with its lettering centred on a strip of its own at the top and the bottom.
+ * importable. A four-grey card is the Lunii's: the cover across the whole screen,
+ * and the number alone in the middle of it.
  */
 export async function cardPng(
   label,
@@ -232,40 +234,57 @@ export async function cardPng(
     else drawCover(ctx, cover, margin, margin, ...thumb, view);
   }
 
+  if (band) {
+    // The Lunii screen sits behind a plastic window, so nothing drawn small is
+    // readable there: the card carries the number alone, as large as the screen
+    // allows. It is sized as a three-digit number, so every card of a story
+    // carries a number of the same height and a hundred-part story fills the width.
+    const base = Math.round(height / 11);
+    ctx.font = `bold ${base}px system-ui, sans-serif`;
+    const room = width - 2 * margin;
+    const widest = Math.max(ctx.measureText(label).width, ctx.measureText("888").width);
+    const size = Math.min((base * room) / widest, (height - 2 * margin) / DIGIT_INK);
+    const middle = Math.round(height / 2);
+    const ink = Math.round(size * DIGIT_INK);
+    ctx.fillRect(0, middle - ink / 2 - margin, width, ink + 2 * margin);
+    ctx.font = `bold ${size}px system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = Math.max(4, Math.round(size / 12));
+    ctx.strokeStyle = PALETTE[style].border;
+    ctx.fillStyle = PALETTE[style].ink;
+    ctx.strokeText(label, width / 2, middle);
+    ctx.fillText(label, width / 2, middle);
+    // Flattened last, once the cover and the number are down, so a card cannot
+    // pick up a fifth grey where two layers meet.
+    if (style === "bw") toGreys(ctx, width, height);
+    return toPng(canvas);
+  }
+
   const numberSize = Math.round(height / 11);
   const size = Math.round(height / 17);
   const pitch = Math.round(size * 1.3);
   // The words are measured in the font they will be drawn in, so it goes on first.
   ctx.font = `${size}px system-ui, sans-serif`;
   const lines = cardWords(ctx, text, width - 2 * margin);
-  const wordsHeight = (lines.length - 1) * pitch + size;
-  const wordsTop = band ? height - margin - wordsHeight : margin + thumb[1] + margin;
-  if (band) {
-    ctx.fillRect(0, 0, width, margin + numberSize + margin);
-    ctx.fillRect(0, wordsTop - margin, width, height - wordsTop + margin);
-  }
+  const wordsTop = margin + thumb[1] + margin;
 
   ctx.font = `bold ${numberSize}px system-ui, sans-serif`;
   ctx.lineWidth = 6;
   ctx.strokeStyle = PALETTE[style].border;
   ctx.fillStyle = PALETTE[style].ink;
-  ctx.textAlign = band ? "center" : "right";
-  const numberAt = band ? width / 2 : width - margin;
-  ctx.strokeText(label, numberAt, margin);
-  ctx.fillText(label, numberAt, margin);
+  ctx.textAlign = "right";
+  ctx.strokeText(label, width - margin, margin);
+  ctx.fillText(label, width - margin, margin);
 
   ctx.font = `${size}px system-ui, sans-serif`;
-  ctx.textAlign = band ? "center" : "left";
+  ctx.textAlign = "left";
   ctx.lineWidth = 4;
-  const wordsAt = band ? width / 2 : margin;
   for (const [index, line] of lines.entries()) {
     const top = wordsTop + index * pitch;
-    ctx.strokeText(line, wordsAt, top);
-    ctx.fillText(line, wordsAt, top);
+    ctx.strokeText(line, margin, top);
+    ctx.fillText(line, margin, top);
   }
-  // Flattened last, once the cover and the letters are all down, so a card
-  // cannot pick up a fifth grey where two layers meet.
-  if (style === "bw") toGreys(ctx, width, height);
   return toPng(canvas);
 }
 

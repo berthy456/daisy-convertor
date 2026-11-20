@@ -220,36 +220,47 @@ def _strip(ink: list[bytearray], top: int, bottom: int) -> None:
         line[:] = bytes([3]) * len(line)
 
 
+def _number_grid(label: str, width: int, height: int) -> list[bytearray]:
+    """A four-grey card: the part's number alone, as large as the screen allows.
+
+    The Lunii screen sits behind a plastic window, so nothing drawn small is
+    readable there: no word, no total and no opening words, only the number. It is
+    sized as a three-digit one, so every card of a story carries a number of the
+    same height and a story of a hundred parts fills the width of the screen.
+    """
+    margin, _, _, _ = _layout(width)
+    ink = [bytearray(width) for _ in range(height)]
+    rows = glyph_rows(label)
+    columns = len(rows[0])
+    size = min(
+        (width - 2 * margin) // max(columns, 3 * 6 - 1),
+        (height - 2 * margin) // len(rows),
+    )
+    top = (height - size * len(rows)) // 2
+    _strip(ink, top - margin, top + size * len(rows) + margin)
+    _stamp(ink, (width - columns * size) // 2, top, rows, size, max(2, size // 4))
+    return ink
+
+
 def _card_grid(label: str, text: str, width: int, height: int, band: bool = False) -> list[bytearray]:
     """One card's lettering: its number, and the words it opens with.
 
     A colour card numbers itself top right, under which the thumbnail leaves room
-    for the words. A four-grey card carries the cover across the whole screen, so
-    its lettering takes two strips of its own: the number centred along the top,
-    the words centred along the bottom.
+    for the words. A four-grey card is the Lunii's, and draws the number alone.
     """
+    if band:
+        return _number_grid(label, width, height)
     margin, thumb, scale, number_scale = _layout(width)
     ink = [bytearray(width) for _ in range(height)]
     number = glyph_rows(label)
     number_width = len(number[0]) * number_scale
-    if band:
-        _strip(ink, 0, margin + 7 * number_scale + margin)
-        left = (width - number_width) // 2
-    else:
-        left = width - margin - number_width
+    left = width - margin - number_width
     _stamp(ink, left, margin, number, number_scale, 1)
 
     lines = card_words(text, width, scale)
-    if not lines:
-        return ink
-    if band:
-        top = height - margin - 7 * scale - (len(lines) - 1) * scale * 9
-        _strip(ink, top - margin, height)
-    else:
-        top = margin + thumb[1] + margin
+    top = margin + thumb[1] + margin
     for offset, line in enumerate(lines):
-        left = (width - (len(line) * 6 - 1) * scale) // 2 if band else margin
-        _stamp(ink, left, top + offset * scale * 9, glyph_rows(line), scale, 1)
+        _stamp(ink, margin, top + offset * scale * 9, glyph_rows(line), scale, 1)
     return ink
 
 

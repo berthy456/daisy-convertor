@@ -226,6 +226,14 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The tag's own message is the release notes, and reading it needs the
+      # tag object, not the shallow checkout.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Read the annotated tag's message
+        id: notes
+        run: git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > notes.md
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -235,3 +243,4 @@ jobs:
         with:
           prerelease: false
           files: artifacts/*/*
+          body_path: notes.md

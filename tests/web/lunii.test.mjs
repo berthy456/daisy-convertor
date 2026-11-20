@@ -79,13 +79,8 @@ test("converting the same story twice writes the same archive", async () => {
   assert.equal(entries[1].name, "thumbnail.png");
   assert.ok(entries.every((entry) => entry.name === "story.json" || entry.name === "thumbnail.png" || entry.name.startsWith("assets/")));
   const storyJson = JSON.parse(new TextDecoder().decode(entries[0].data));
-  assert.equal(storyJson.nightModeAvailable, false);
-});
-
-test("a story marked night-mode available joins the Lunii's bedtime playlist", async () => {
-  const book = await story();
-  const entries = await readZip(await buildStudioZip(book, true));
-  const storyJson = JSON.parse(new TextDecoder().decode(entries[0].data));
+  // The flag only says the story can be followed without touching the machine,
+  // and a converted audiobook never asks for anything but the next chapter.
   assert.equal(storyJson.nightModeAvailable, true);
 });
 

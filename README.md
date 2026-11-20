@@ -56,7 +56,7 @@ The Merlin has no screen and no story graph: its micro-SD card holds one flat fo
 
 This is beta: the format is undocumented, the tools that edit a card are awkward, and nothing here has been read back off a real Merlin. Telmi, Lunii and Flam are the stable outputs.
 
-`--night-mode` / `--no-night-mode` marks the Lunii archive `nightModeAvailable`, which is how a Lunii offers the story in its bedtime playlist — screen off, volume capped. It is on by default and only reaches `--format lunii`: the Telmi player keeps night mode as a device setting, and a story folder cannot ask for it.
+A Lunii archive carries one word, `nightModeAvailable`, saying the story can be followed without touching the machine. A converted audiobook never asks for anything but the next chapter, so the word is always written. The Telmi story folder has no such word: its night mode takes the story already open in front of it, and what decides whether a chapter joins that playlist is the graph's own `control.autoplay` and `control.ok`, which are set so a chapter runs on by itself.
 
 ### Spoken chapter cards
 

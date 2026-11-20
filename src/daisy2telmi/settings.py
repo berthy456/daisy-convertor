@@ -22,7 +22,6 @@ DEFAULTS: dict = {
     "announce": "prompt",
     "autoplay": False,
     "format": "telmi",
-    "night_mode": True,
     "tts": "chatterbox",
     "voice": None,
     "command": None,

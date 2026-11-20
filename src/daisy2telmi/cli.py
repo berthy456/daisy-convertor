@@ -163,13 +163,6 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="with --format merlin, add the story to this playlist.bin read off the card "
         "instead of writing one holding only the story",
     )
-    parser.add_argument(
-        "--night-mode",
-        action=argparse.BooleanOptionalAction,
-        help="tell the Lunii the story can be played with its screen off, which is how "
-        "it joins the bedtime playlist (--no-night-mode leaves it out); the Telmi "
-        "player keeps night mode as a device setting, so this only reaches --format lunii",
-    )
     parser.add_argument("--version", action="version", version=f"daisy2telmi {__version__}")
     args = parser.parse_args(argv)
     if args.output is None and not (args.list or args.preview):
@@ -206,12 +199,6 @@ def cover_crop(args: argparse.Namespace) -> str:
 def output_format(args: argparse.Namespace) -> str:
     """Saved player choice, overridden by --format."""
     return args.format or settings.load()["format"]
-
-
-def night_mode(args: argparse.Namespace) -> bool:
-    """Saved choice, overridden by --night-mode or --no-night-mode."""
-    saved = settings.load()["night_mode"]
-    return bool(saved if args.night_mode is None else args.night_mode)
 
 
 def inspect(
@@ -297,7 +284,6 @@ def convert(
     cut: str = "chapter",
     fmt: str = "telmi",
     crop: str = "center",
-    night_mode: bool = True,
     find_cover: bool = False,
     zoom: float = 1.0,
     merge: Path | None = None,
@@ -346,7 +332,7 @@ def convert(
                 with tempfile.TemporaryDirectory(prefix="daisy2telmi-lunii-") as scratch:
                     grey = Path(scratch)
                     report = build_story(book, target, announce, cover, cut, crop, grey, player=fmt, view=view)
-                    archive = write_studio_zip(target, image_dir=grey, night_mode=night_mode)
+                    archive = write_studio_zip(target, image_dir=grey)
             else:
                 report = build_story(book, target, announce, cover, cut, crop, player=player, view=view)
                 if fmt == "merlin":
@@ -373,12 +359,7 @@ def convert(
     log.info("wrote %d scene(s) to %s", len(report.stages), report.out_dir)
     log.info("zipped for %s import: %s", PLAYER[fmt], archive)
     if fmt == "lunii":
-        log.info(
-            "night mode: %s",
-            "the Lunii may play this story with its screen off"
-            if night_mode
-            else "not offered, so the Lunii keeps the story out of its bedtime playlist",
-        )
+        log.info("night mode: offered, as a converted audiobook has nothing to choose")
     log.info(
         "audio: %s",
         {
@@ -416,7 +397,6 @@ def main(argv: list[str] | None = None) -> int:
         cut_level(args),
         output_format(args),
         cover_crop(args),
-        night_mode(args),
         args.find_cover,
         args.cover_zoom,
         args.merlin_merge,

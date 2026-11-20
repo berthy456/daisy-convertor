@@ -73,6 +73,10 @@ def test_a_card_shows_its_image_and_waits_for_ok() -> None:
 
 
 def test_a_chapter_returns_to_the_next_card() -> None:
+    """A chapter runs on by itself and waits for no button, which is what lets
+    either player put it on its bedtime playlist: Telmi OS reads these same two
+    controls (`stories_reader.h:744`), and a Lunii is told in one word that
+    `lunii.build_story_json` writes."""
     stage = build_nodes(SAMPLE)["stages"]["s1"]
     assert stage["audio"] == "s1.mp3"
     assert stage["image"] is None

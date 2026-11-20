@@ -61,7 +61,6 @@ def build_story_json(
     metadata: Mapping,
     nodes: Mapping,
     story_dir: Path,
-    night_mode: bool = False,
     image_dir: Path | None = None,
 ) -> tuple[dict, dict[str, Path]]:
     """The STUdio `story.json` and the assets to copy beside it.
@@ -170,7 +169,10 @@ def build_story_json(
         "version": int(metadata.get("version") or 1) or 1,
         "title": metadata.get("title") or story_dir.name,
         "description": metadata.get("description") or "",
-        "nightModeAvailable": bool(night_mode),
+        # The flag only says the story can be followed without touching the
+        # machine. A converted audiobook is a chain of chapters whose only
+        # transition is "next", so it always can.
+        "nightModeAvailable": True,
         "stageNodes": stage_nodes,
         "actionNodes": action_nodes,
     }
@@ -185,7 +187,6 @@ def build_story_json(
 def write_studio_zip(
     story_dir: Path,
     zip_path: Path | None = None,
-    night_mode: bool = False,
     image_dir: Path | None = None,
 ) -> Path:
     """Write the STUdio archive of the Telmi story folder at `story_dir`.
@@ -200,7 +201,7 @@ def write_studio_zip(
     except (OSError, ValueError) as exc:
         raise LuniiError(f"{story_dir} is not a converted story: {exc}") from exc
 
-    story_json, assets = build_story_json(metadata, nodes, story_dir, night_mode, image_dir)
+    story_json, assets = build_story_json(metadata, nodes, story_dir, image_dir)
     zip_path = Path(zip_path) if zip_path else story_dir.parent / f"{story_dir.name}-lunii.zip"
     zip_path.parent.mkdir(parents=True, exist_ok=True)
 

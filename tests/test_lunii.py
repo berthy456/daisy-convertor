@@ -105,10 +105,11 @@ def test_home_leaves_the_story_the_way_the_device_expects(story) -> None:
     assert all(node["controlSettings"]["home"] and node["homeTransition"] is None for node in cards)
 
 
-def test_night_mode_is_a_flag_on_the_story(story) -> None:
+def test_the_story_offers_itself_to_the_bedtime_playlist(story) -> None:
+    """The flag only says the story can be followed without touching the machine,
+    and a converted audiobook never asks for anything but the next chapter."""
     metadata, nodes = read(story)
-    assert build_story_json(metadata, nodes, story)[0]["nightModeAvailable"] is False
-    assert build_story_json(metadata, nodes, story, night_mode=True)[0]["nightModeAvailable"] is True
+    assert build_story_json(metadata, nodes, story)[0]["nightModeAvailable"] is True
 
 
 def test_a_story_without_its_title_audio_is_refused(story) -> None:

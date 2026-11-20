@@ -41,9 +41,8 @@ async function assetName(source, extension, taken) {
 
 /**
  * story: what buildStoryFiles returns — {dirName, files, metadata, nodes}.
- * nightMode: tells the Lunii the story can be read with the screen off.
  */
-export async function buildStudioFiles(story, nightMode = false) {
+export async function buildStudioFiles(story) {
   const { dirName, metadata, nodes } = story;
   if (!metadata?.uuid) throw new Error(`the story has no usable uuid: ${metadata?.uuid}`);
 
@@ -149,7 +148,10 @@ export async function buildStudioFiles(story, nightMode = false) {
     version: metadata.version || 1,
     title: metadata.title || dirName,
     description: metadata.description || "",
-    nightModeAvailable: Boolean(nightMode),
+    // The flag only says the story can be followed without touching the machine.
+    // A converted audiobook is a chain of chapters whose only transition is
+    // "next", so it always can.
+    nightModeAvailable: true,
     stageNodes,
     actionNodes,
   };
@@ -160,8 +162,8 @@ export async function buildStudioFiles(story, nightMode = false) {
   return { storyJson, assets, thumbnail: thumbnail === null ? null : media.get(thumbnail) };
 }
 
-export async function buildStudioZip(story, nightMode = false) {
-  const { storyJson, assets, thumbnail } = await buildStudioFiles(story, nightMode);
+export async function buildStudioZip(story) {
+  const { storyJson, assets, thumbnail } = await buildStudioFiles(story);
   const entries = [{ name: "story.json", data: new TextEncoder().encode(JSON.stringify(storyJson)) }];
   if (thumbnail !== null) entries.push({ name: "thumbnail.png", data: thumbnail });
   for (const asset of assets.sort((a, b) => (a.name < b.name ? -1 : 1))) {

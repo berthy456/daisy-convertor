@@ -29,8 +29,6 @@ const cropInputs = [...document.querySelectorAll('input[name="crop"]')];
 const cropZoom = document.getElementById("crop-zoom");
 const cropReset = document.getElementById("crop-reset");
 const formatInputs = [...document.querySelectorAll('input[name="format"]')];
-const nightRow = document.getElementById("night-row");
-const nightInput = document.getElementById("night-mode");
 const partsBox = document.getElementById("parts");
 const partsList = document.getElementById("parts-list");
 const partsNote = document.getElementById("parts-note");
@@ -41,7 +39,6 @@ const STORED_LANGUAGE = "daisy2telmi.language";
 const STORED_CUT = "daisy2telmi.cut";
 const STORED_FORMAT = "daisy2telmi.format";
 const STORED_CROP = "daisy2telmi.crop";
-const STORED_NIGHT = "daisy2telmi.night";
 // The summary lists the parts it starts; a book cut to the sentence level has hundreds.
 const LISTED_PARTS = 30;
 // A sentence-level book can run to thousands of parts: past this the page says
@@ -58,7 +55,6 @@ let lang = "en";
 let cut = "chapter";
 let crop = "center";
 let format = "telmi";
-let night = true;
 // Where the frame sits over the cover and how far it is enlarged. `focus` stays
 // null while one of the three named bands is chosen, and takes over once the
 // user moves the frame themselves.
@@ -129,25 +125,9 @@ function startFormat() {
     input.addEventListener("change", () => {
       format = input.value;
       remember(STORED_FORMAT, format);
-      showNight();
       drawCrop();
     });
   }
-  showNight();
-}
-
-/** Night mode is a flag of the Lunii archive, so the box only shows for that player. */
-function showNight() {
-  nightRow.hidden = format !== "lunii";
-}
-
-function startNight() {
-  night = saved(STORED_NIGHT) !== "0";
-  nightInput.checked = night;
-  nightInput.addEventListener("change", () => {
-    night = nightInput.checked;
-    remember(STORED_NIGHT, night ? "1" : "0");
-  });
 }
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
@@ -428,7 +408,7 @@ async function saveStory() {
     let bytes = story.zip;
     if (format === "lunii") {
       name = `${story.dirName}-lunii.zip`;
-      bytes = await buildStudioZip(story, night);
+      bytes = await buildStudioZip(story);
     } else if (format === "merlin") {
       name = `${story.dirName}_merlin.zip`;
       bytes = await writeZip(await buildMerlinFiles(story, { picture: squareJpeg }));
@@ -560,4 +540,3 @@ startLanguage();
 startFormat();
 startCut();
 startCrop();
-startNight();

@@ -543,3 +543,67 @@ def test_a_pack_with_no_audio_at_is_spoken_from_its_text(tmp_path: Path) -> None
     # A story with no recorded title says its own name rather than play a second of silence.
     assert audio.duration(story / "title.mp3") > 1.0
     assert validate_story_dir(story) == []
+
+
+EPUB_OPF = """<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="uid" version="2.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Le loup et l agneau</dc:title>
+    <dc:language>fr</dc:language>
+  </metadata>
+  <manifest>
+    <item id="ncx" href="navigation.ncx" media-type="application/x-dtbncx+xml"/>
+    <item id="b" href="book.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine><itemref idref="b"/></spine>
+</package>
+"""
+
+EPUB_NCX = """<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <docTitle><text>Le loup et l agneau</text></docTitle>
+  <navMap>
+    <navPoint class="h1" id="t1" playOrder="1">
+      <navLabel><text>Premiere partie</text></navLabel>
+      <content src="book.xhtml#c1"/>
+    </navPoint>
+    <navPoint class="h1" id="t2" playOrder="2">
+      <navLabel><text>Seconde partie</text></navLabel>
+      <content src="book.xhtml#c2"/>
+    </navPoint>
+  </navMap>
+</ncx>
+"""
+
+EPUB_XHTML = """<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml"><body>
+  <h1 id="c1">Premiere partie</h1>
+  <p>Le loup sortit de la foret pour chercher de quoi manger.
+     Il descendit vers la riviere ou l eau etait claire.</p>
+  <h1 id="c2">Seconde partie</h1>
+  <p>Un agneau buvait, et ne le vit pas venir.</p>
+</body></html>
+"""
+
+
+@requires_espeak
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_an_epub_is_spoken_from_its_pages(tmp_path: Path) -> None:
+    """An EPUB has an outline and pages, and no audio to fall back on."""
+    archive = tmp_path / "book.epub"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("mimetype", "application/epub+zip")
+        zf.writestr("OEBPS/package.opf", EPUB_OPF)
+        zf.writestr("OEBPS/navigation.ncx", EPUB_NCX)
+        zf.writestr("OEBPS/book.xhtml", EPUB_XHTML)
+
+    out = tmp_path / "out"
+    assert main([str(archive), str(out), "--tts", "espeak"]) == 0
+    story = _story(out)
+
+    scenes = sorted((story / "audios").glob("s*.mp3"))
+    assert len(scenes) == 2
+    for scene in scenes:
+        assert audio.probe(scene) == ("mp3", 44100, "mono")
+        assert audio.duration(scene) > 1.0
+    assert validate_story_dir(story) == []

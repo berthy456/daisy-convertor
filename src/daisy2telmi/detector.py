@@ -1,4 +1,4 @@
-"""Locate DAISY 2.02 packs, on disk or inside a .zip archive."""
+"""Locate DAISY 2.02, DAISY 3 and EPUB books, on disk or inside a .zip or .epub archive."""
 
 from __future__ import annotations
 
@@ -127,12 +127,12 @@ def open_pack(path: Path) -> Iterator[DaisyPack]:
             if find_telmi(path) is not None:
                 raise DaisyPackError(_already_telmi(path))
             raise DaisyPackError(
-                f"no DAISY 2.02 table of contents (ncc.html or *.ncx) found under {path}"
+                f"no table of contents (ncc.html or *.ncx) found under {path}"
             )
         yield pack
         return
 
-    if path.is_file() and path.suffix.lower() == ".zip":
+    if path.is_file() and path.suffix.lower() in {".zip", ".epub"}:
         with tempfile.TemporaryDirectory(prefix="daisy2telmi-") as tmp:
             try:
                 with zipfile.ZipFile(path) as archive:
@@ -144,9 +144,9 @@ def open_pack(path: Path) -> Iterator[DaisyPack]:
                 if find_telmi(Path(tmp)) is not None:
                     raise DaisyPackError(_already_telmi(path))
                 raise DaisyPackError(
-                    f"no DAISY 2.02 table of contents (ncc.html or *.ncx) found inside {path}"
+                    f"no table of contents (ncc.html or *.ncx) found inside {path}"
                 )
             yield pack
         return
 
-    raise DaisyPackError(f"input is neither a folder nor a .zip archive: {path}")
+    raise DaisyPackError(f"input is neither a folder nor a .zip or .epub archive: {path}")

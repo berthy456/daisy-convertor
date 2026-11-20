@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import unquote
@@ -69,6 +70,7 @@ class _Draft:
     segments: list[AudioSegment] = field(default_factory=list)
     text: str = ""
     body: str = ""
+    level: int = 1
 
 
 CUT_LEVELS = ("chapter", "paragraph", "sentence")
@@ -289,6 +291,73 @@ def _split_target(href: str) -> Path | None:
     return Path(file_part)
 
 
+_DOCUMENT_SUFFIXES = {".htm", ".html", ".xhtml"}
+_SENTENCES = re.compile(r"(?<=[.!?…])\s+")
+
+
+def _sentences(text: str) -> list[str]:
+    return [sentence for sentence in (s.strip() for s in _SENTENCES.split(text)) if sentence]
+
+
+def _split_document(href: str) -> tuple[Path, str] | None:
+    """Turn an NCX `content src` such as `book.xhtml#ch1` into a document and an anchor.
+
+    An EPUB has no SMIL at all: its whole book is one or a few XHTML files, and its
+    table of contents points into them.
+    """
+    file_part, _, anchor = unquote(href).partition("#")
+    file_part = file_part.strip()
+    if not file_part or Path(file_part).suffix.lower() not in _DOCUMENT_SUFFIXES:
+        return None
+    return Path(file_part), anchor
+
+
+def _anchors_by_document(entries: list[_TocEntry]) -> dict[Path, set[str]]:
+    """Every anchor the outline names, grouped by the file it sits in."""
+    found: dict[Path, set[str]] = {}
+    for entry in entries:
+        document = _split_document(entry.target)
+        if document is not None and document[1]:
+            found.setdefault(document[0], set()).add(document[1])
+    return found
+
+
+def _document_texts(path: Path, anchors: set[str], marks: _Marks) -> dict[str, str]:
+    """The words of a document that belong to each anchor: its own, up to the next.
+
+    The outline of an EPUB names a heading inside the file rather than a range, so
+    a chapter is everything the reader reaches before the next named heading. Text
+    is walked in document order and handed to the last anchor passed, which keeps a
+    section's nested markup with the section that opened it.
+    """
+    if path not in marks.text:
+        marks.text[path] = _parse_xml(path)
+    root = marks.text[path]
+    if root is None:
+        return {}
+    words: dict[str, list[str]] = {}
+    current: str | None = None
+    for element in root.iter():
+        if not isinstance(element.tag, str):
+            continue
+        anchor = element.get("id")
+        if anchor in anchors:
+            current = anchor
+            words.setdefault(anchor, [])
+        if current is None:
+            continue
+        if element.text:
+            words[current].append(element.text)
+        if element.tail:
+            words[current].append(element.tail)
+    return {anchor: " ".join(" ".join(part).split()) for anchor, part in words.items()}
+
+
+def _first_words(body: str) -> str:
+    """The line a card shows for a part that has no synced text of its own."""
+    return next((s for s in _sentences(body) if len(s) >= 5), "")
+
+
 def _ncc_entries(root: etree._Element) -> list[_TocEntry]:
     """Read the NCC outline: h1..h6 are TOC items, `class="title"` is front matter."""
     body = next((el for el in root.iter() if _localname(el) == "body"), None)
@@ -409,35 +478,63 @@ def _group(
     chapters: list[_Draft] = []
     front_matter: list[AudioSegment] = []
     chapter_level = _chapter_level(entries)
+    documents = _anchors_by_document(entries)
+
+    def place(draft: _Draft) -> None:
+        """Open a part, or add it to the one before at a level below the chapters."""
+        if level == "chapter" and draft.level > chapter_level and chapters:
+            chapters[-1].segments.extend(draft.segments)
+            chapters[-1].body = " ".join(t for t in (chapters[-1].body, draft.body) if t)
+        else:
+            chapters.append(draft)
+
     for entry in entries:
         smil = _split_target(entry.target)
-        if smil is None:
-            continue
-        resolved = (pack_root / smil).resolve()
-        if not resolved.is_file():
-            log.warning("TOC entry %r points at a missing SMIL: %s", entry.title, smil)
-            continue
-        if entry.is_front_matter:
-            front_matter.extend(_smil_segments(resolved, marks))
-            continue
-        parts = _smil_parts(resolved, marks)
-        body = " ".join(p.text for p in parts if p.text)
-        if level == "sentence":
-            chapters.extend(
-                _Draft(title="", segments=list(p.segments), text=p.text, body=p.text) for p in parts
-            )
-        elif level == "chapter" and entry.level > chapter_level and chapters:
-            chapters[-1].segments.extend(_smil_segments(resolved, marks))
-            chapters[-1].body = " ".join(t for t in (chapters[-1].body, body) if t)
-        else:
-            chapters.append(
+        if smil is not None:
+            resolved = (pack_root / smil).resolve()
+            if not resolved.is_file():
+                log.warning("TOC entry %r points at a missing SMIL: %s", entry.title, smil)
+                continue
+            if entry.is_front_matter:
+                front_matter.extend(_smil_segments(resolved, marks))
+                continue
+            parts = _smil_parts(resolved, marks)
+            if level == "sentence":
+                chapters.extend(
+                    _Draft(title="", segments=list(p.segments), text=p.text, body=p.text) for p in parts
+                )
+                continue
+            place(
                 _Draft(
                     title=entry.title or f"Part {len(chapters) + 1}",
                     segments=list(_smil_segments(resolved, marks)),
                     text=_opening_text(parts),
-                    body=body,
+                    body=" ".join(p.text for p in parts if p.text),
+                    level=entry.level,
                 )
             )
+            continue
+
+        document = _split_document(entry.target)
+        if document is None:
+            continue
+        path, anchor = document
+        resolved = (pack_root / path).resolve()
+        if not resolved.is_file():
+            log.warning("TOC entry %r points at a missing document: %s", entry.title, path)
+            continue
+        body = _document_texts(resolved, documents[path], marks).get(anchor, "")
+        if level == "sentence":
+            chapters.extend(_Draft(title="", text=sentence, body=sentence) for sentence in _sentences(body))
+            continue
+        place(
+            _Draft(
+                title=entry.title or f"Part {len(chapters) + 1}",
+                text=_first_words(body),
+                body=body,
+                level=entry.level,
+            )
+        )
     return chapters, front_matter
 
 

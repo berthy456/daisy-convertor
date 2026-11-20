@@ -110,6 +110,19 @@ def test_open_pack_reads_a_zip(tmp_path: Path) -> None:
         assert (pack.root / "ncc.html").read_text(encoding="utf-8").startswith("<?xml")
 
 
+def test_open_pack_reads_an_epub(tmp_path: Path) -> None:
+    """An .epub is a .zip whose outline is an NCX, so the same reader takes it."""
+    source = tmp_path / "book"
+    write_pack(source, ncc=False, opf=True, ncx=True)
+    archive = tmp_path / "book.epub"
+    with zipfile.ZipFile(archive, "w") as zf:
+        for file in sorted(source.rglob("*")):
+            zf.write(file, file.relative_to(source))
+    with open_pack(archive) as pack:
+        assert pack.ncc is None
+        assert pack.ncx is not None and pack.ncx.is_file()
+
+
 def test_open_pack_rejects_a_traversal_archive(tmp_path: Path) -> None:
     archive = tmp_path / "evil.zip"
     with zipfile.ZipFile(archive, "w") as zf:

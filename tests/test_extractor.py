@@ -401,3 +401,117 @@ def test_an_audio_chapter_keeps_its_text_too(marked) -> None:
     assert book.chapters[0].body == (
         "Le loup sortit de la foret. Il cherchait de quoi manger. Un agneau buvait a la riviere."
     ), "a folded sub-heading folds its words in as well as its audio"
+
+
+# An EPUB is the same OEB package and NCX outline as a DAISY 3 pack, minus the
+# SMIL and the audio: its chapters are anchors inside one XHTML document.
+EPUB_OPF = """<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="uid" version="2.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>The Wolf</dc:title>
+    <dc:creator>Aesop</dc:creator>
+    <dc:language>en</dc:language>
+  </metadata>
+  <manifest>
+    <item id="ncx" href="navigation.ncx" media-type="application/x-dtbncx+xml"/>
+    <item id="b" href="book.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine><itemref idref="b"/></spine>
+</package>
+"""
+
+EPUB_NCX = """<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <docTitle><text>The Wolf</text></docTitle>
+  <navMap>
+    <navPoint class="h1" id="t1" playOrder="1">
+      <navLabel><text>Chapter One</text></navLabel>
+      <content src="book.xhtml#c1"/>
+      <navPoint class="h2" id="t2" playOrder="2">
+        <navLabel><text>A section</text></navLabel>
+        <content src="book.xhtml#c2"/>
+      </navPoint>
+    </navPoint>
+    <navPoint class="h1" id="t3" playOrder="3">
+      <navLabel><text>Chapter Two</text></navLabel>
+      <content src="book.xhtml#c3"/>
+    </navPoint>
+    <navPoint class="h1" id="t4" playOrder="4">
+      <navLabel><text>Cover</text></navLabel>
+      <content src="cover.jpg"/>
+    </navPoint>
+    <navPoint class="h1" id="t5" playOrder="5">
+      <navLabel><text>Missing</text></navLabel>
+      <content src="gone.xhtml#c9"/>
+    </navPoint>
+  </navMap>
+</ncx>
+"""
+
+EPUB_XHTML = """<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <body>
+    <h1 id="c1">Chapter One</h1>
+    <p>The wolf went out. He was looking for food.</p>
+    <h2 id="c2">A section</h2>
+    <p>An lamb drank at the river.</p>
+    <h1 id="c3">Chapter Two</h1>
+    <p>Next morning the wolf came back.</p>
+  </body>
+</html>
+"""
+
+
+@pytest.fixture()
+def epub(tmp_path: Path):
+    root = tmp_path / "the-wolf"
+    (root / "OEBPS").mkdir(parents=True)
+    (root / "mimetype").write_text("application/epub+zip", encoding="utf-8")
+    (root / "OEBPS/package.opf").write_text(EPUB_OPF, encoding="utf-8")
+    (root / "OEBPS/navigation.ncx").write_text(EPUB_NCX, encoding="utf-8")
+    (root / "OEBPS/book.xhtml").write_text(EPUB_XHTML, encoding="utf-8")
+    pack = detect(tmp_path)
+    assert pack is not None
+    return pack
+
+
+def test_an_epub_book_is_read_from_its_anchors(epub) -> None:
+    """An anchor names a heading, so a chapter runs to the next one the outline names."""
+    book = extract(epub)
+    assert [c.title for c in book.chapters] == ["Chapter One", "Chapter Two"]
+    assert book.chapters[1].body == "Chapter Two Next morning the wolf came back."
+
+
+def test_an_epub_chapter_with_no_audio_still_has_a_card_line(epub) -> None:
+    book = extract(epub)
+    assert book.chapters[0].text == "Chapter One The wolf went out."
+
+
+def test_an_epub_sub_heading_folds_into_its_chapter(epub) -> None:
+    book = extract(epub)
+    assert book.chapters[0].body == (
+        "Chapter One The wolf went out. He was looking for food. "
+        "A section An lamb drank at the river."
+    )
+
+
+def test_an_epub_pointing_at_a_picture_or_a_missing_file_gives_no_part(
+    epub, caplog
+) -> None:
+    """A contents entry for a picture is not a part; a missing document is reported."""
+    with caplog.at_level("WARNING"):
+        book = extract(epub)
+    assert [c.title for c in book.chapters] == ["Chapter One", "Chapter Two"]
+    assert "missing document: gone.xhtml" in caplog.text
+
+
+def test_an_epub_cut_to_sentences_labels_every_card(epub) -> None:
+    """The sentence level has no headings to name its parts, so it says their words."""
+    book = extract(epub, "sentence")
+    assert [c.text for c in book.chapters] == [
+        "Chapter One The wolf went out.",
+        "He was looking for food.",
+        "A section An lamb drank at the river.",
+        "Chapter Two Next morning the wolf came back.",
+    ]
+    assert [c.title for c in book.chapters] == [f"Part {i}" for i in range(1, 5)]

@@ -271,7 +271,7 @@ def _render(engine: str, phrase: str, lang: Language, voice: str | None, command
         exe = _which("espeak-ng") or _which("espeak")
         voice_name = voice or lang.espeak
         _check(
-            [exe, "-v", voice_name, "-s", str(SPEAKING_RATE), "-w", str(out), phrase],
+            [exe, "-v", voice_name, "-s", str(SPEAKING_RATE), "-w", str(out), "--", phrase],
             "espeak-ng",
             _espeak_env(),
         )
@@ -284,15 +284,18 @@ def _render(engine: str, phrase: str, lang: Language, voice: str | None, command
             args += ["-v", voice]
         elif lang.code != "en":
             log.warning("no %s voice installed for `say`; the default voice will read it", lang.name)
-        _check(["say", *args, "-o", str(out), phrase], "say")
+        _check(["say", *args, "-o", str(out), "--", phrase], "say")
     elif engine == SAPI:
         exe = _which("powershell") or _which("pwsh")
+        # A single-quoted PowerShell string only ends at a doubled quote, and book
+        # text is full of apostrophes.
+        spoken = phrase.replace("'", "''")
         select = f"$s.SelectVoice('{voice}');" if voice else ""
         script = (
             "Add-Type -AssemblyName System.Speech;"
             "$s=[System.Speech.Synthesis.SpeechSynthesizer]::new();"
             f"{select}"
-            f"$s.Rate=0;$s.SetOutputToWaveFile('{out}');$s.Speak('{phrase}');$s.Dispose();"
+            f"$s.Rate=0;$s.SetOutputToWaveFile('{out}');$s.Speak('{spoken}');$s.Dispose();"
         )
         _run_powershell(exe, script)
     elif engine == COMMAND:

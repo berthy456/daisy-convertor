@@ -81,6 +81,46 @@ def test_espeak_lists_voices_for_a_language() -> None:
     assert tts.voices(tts.ESPEAK, LANGUAGES["fr"])
 
 
+@requires_espeak
+@requires_ffmpeg
+def test_espeak_speaks_a_phrase_that_opens_with_a_dash(tmp_path) -> None:
+    # A book's sentence can open with "- ". Read as an option, espeak-ng prints
+    # "invalid option", exits 0 and writes no file at all.
+    dest = tmp_path / "scene.mp3"
+    tts.synthesize("- a list item read aloud", "en", dest, engine=tts.ESPEAK)
+    assert dest.is_file() and dest.stat().st_size > 1000
+
+
+def test_the_phrase_is_kept_away_from_where_an_option_goes(tmp_path, monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_check(argv, label, env=None):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(tts, "_check", fake_check)
+    monkeypatch.setattr(tts, "_which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(tts, "voices", lambda engine, lang: [])
+    for engine, suffix in ((tts.ESPEAK, ".wav"), (tts.SAY, ".aiff")):
+        tts._render(engine, "- a list item", LANGUAGES["en"], None, None, tmp_path / f"raw{suffix}")
+
+    assert [argv[-1] for argv in calls] == ["- a list item"] * 2
+    assert all(argv[-2] == "--" for argv in calls)
+
+
+def test_an_apostrophe_survives_the_windows_speech_script(tmp_path, monkeypatch) -> None:
+    scripts: list[str] = []
+
+    def fake_powershell(exe: str, script: str) -> str:
+        scripts.append(script)
+        return ""
+
+    monkeypatch.setattr(tts, "_which", lambda name: "/usr/bin/pwsh")
+    monkeypatch.setattr(tts, "_run_powershell", fake_powershell)
+    tts._render(tts.SAPI, "l'épée's pupils", LANGUAGES["fr"], None, None, tmp_path / "raw.wav")
+    assert "$s.Speak('l''épée''s pupils');" in scripts[0]
+
+
 def test_a_custom_command_needs_a_template() -> None:
     with pytest.raises(tts.TtsError, match="needs --tts-command"):
         tts.synthesize("Chapter 1", "en", Path("/tmp/x.mp3"), engine=tts.COMMAND)

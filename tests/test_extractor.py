@@ -348,3 +348,56 @@ def test_daisy3_paragraph_level_keeps_every_nav_point(daisy3) -> None:
         "Steps",
         "Chapter Two",
     ]
+
+
+TEXT_ONLY_NCC = """<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head><meta name="dc:title" content="Treaty"/></head>
+  <body>
+    <h1 id="c1"><a href="a.smil#t1">Article 1</a></h1>
+    <h1 id="c2"><a href="b.smil#t3">Article 2</a></h1>
+  </body>
+</html>
+"""
+
+
+def text_smil(*anchors: str) -> str:
+    """A SMIL whose every par names words and no audio: a text-only pack."""
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>\n<smil><body><seq>\n'
+        + "\n".join(f'<par><text src="text.html#{anchor}"/></par>' for anchor in anchors)
+        + "\n</seq></body></smil>\n"
+    )
+
+
+@pytest.fixture()
+def text_only(tmp_path: Path):
+    root = tmp_path / "pack"
+    root.mkdir()
+    (root / "ncc.html").write_text(TEXT_ONLY_NCC, encoding="utf-8")
+    (root / "text.html").write_text(LYRICS, encoding="utf-8")
+    (root / "a.smil").write_text(text_smil("s1", "s2"), encoding="utf-8")
+    (root / "b.smil").write_text(text_smil("s3"), encoding="utf-8")
+    pack = detect(tmp_path)
+    assert pack is not None
+    return pack
+
+
+def test_a_pack_with_no_audio_still_gives_chapters(text_only) -> None:
+    book = extract(text_only)
+    assert [c.title for c in book.chapters] == ["Article 1", "Article 2"]
+    assert [c.segments for c in book.chapters] == [(), ()]
+
+
+def test_a_text_only_chapter_keeps_all_of_its_text(text_only) -> None:
+    book = extract(text_only)
+    assert book.chapters[0].body == "Le loup sortit de la foret. Il cherchait de quoi manger."
+    assert book.chapters[1].body == "Un agneau buvait a la riviere."
+
+
+def test_an_audio_chapter_keeps_its_text_too(marked) -> None:
+    """The body is what a part says, whether or not the pack also recorded it."""
+    book = extract(marked)
+    assert book.chapters[0].body == (
+        "Le loup sortit de la foret. Il cherchait de quoi manger. Un agneau buvait a la riviere."
+    ), "a folded sub-heading folds its words in as well as its audio"

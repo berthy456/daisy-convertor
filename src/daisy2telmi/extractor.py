@@ -31,12 +31,15 @@ class Chapter:
     """One part of the book at the chosen cut level.
 
     `text` is what the pack's own synced text says at the start of the part, which
-    is what a card can show when the part has no title of its own.
+    is what a card can show when the part has no title of its own. `body` is all of
+    that text: a text-only pack has no `segments`, so its audio has to be made from
+    the body instead.
     """
 
     title: str
     segments: tuple[AudioSegment, ...]
     text: str = ""
+    body: str = ""
 
 
 @dataclass(frozen=True)
@@ -65,6 +68,7 @@ class _Draft:
     title: str
     segments: list[AudioSegment] = field(default_factory=list)
     text: str = ""
+    body: str = ""
 
 
 CUT_LEVELS = ("chapter", "paragraph", "sentence")
@@ -262,6 +266,15 @@ def _smil_parts(smil: Path, marks: _Marks) -> tuple[Chapter, ...]:
                     text=words,
                 )
             )
+    if not found and root is not None:
+        # A text-only pack pairs every par with words and no audio at all; the
+        # words are kept so the part's audio can be spoken from them later.
+        for element in root.iter():
+            if _localname(element) != "text":
+                continue
+            words = _text_at(element.get("src") or "", smil.parent, marks)
+            if words:
+                found.append(Chapter(title="", segments=(), text=words))
     if not found:
         found = [Chapter(title="", segments=(segment,)) for segment in _smil_segments(smil, marks)]
     marks.parts[smil] = tuple(found)
@@ -408,16 +421,21 @@ def _group(
             front_matter.extend(_smil_segments(resolved, marks))
             continue
         parts = _smil_parts(resolved, marks)
+        body = " ".join(p.text for p in parts if p.text)
         if level == "sentence":
-            chapters.extend(_Draft(title="", segments=list(p.segments), text=p.text) for p in parts)
+            chapters.extend(
+                _Draft(title="", segments=list(p.segments), text=p.text, body=p.text) for p in parts
+            )
         elif level == "chapter" and entry.level > chapter_level and chapters:
             chapters[-1].segments.extend(_smil_segments(resolved, marks))
+            chapters[-1].body = " ".join(t for t in (chapters[-1].body, body) if t)
         else:
             chapters.append(
                 _Draft(
                     title=entry.title or f"Part {len(chapters) + 1}",
                     segments=list(_smil_segments(resolved, marks)),
                     text=_opening_text(parts),
+                    body=body,
                 )
             )
     return chapters, front_matter
@@ -463,9 +481,10 @@ def extract(pack: DaisyPack, level: str = "chapter") -> Book:
             title=d.title or f"Part {index + 1}",
             segments=tuple(_merge(d.segments)),
             text=d.text,
+            body=d.body,
         )
         for index, d in enumerate(drafts)
-        if d.segments
+        if d.segments or d.body
     )
 
     return Book(

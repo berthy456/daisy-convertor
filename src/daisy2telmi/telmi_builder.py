@@ -260,6 +260,29 @@ def build_card_audio(
     return cards, len(spoken)
 
 
+def narrate(text: str, announce: Announce | None, dest: Path) -> None:
+    """Speak a part of a pack that carries no audio, on the engine the cards use.
+
+    Unlike a card, a part that cannot be spoken leaves the story without a scene,
+    so the failure is raised rather than logged.
+    """
+    voice = announce or Announce()
+    try:
+        tts.narrate(
+            text,
+            voice.language,
+            dest,
+            engine=voice.engine,
+            voice=voice.voice,
+            command=voice.command,
+            python=voice.python,
+            clip=voice.clip,
+            device=voice.device,
+        )
+    except tts.TtsError as exc:
+        raise StoryError(f"this pack has no audio, and its text cannot be spoken: {exc}") from exc
+
+
 def _span(segments: Sequence[AudioSegment]) -> float | None:
     """Seconds the segments cover, or None when the pack left a range open."""
     total = 0.0
@@ -317,7 +340,12 @@ def build_story(
     light-on-dark the other way round and flattened to those four levels.
     """
     if not book.chapters:
-        raise StoryError("the pack contains no chapter with audio")
+        raise StoryError("the pack contains no chapter with audio or text")
+    silent = [c for c in book.chapters if not c.segments and not c.body]
+    if silent:
+        raise StoryError(
+            f"{len(silent)} chapter(s) have neither audio nor text, starting with {silent[0].title!r}"
+        )
 
     audios = out_dir / "audios"
     scene = out_dir / "images"
@@ -327,9 +355,20 @@ def build_story(
     count = len(book.chapters)
     chapter_names = [f"s{k}" for k in range(count)]
     modes = set()
-    for name, index, chapter in zip(chapter_names, range(count), book.chapters):
-        log.info("rendering %s (%d audio clip group(s)) <- %s", name, len(chapter.segments), chapter.title)
-        modes.add(audio.render(chapter.segments, audios / f"{name}.mp3"))
+    spoken = [c for c in book.chapters if not c.segments]
+    if spoken:
+        log.info(
+            "this pack carries no audio: %d part(s) will be spoken from their text",
+            len(spoken),
+        )
+    for name, chapter in zip(chapter_names, book.chapters):
+        if chapter.segments:
+            log.info("rendering %s (%d audio clip group(s)) <- %s", name, len(chapter.segments), chapter.title)
+            modes.add(audio.render(chapter.segments, audios / f"{name}.mp3"))
+        else:
+            log.info("speaking %s (%d characters) <- %s", name, len(chapter.body), chapter.title)
+            narrate(chapter.body, announce, audios / f"{name}.mp3")
+            modes.add("spoken")
 
     cards = [None] * count
     spoken = 0
@@ -355,6 +394,10 @@ def build_story(
         log.info("rendering title.mp3 from the pack's front matter")
         modes.add(audio.render(book.front_matter, title_path))
         title_source = "front matter"
+    elif all(not chapter.segments for chapter in book.chapters):
+        log.info("a spoken story has no recorded title; speaking %r as title.mp3", book.title)
+        narrate(book.title, announce, title_path)
+        title_source = "spoken title"
     else:
         log.info("pack has no front-matter audio; writing 1s of silence as title.mp3")
         audio.render_silence(title_path, 1.0)

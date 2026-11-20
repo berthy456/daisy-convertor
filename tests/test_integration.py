@@ -486,3 +486,60 @@ def test_force_reuses_an_existing_output_folder(tmp_path: Path) -> None:
     audios = story_folder / "audios"
     assert len(list(audios.glob("s*.mp3"))) == EXPECTED_CHAPTERS
     assert len(list(audios.glob("c*.mp3"))) == EXPECTED_CHAPTERS
+
+
+requires_espeak = pytest.mark.skipif(
+    shutil.which("espeak-ng") is None and shutil.which("espeak") is None,
+    reason="no espeak-ng on this machine",
+)
+
+TEXT_ONLY = """<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head><meta name="dc:title" content="Le loup et l agneau"/><meta name="dc:language" content="fr"/></head>
+  <body>
+    <h1 id="c1"><a href="a.smil#t1">Premiere partie</a></h1>
+    <h1 id="c2"><a href="b.smil#t3">Seconde partie</a></h1>
+  </body>
+</html>
+"""
+
+TEXT_WORDS = """<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml"><body>
+  <p id="s1">Le loup sortit de la foret pour chercher de quoi manger.</p>
+  <p id="s2">Il descendit vers la riviere ou l eau etait claire.</p>
+  <p id="s3">Un agneau buvait, et ne le vit pas venir.</p>
+</body></html>
+"""
+
+
+def text_only_smil(*anchors: str) -> str:
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>\n<smil><body><seq>\n'
+        + "\n".join(f'<par><text src="words.html#{anchor}"/></par>' for anchor in anchors)
+        + "\n</seq></body></smil>\n"
+    )
+
+
+@requires_espeak
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_a_pack_with_no_audio_at_is_spoken_from_its_text(tmp_path: Path) -> None:
+    """A text-only DAISY pack has an outline and words, and nothing to hear."""
+    pack = tmp_path / "pack"
+    pack.mkdir()
+    (pack / "ncc.html").write_text(TEXT_ONLY, encoding="utf-8")
+    (pack / "words.html").write_text(TEXT_WORDS, encoding="utf-8")
+    (pack / "a.smil").write_text(text_only_smil("s1", "s2"), encoding="utf-8")
+    (pack / "b.smil").write_text(text_only_smil("s3"), encoding="utf-8")
+
+    out = tmp_path / "out"
+    assert main([str(pack), str(out), "--tts", "espeak"]) == 0
+    story = _story(out)
+
+    scenes = sorted((story / "audios").glob("s*.mp3"))
+    assert len(scenes) == 2
+    for scene in scenes:
+        assert audio.probe(scene) == ("mp3", 44100, "mono")
+        assert audio.duration(scene) > 1.0
+    # A story with no recorded title says its own name rather than play a second of silence.
+    assert audio.duration(story / "title.mp3") > 1.0
+    assert validate_story_dir(story) == []

@@ -225,7 +225,7 @@ def inspect(
             books = {level: extract(pack, level) for level in CUT_LEVELS}
             book = books[cut]
             if not book.chapters:
-                log.error("no chapter with audio found in %s", input_path)
+                log.error("no chapter with audio or text found in %s", input_path)
                 return 2
             log.info("%s: %d part(s) at the %s level", book.title, len(book.chapters), cut)
             for row in chapters.describe_levels(books):
@@ -312,7 +312,7 @@ def convert(
             log.info("pack root: %s", pack.root)
             book = extract(pack, cut)
             if not book.chapters:
-                log.error("no chapter with audio found in %s", input_path)
+                log.error("no chapter with audio or text found in %s", input_path)
                 return 2
             log.info(
                 "found %d part(s) at the %s level: %s",

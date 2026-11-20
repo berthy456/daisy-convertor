@@ -308,3 +308,50 @@ def test_a_spoken_card_lands_on_its_target(tmp_path: Path) -> None:
     # loudnorm needs a few seconds to settle, so a one-word card lands near the
     # target; the point is that espeak's own -25 LUFS is no longer what we hear.
     assert audio.loudness(card) == pytest.approx(-20.3, abs=3.0)
+
+
+def test_narration_is_cut_into_speakable_pieces() -> None:
+    text = " ".join(f"Phrase numero {index}." for index in range(60))
+    pieces = tts._chunks(text)
+    assert len(pieces) > 1
+    assert all(len(piece) <= tts.NARRATION_CHUNK for piece in pieces)
+    assert " ".join(pieces) == text, "chunking loses no word"
+
+
+def test_a_short_passage_stays_in_one_piece() -> None:
+    assert tts._chunks("Une phrase. Une autre.") == ["Une phrase. Une autre."]
+
+
+def test_a_sentence_longer_than_the_limit_is_cut_between_words() -> None:
+    pieces = tts._chunks("word " * 300)
+    assert all(len(piece) <= tts.NARRATION_CHUNK for piece in pieces)
+    assert all(piece.endswith("word") for piece in pieces)
+
+
+def test_narration_keeps_the_level_the_engine_made(monkeypatch, tmp_path: Path) -> None:
+    """A scene is the story itself, so nothing levels it; the cards follow it."""
+    seen: list[object] = []
+    monkeypatch.setattr(tts, "synthesize_all", lambda *args: seen.append(args[-1]))
+    monkeypatch.setattr(tts.audio, "render", lambda segments, dest: "joined")
+    tts.narrate("Une phrase.", "fr", tmp_path / "s0.mp3", engine=tts.ESPEAK)
+    assert seen == [tts.UNLEVELLED]
+
+
+def test_a_part_with_nothing_to_say_is_refused(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(tts.audio, "render", lambda segments, dest: "joined")
+    with pytest.raises(tts.TtsError, match="nothing to speak"):
+        tts.narrate("   ", "fr", tmp_path / "s0.mp3", engine=tts.ESPEAK)
+
+
+@requires_espeak
+@requires_ffmpeg
+def test_narration_joins_its_pieces_into_one_scene(tmp_path: Path) -> None:
+    scene = tmp_path / "s0.mp3"
+    tts.narrate(
+        "Le loup sortit de la foret. Il cherchait de quoi manger. Un agneau buvait a la riviere.",
+        "fr",
+        scene,
+        engine=tts.ESPEAK,
+    )
+    assert audio.probe(scene) == ("mp3", 44100, "mono")
+    assert audio.duration(scene) > 3.0

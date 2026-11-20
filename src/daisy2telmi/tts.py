@@ -12,6 +12,7 @@ import base64
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import audio
+from .extractor import AudioSegment
 from .i18n import Language, language
 
 log = logging.getLogger(__name__)
@@ -43,6 +45,14 @@ SPEAKING_RATE = 150  # words per minute, espeak-ng's unit
 # A card is heard over the narration, so it is levelled instead of left at whatever
 # the engine made: espeak lands near -25 LUFS and `say` near -16 on the same words.
 CARD_TARGET = -20.0
+
+# Spoken narration keeps the level the engine made, as an audio pack's own keeps
+# its own; the cards are levelled against it afterwards. `""` means no chain.
+UNLEVELLED = ""
+
+# Chatterbox drifts from the reference voice after a few hundred words and
+# espeak-ng is slow to answer, so narration is spoken in sentence-sized pieces.
+NARRATION_CHUNK = 400
 
 
 def card_target(story: float | None) -> float:
@@ -395,7 +405,7 @@ def synthesize_all(
     chosen = resolve(engine, lang, python)
     if chosen == OFF:
         raise TtsError("speech is switched off")
-    chain = loudness or card_loudness(None)
+    chain = card_loudness(None) if loudness is None else loudness
     if chosen == CHATTERBOX:
         _speak_batch(list(phrases), lang, list(dests), clip, python, device, chain)
         return
@@ -414,3 +424,56 @@ def synthesize(
 ) -> None:
     """Speak `phrase` into `dest` as an MP3 in the Telmi audio spec."""
     synthesize_all([phrase], lang_code, [dest], engine, voice, command, python)
+
+
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?:;…])\s+")
+
+
+def _chunks(text: str, limit: int = NARRATION_CHUNK) -> list[str]:
+    """Split narration into sentence-sized phrases, none longer than `limit`."""
+    out: list[str] = []
+    current = ""
+    for sentence in (s.strip() for s in _SENTENCE_BREAK.split(text)):
+        while len(sentence) > limit:
+            cut = sentence.rfind(" ", 0, limit)
+            cut = cut if cut > 0 else limit
+            if current:
+                out.append(current)
+                current = ""
+            out.append(sentence[:cut].strip())
+            sentence = sentence[cut:].strip()
+        if not sentence:
+            continue
+        if current and len(current) + 1 + len(sentence) > limit:
+            out.append(current)
+            current = sentence
+        else:
+            current = f"{current} {sentence}".strip()
+    if current:
+        out.append(current)
+    return out
+
+
+def narrate(
+    text: str,
+    lang_code: str,
+    dest: Path,
+    engine: str = AUTO,
+    voice: str | None = None,
+    command: str | None = None,
+    python: str | None = None,
+    clip: str | None = None,
+    device: str = AUTO,
+) -> None:
+    """Speak a whole part of a book into `dest`, chunked and joined back.
+
+    A text-only pack carries no audio at all, so its scenes are made here. The
+    pieces are already at the Telmi spec, so joining them costs no re-encode.
+    """
+    phrases = _chunks(text)
+    if not phrases:
+        raise TtsError("nothing to speak")
+    with tempfile.TemporaryDirectory(prefix="daisy2telmi-narration-") as tmp:
+        parts = [Path(tmp) / f"part{index}.mp3" for index in range(len(phrases))]
+        synthesize_all(phrases, lang_code, parts, engine, voice, command, python, clip, device, UNLEVELLED)
+        audio.render([AudioSegment(part) for part in parts], dest)

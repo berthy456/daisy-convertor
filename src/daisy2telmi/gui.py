@@ -70,6 +70,7 @@ class App:
         # session keeps one folder for them and each lookup replaces the last.
         self._cover_dir: Path | None = None
         self._cover_job = 0
+        self._spin_job = None
         self._pack_title: str | None = None
         self.crop_var = tk.StringVar(value=self.options["cover_crop"])
         self.format_var = tk.StringVar(value=self.options["format"])
@@ -136,6 +137,10 @@ class App:
         cover_row.grid(row=5, column=2, sticky="e", padx=(6, 0))
         self._button(cover_row, "browse_cover", self._pick_cover).pack(side="left")
         self._button(cover_row, "cover_search", self._search_cover).pack(side="left", padx=(4, 0))
+        # A lookup takes a second or two on its own thread, and three services are
+        # asked before the answer says there is nothing: the window has to show it
+        # is waiting. An indeterminate bar is the closest Tk comes to a spinner.
+        self.cover_spin = ttk.Progressbar(cover_row, mode="indeterminate", length=44)
 
         crop_row = ttk.Frame(grid)
         crop_row.grid(row=6, column=0, columnspan=3, sticky="w", pady=(6, 0))
@@ -249,21 +254,41 @@ class App:
         """Offer the cover of the print book the pack was read from.
 
         A 2.02 audio pack carries no picture, but its metadata names the book's
-        ISBN, and Open Library has the cover for it more often than not. The
-        answer arrives on its own thread: a lookup that takes a second should not
-        stop the window from drawing. A cover the user already typed is never
+        ISBN, and three services hold the cover for it between them. The answer
+        arrives on its own thread: a lookup that takes a second should not stop
+        the window from drawing. A cover the user already typed is never
         replaced.
         """
         pack = self._typed_path(self.pack_var)
         self._cover_job += 1
         self._pack_title = None
+        self._spin_off()
         if pack is None or not pack.exists() or self.cover_var.get().strip():
             return
         if self._cover_dir is None:
             self._cover_dir = Path(tempfile.mkdtemp(prefix="daisy2telmi-cover-"))
         # One name per lookup, so two packs picked in a row cannot write over each other.
         dest = self._cover_dir / f"cover-{self._cover_job}.jpg"
+        self._spin_on()
         threading.Thread(target=self._cover_lookup, args=(pack, self._cover_job, dest), daemon=True).start()
+
+    def _spin_on(self) -> None:
+        """Show the bar and keep it turning: Tk only moves an indeterminate bar
+        when something steps it from the event loop."""
+        if self._spin_job is not None:
+            return
+        self.cover_spin.pack(side="left", padx=(6, 0))
+        self._spin_step()
+
+    def _spin_step(self) -> None:
+        self.cover_spin.step(1)
+        self._spin_job = self.root.after(90, self._spin_step)
+
+    def _spin_off(self) -> None:
+        if self._spin_job is not None:
+            self.root.after_cancel(self._spin_job)
+            self._spin_job = None
+        self.cover_spin.pack_forget()
 
     def _cover_lookup(self, pack: Path, job: int, dest: Path) -> None:
         """Read the pack's own metadata off the worker thread, then post the picture back."""
@@ -271,10 +296,11 @@ class App:
             with open_pack(pack) as opened:
                 book = extract(opened, "chapter")
             found = covers.find(book, dest)
+            title = book.title
         except Exception as exc:  # a suggestion is worth nothing here: it must never break the window
             log.warning("no cover lookup for %s: %s", pack.name, exc)
-            return
-        self.events.put(("cover", job, "" if found is None else str(found), book.title))
+            found, title = None, ""
+        self.events.put(("cover", job, "" if found is None else str(found), title))
 
     def _search_cover(self) -> None:
         """Open an image search for the book: the pack has no picture of its own."""
@@ -453,6 +479,7 @@ class App:
         """
         if job != self._cover_job:
             return
+        self._spin_off()
         self._pack_title = title
         if self.cover_var.get().strip():
             return

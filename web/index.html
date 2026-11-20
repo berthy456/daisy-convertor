@@ -73,6 +73,9 @@
             <input id="cover-url" type="url" data-i18n-placeholder="cover_url" />
             <button id="cover-use" type="button" data-i18n="cover_use"></button>
             <button id="cover-clear" type="button" hidden data-i18n="cover_clear"></button>
+            <!-- The lookup asks three services in turn, so it can take a second or
+                 two. The log says what it found; this says it is still working. -->
+            <span id="cover-spinner" class="spinner" aria-hidden="true" hidden></span>
           </div>
           <!-- The frame the chosen player shows, drawn from the cover: drag it to move,
                zoom it to enlarge. What is on screen here is what the story will carry. -->

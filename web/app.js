@@ -22,6 +22,7 @@ const coverUrl = document.getElementById("cover-url");
 const coverUse = document.getElementById("cover-use");
 const coverClear = document.getElementById("cover-clear");
 const coverSearch = document.getElementById("cover-search");
+const coverSpinner = document.getElementById("cover-spinner");
 const cutInputs = [...document.querySelectorAll('input[name="cut"]')];
 const cropBox = document.getElementById("crop-box");
 const cropCanvas = document.getElementById("crop-canvas");
@@ -281,15 +282,21 @@ function clearCover() {
 async function suggestCover() {
   const job = ++coverJob;
   if (cover) return;
-  let bitmap = null;
+  coverSpinner.hidden = false;
+  let found = { bitmap: null };
   try {
-    bitmap = await findCover(extractBook(await packEntries(), cut), location.href);
+    found = await findCover(extractBook(await packEntries(), cut), location.href);
   } catch {
-    bitmap = null;
+    found = { bitmap: null };
   }
-  if (job !== coverJob || cover) return;
-  log(bitmap ? t("cover_found") : t("cover_none"));
-  if (bitmap) setCover(bitmap);
+  if (job !== coverJob) return;
+  // A cover picked while the lookup ran wins over the suggestion, but either way
+  // this lookup is over and the spinner goes away.
+  coverSpinner.hidden = true;
+  if (cover) return;
+  // The service names are its own, so they are not translated, only appended.
+  log(found.bitmap ? `${t("cover_found")} (${found.source})` : t("cover_none"));
+  if (found.bitmap) setCover(found.bitmap);
 }
 
 function partSeconds(chapter) {

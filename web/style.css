@@ -179,6 +179,29 @@ input[type="file"] {
   color: var(--ink);
 }
 
+/* The cover lookup asks three services in turn and runs while the rest of the
+   page is ready, so the page says it is working instead of sitting quiet. */
+.spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+}
+
 .cover-row input[type="url"] {
   flex: 1 1 12rem;
   min-width: 0;

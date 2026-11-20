@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import unicodedata
+from pathlib import Path
 
 import pytest
 
+from daisy2telmi import merlin
 from daisy2telmi.merlin import (
     KIND_AUDIO,
     KIND_FOLDER,
@@ -139,4 +142,44 @@ def test_a_card_file_name_is_the_factory_shape() -> None:
     assert len(name) == 36
     assert name.isascii()
     assert name.count("-") == 4
-    assert len(f"{name}.mp3") <= MAX_NAME
+
+
+def _story(tmp_path) -> Path:
+    """A finished one-part story folder, with its card and its scene audio."""
+    story = tmp_path / "story"
+    (story / "audios").mkdir(parents=True)
+    (story / "images").mkdir()
+    (story / "metadata.json").write_text(json.dumps({"title": "The Wolf", "image": "cover.png"}), encoding="utf-8")
+    (story / "nodes.json").write_text(
+        json.dumps(
+            {
+                "stages": {
+                    "m0": {"image": "m0.png", "audio": "c0.mp3", "ok": {"action": "s0", "index": 0}},
+                    "s0": {"image": None, "audio": "s0.mp3", "ok": {"action": "m", "index": 1}},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    for path in ("audios/c0.mp3", "audios/s0.mp3", "images/m0.png", "cover.png"):
+        (story / path).write_bytes(b"x")
+    return story
+
+
+def test_a_part_begins_with_its_card_and_then_its_scene(tmp_path, monkeypatch) -> None:
+    """The device plays one file per part, so the order inside it is the order heard."""
+    clips: list[list[str]] = []
+
+    def fake_encode(ffmpeg: str, sources, dest: Path) -> None:
+        clips.append([path.name for path in sources])
+        dest.write_bytes(b"mp3")
+
+    monkeypatch.setattr(merlin, "require_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr(merlin, "_encode", fake_encode)
+    monkeypatch.setattr(merlin, "_picture", lambda ffmpeg, source, dest: dest.write_bytes(b"jpg"))
+    merlin.export(_story(tmp_path), tmp_path / "card", ["Chapter One"])
+    assert clips == [["c0.mp3", "s0.mp3"]]
+
+    stems = [p.stem for p in (tmp_path / "card").iterdir() if p.suffix in {".mp3", ".jpg"}]
+    assert len(stems) == 3, "the story's picture, the part's picture, the part's sound"
+    assert all(len(stem) <= MAX_NAME for stem in stems)

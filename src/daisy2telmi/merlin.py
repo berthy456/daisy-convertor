@@ -255,16 +255,16 @@ def _picture(ffmpeg: str, source: Path, dest: Path) -> None:
 
 
 def parts(story_dir: Path) -> list[tuple[dict, dict | None]]:
-    """The story's parts in the order the player walks them, each with the spoken
-    card that introduces it."""
+    """The story's parts in the order the player walks them: each card stage with
+    the scene stage its OK leads to."""
     nodes = json.loads((Path(story_dir) / "nodes.json").read_text(encoding="utf-8"))["stages"]
     found: list[tuple[dict, dict | None]] = []
     for index in range(len(nodes)):
-        stage = nodes.get(f"m{index}")
-        if stage is None:
+        card = nodes.get(f"m{index}")
+        if card is None:
             break
-        card = nodes.get((stage.get("ok") or {}).get("action", ""))
-        found.append((stage, card if card and card.get("audio") else None))
+        scene = nodes.get((card.get("ok") or {}).get("action", ""))
+        found.append((card, scene if scene and scene.get("audio") else None))
     return found
 
 
@@ -300,15 +300,15 @@ def export(story_dir: Path, card_dir: Path, titles: Sequence[str], merge_into: P
     if cover.is_file():
         _picture(ffmpeg, cover, card_dir / f"{book.name}.jpg")
 
-    for (stage, card_stage), title in zip(story_parts, titles):
+    for (card_stage, scene_stage), title in zip(story_parts, titles):
         name = file_name()
         clips = [
             story_dir / "audios" / clip["audio"]
-            for clip in (card_stage, stage)
+            for clip in (card_stage, scene_stage)
             if clip and clip.get("audio")
         ]
         _encode(ffmpeg, clips, card_dir / f"{name}.mp3")
-        if stage.get("image") and (image := story_dir / "images" / stage["image"]).is_file():
+        if card_stage.get("image") and (image := story_dir / "images" / card_stage["image"]).is_file():
             _picture(ffmpeg, image, card_dir / f"{name}.jpg")
         card.audio(book.id, str(title), name).add_time = now
         written.append(name)

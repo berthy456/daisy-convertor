@@ -1,11 +1,12 @@
 import { CUT_LEVELS, cutChoices, extractBook } from "./daisy.js";
-import { CROP_FOCUS, MAX_ZOOM, cropRect, loadCoverFile, loadCoverUrl, screen, searchUrl } from "./cover.js";
+import { CROP_FOCUS, MAX_ZOOM, cropRect, loadCoverFile, loadCoverUrl, screen, searchUrl, squareJpeg } from "./cover.js";
 import { findCover } from "./covers.js";
 import { buildStoryZip } from "./convert.js";
 import { LANGUAGES, NAMES, apply, pickLanguage, text } from "./i18n.js";
 import { buildStudioZip } from "./lunii.js";
+import { buildMerlinFiles } from "./merlin.js";
 import { cardAudio } from "./voices.js";
-import { readZip } from "./zip.js";
+import { readZip, writeZip } from "./zip.js";
 
 const drop = document.getElementById("drop");
 const picker = document.getElementById("picker");
@@ -420,11 +421,19 @@ async function saveStory() {
       },
     );
 
-    // One archive, for the player chosen: a Lunii takes the STUdio form of the
-    // same story, the Flam launcher imports the Telmi one.
-    const studio = format === "lunii";
-    const name = `${story.dirName}${studio ? "-lunii" : ""}.zip`;
-    const bytes = studio ? await buildStudioZip(story, night) : story.zip;
+    // One archive, for the player chosen: a Lunii takes the STUdio form of the same
+    // story, the Flam launcher imports the Telmi one, and a Merlin card holds no
+    // story graph at all — only the files and the playlist that names them.
+    let name = `${story.dirName}.zip`;
+    let bytes = story.zip;
+    if (format === "lunii") {
+      name = `${story.dirName}-lunii.zip`;
+      bytes = await buildStudioZip(story, night);
+    } else if (format === "merlin") {
+      name = `${story.dirName}_merlin.zip`;
+      bytes = await writeZip(await buildMerlinFiles(story, { picture: squareJpeg }));
+      log(t("log_merlin_beta"));
+    }
 
     showSummary(story);
     downloadLink.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));

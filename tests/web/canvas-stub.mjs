@@ -49,12 +49,18 @@ export class StubCanvas {
     };
   }
 
-  convertToBlob() {
-    return Promise.resolve(new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: "image/png" }));
+  convertToBlob({ type = "image/png" } = {}) {
+    // Enough of a real header for a test to tell the two encodings apart.
+    const magic = type === "image/jpeg" ? [0xff, 0xd8, 0xff, 0xe0] : [0x89, 0x50, 0x4e, 0x47];
+    return Promise.resolve(new Blob([new Uint8Array(magic)], { type }));
   }
 }
+
+// The size a decoded picture reports, so a test can say what it is cropping.
+export const BITMAP = { width: 600, height: 400 };
 
 export function installCanvasStub() {
   globalThis.OffscreenCanvas = StubCanvas;
   globalThis.document = globalThis.document ?? { createElement: (tag) => (tag === "canvas" ? new StubCanvas(0, 0) : null) };
+  globalThis.createImageBitmap = () => Promise.resolve(BITMAP);
 }

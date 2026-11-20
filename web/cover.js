@@ -7,6 +7,9 @@
 
 export const IMAGE_SIZE = [640, 480];
 export const COVER_SIZE = [512, 512];
+// The Merlin card's picture: it has no screen, only a 128 px square by each of
+// its menu entries.
+export const MERLIN_PICTURE = 128;
 export const CARD_MARGIN = 24;
 export const CARD_LINES = 3;
 export const CARD_WORDS = 20;
@@ -15,6 +18,9 @@ export const CARD_WORDS = 20;
 // a cover cropped for a 320x240 Lunii keeps the band that Lunii displays.
 const SCREENS = {
   telmi: [IMAGE_SIZE, COVER_SIZE],
+  // The Merlin has no screen: its card is built from a Telmi story, so the pictures
+  // are drawn at Telmi's sizes and cut to 128 px squares on the way out.
+  merlin: [IMAGE_SIZE, COVER_SIZE],
   lunii: [
     [320, 240],
     [320, 240],
@@ -118,12 +124,14 @@ function surface(width, height) {
   return canvas;
 }
 
-async function toPng(canvas) {
+async function toBytes(canvas, type, quality) {
   const blob = canvas.convertToBlob
-    ? await canvas.convertToBlob({ type: "image/png" })
-    : await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    ? await canvas.convertToBlob({ type, quality })
+    : await new Promise((resolve) => canvas.toBlob(resolve, type, quality));
   return new Uint8Array(await blob.arrayBuffer());
 }
+
+const toPng = (canvas) => toBytes(canvas, "image/png");
 
 export const CROP_MODES = ["top", "center", "bottom"];
 
@@ -268,4 +276,30 @@ export async function coverPng(cover, width, height, view = {}, style = "colour"
   drawCover(ctx, cover, 0, 0, width, height, view);
   if (style === "bw") toGreys(ctx, width, height);
   return toPng(canvas);
+}
+
+/**
+ * A card picture: the middle square of the source, at `size`, as a JPEG.
+ *
+ * The story's own PNGs go in, not the cover: a card shows the picture that was
+ * already cropped for this player. ffmpeg's crop filter centres by default, so
+ * this cuts the same square the desktop build cuts.
+ */
+export async function squareJpeg(bytes, size = MERLIN_PICTURE) {
+  const image = await createImageBitmap(new Blob([bytes]));
+  const side = Math.min(image.width, image.height);
+  const canvas = surface(size, size);
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(
+    image,
+    Math.floor((image.width - side) / 2),
+    Math.floor((image.height - side) / 2),
+    side,
+    side,
+    0,
+    0,
+    size,
+    size,
+  );
+  return toBytes(canvas, "image/jpeg", 0.92);
 }

@@ -144,6 +144,15 @@ def test_a_card_file_name_is_the_factory_shape() -> None:
     assert name.count("-") == 4
 
 
+def test_the_web_page_packs_the_same_records_as_this_one() -> None:
+    """tests/web/merlin.test.mjs reads this file, so neither build drifts unnoticed."""
+    cases = json.loads((Path(__file__).parent / "web" / "fixtures" / "merlin-records.json").read_text(encoding="utf-8"))
+    assert cases, "the fixture holds records to compare"
+    for what, entry in cases.items():
+        fields = {key: value for key, value in entry.items() if key != "record"}
+        assert pack(Item(**fields)).hex() == entry["record"], what
+
+
 def _story(tmp_path) -> Path:
     """A finished one-part story folder, with its card and its scene audio."""
     story = tmp_path / "story"

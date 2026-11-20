@@ -1,10 +1,11 @@
-// DAISY 2.02 reader over zip entries: find the pack, read the outline, resolve each
-// chapter's audio. Port of src/daisy2telmi/{detector,extractor}.py.
+// DAISY 2.02, DAISY 3 and EPUB reader over zip entries: find the pack, read the
+// outline, resolve each chapter's audio. Port of src/daisy2telmi/{detector,extractor}.py.
 
 import { parseXml, parseClock } from "./xml.js";
 
 const HEADING_LEVELS = { h1: 1, h2: 2, h3: 3, h4: 4, h5: 5, h6: 6 };
 const MERGE_EPSILON = 0.005;
+const DOCUMENT_SUFFIXES = [".htm", ".html", ".xhtml"];
 
 export function normalizePath(path) {
   const out = [];
@@ -40,6 +41,32 @@ function textOf(element) {
   return out.trim();
 }
 
+/** A tag without its namespace prefix. `dc:Title` and `dc:title` are the same tag. */
+function localName(tag) {
+  const at = tag.indexOf(":");
+  return at < 0 ? tag : tag.slice(at + 1);
+}
+
+/** Every descendant with this local name, whatever case or prefix it was written with. */
+function named(root, name) {
+  const found = [];
+  const walk = (node) => {
+    for (const child of node.children) {
+      if (child.tagName !== "#text" && localName(child.tagName).toLowerCase() === name) found.push(child);
+      walk(child);
+    }
+  };
+  walk(root);
+  return found;
+}
+
+function childNamed(node, name) {
+  return (
+    node.children.find((child) => child.tagName !== "#text" && localName(child.tagName).toLowerCase() === name) ??
+    null
+  );
+}
+
 /** Locate the pack root: the shallowest folder holding ncc.html or a .ncx. */
 export function findPack(entries) {
   const byDir = new Map();
@@ -57,7 +84,11 @@ export function findPack(entries) {
     const ncc = files.find((f) => baseName(f) === "ncc.html");
     const ncx = files.filter((f) => baseName(f).endsWith(".ncx")).sort((a, b) => a.name.localeCompare(b.name))[0];
     if (!ncc && !ncx) continue;
-    const opf = files.find((f) => f.name.split("/").pop().toLowerCase() === "package.opf");
+    // A 2.02 pack names its package document `package.opf`; a 3.x one and an EPUB
+    // name it after the book, so any .opf beside the outline will do.
+    const opf =
+      files.find((f) => baseName(f) === "package.opf") ??
+      files.filter((f) => baseName(f).endsWith(".opf")).sort((a, b) => a.name.localeCompare(b.name))[0];
     return { root: dir, toc: ncc ?? ncx, opf, isNcc: Boolean(ncc) };
   }
   return null;
@@ -93,6 +124,15 @@ function npt(value) {
   return Number.isFinite(seconds) ? seconds : null;
 }
 
+/**
+ * A SMIL `<audio>`'s trim points. DAISY 2.02 writes them `clip-begin`, DAISY 3
+ * writes `clipBegin`; reading only one spelling leaves a 3.x clip untrimmed,
+ * which repeats its whole file.
+ */
+function clipOf(element) {
+  return { begin: npt(element.get("clip-begin") ?? element.get("clipBegin")), end: npt(element.get("clip-end") ?? element.get("clipEnd")) };
+}
+
 function merge(segments) {
   const out = [];
   for (const segment of segments) {
@@ -107,6 +147,92 @@ function merge(segments) {
     else out.push(segment);
   }
   return out;
+}
+
+/** An href resolved against a folder, when the pack actually carries that file. */
+function resolveTarget(href, base, byName) {
+  const raw = decodeURIComponent(href ?? "").split("#")[0].trim();
+  if (!raw) return null;
+  const name = normalizePath(`${base}/${raw}`);
+  return byName.has(name) ? name : null;
+}
+
+/**
+ * Turn an EPUB's `content src`, such as `book.xhtml#ch1`, into a document and an
+ * anchor. An EPUB has no SMIL at all: its whole book is one or a few XHTML files,
+ * and its table of contents points into them.
+ */
+function splitDocument(href) {
+  const raw = decodeURIComponent(href ?? "");
+  const hash = raw.indexOf("#");
+  const filePart = (hash < 0 ? raw : raw.slice(0, hash)).trim();
+  const anchor = hash < 0 ? "" : raw.slice(hash + 1);
+  const suffix = `.${(filePart.split(".").pop() ?? "").toLowerCase()}`;
+  if (!filePart || !DOCUMENT_SUFFIXES.includes(suffix)) return null;
+  return { path: filePart, anchor };
+}
+
+/** Every anchor the outline names, grouped by the file it sits in. */
+function anchorsByDocument(entries) {
+  const found = new Map();
+  for (const entry of entries) {
+    const document = splitDocument(entry.target);
+    if (!document || !document.anchor) continue;
+    if (!found.has(document.path)) found.set(document.path, new Set());
+    found.get(document.path).add(document.anchor);
+  }
+  return found;
+}
+
+/**
+ * The words of a document that belong to each anchor: its own, up to the next.
+ * The outline of an EPUB names a heading inside the file rather than a range, so
+ * a chapter is everything the reader reaches before the next named heading. Text
+ * is walked in document order and handed to the last anchor passed, which keeps a
+ * section's nested markup with the section that opened it.
+ */
+function documentTexts(root, anchors) {
+  const words = new Map();
+  let current = null;
+  const walk = (node) => {
+    for (const child of node.children) {
+      if (child.tagName === "#text") {
+        if (current !== null) words.get(current).push(child.value);
+        continue;
+      }
+      const anchor = child.get("id");
+      if (anchors.has(anchor)) {
+        current = anchor;
+        if (!words.has(anchor)) words.set(anchor, []);
+      }
+      walk(child);
+    }
+  };
+  walk(root);
+  const out = new Map();
+  for (const [anchor, parts] of words) out.set(anchor, parts.join(" ").replace(/\s+/g, " ").trim());
+  return out;
+}
+
+const SENTENCES = /(?<=[.!?…])\s+/;
+
+const sentences = (text) => text.split(SENTENCES).map((s) => s.trim()).filter(Boolean);
+
+/** The line a card shows for a part that has no synced text of its own. */
+const firstWords = (body) => sentences(body).find((s) => s.length >= 5) ?? "";
+
+/**
+ * The outline level that holds the book's chapters. The shallowest is usually it,
+ * but a DAISY 3 outline often has one `h1` wrapping everything, which would give
+ * a single part as long as the book; the level below it holds the real chapters.
+ */
+function chapterLevelOf(entries) {
+  const body = entries.filter((e) => !e.frontMatter);
+  const levels = [...new Set(body.map((e) => e.level))].sort((a, b) => a - b);
+  for (const level of levels) {
+    if (body.filter((e) => e.level === level).length > 1) return level;
+  }
+  return levels[0] ?? 1;
 }
 
 function metaValues(root) {
@@ -144,18 +270,18 @@ export function cutChoices(parts) {
   return available;
 }
 
-/** Entries as [{name, data}] from a DAISY 2.02 pack; returns the book structure. */
+/** Entries as [{name, data}] from a DAISY pack; returns the book structure. */
 export function extractBook(entries, level = "chapter") {
   if (!CUT_LEVELS.includes(level)) throw new DaisyError(`unknown cut level: ${level}`);
   const pack = findPack(entries);
   if (!pack) {
     if (findTelmiDir(entries)) {
       throw new DaisyError(
-        "this is already a Telmi story (metadata.json, nodes.json, title.mp3, title.png), not a DAISY 2.02 pack. " +
+        "this is already a Telmi story (metadata.json, nodes.json, title.mp3, title.png), not a DAISY pack. " +
           "A Telmi zip goes straight onto the story teller; convert the original DAISY pack instead."
       );
     }
-    throw new DaisyError("no DAISY 2.02 table of contents (ncc.html or *.ncx) found");
+    throw new DaisyError("no table of contents (ncc.html or *.ncx) found");
   }
 
   const decoder = new TextDecoder("utf-8");
@@ -175,7 +301,7 @@ export function extractBook(entries, level = "chapter") {
     const opf = parse(normalizePath(pack.opf.name));
     if (opf) {
       for (const tag of ["title", "language", "creator", "publisher", "identifier", "description", "source"]) {
-        const found = opf.find(tag)[0];
+        const found = named(opf, tag)[0];
         const key = `dc:${tag}`;
         if (found && !metadata.has(key)) metadata.set(key, textOf(found));
       }
@@ -198,7 +324,7 @@ export function extractBook(entries, level = "chapter") {
       for (const audio of root.find("audio")) {
         const target = audioOf(audio, smilName);
         if (!target) continue;
-        found.push({ src: target, begin: npt(audio.get("clip-begin")), end: npt(audio.get("clip-end")) });
+        found.push({ src: target, ...clipOf(audio) });
       }
     }
     const result = merge(found);
@@ -242,9 +368,17 @@ export function extractBook(entries, level = "chapter") {
         if (!target) continue;
         const words = par.find("text")[0];
         found.push({
-          segments: [{ src: target, begin: npt(audio.get("clip-begin")), end: npt(audio.get("clip-end")) }],
+          segments: [{ src: target, ...clipOf(audio) }],
           text: textAt(words ? words.get("src") ?? "" : "", dirName(smilName)),
         });
+      }
+    }
+    if (!found.length && root) {
+      // A text-only pack pairs every par with words and no audio at all; the words
+      // are kept so the part's audio can be made from them elsewhere.
+      for (const element of named(root, "text")) {
+        const words = textAt(element.get("src") ?? "", dirName(smilName));
+        if (words) found.push({ segments: [], text: words });
       }
     }
     const result = found.length
@@ -257,30 +391,76 @@ export function extractBook(entries, level = "chapter") {
   // The first words read out in a part; a section number read aloud first is not worth a card.
   const openingText = (marks) => marks.find((mark) => mark.text.length >= 5)?.text ?? marks[0]?.text ?? "";
 
-  const chapterLevel = Math.min(...entries_.filter((e) => !e.frontMatter).map((e) => e.level), 6);
+  const chapterLevel = chapterLevelOf(entries_);
+  const documents = anchorsByDocument(entries_);
+  const pageCache = new Map();
   const chapters = [];
   let frontMatter = [];
 
+  const place = (draft) => {
+    // Open a part, or add it to the one before at a level below the chapters.
+    if (level === "chapter" && draft.level > chapterLevel && chapters.length) {
+      const previous = chapters[chapters.length - 1];
+      previous.segments.push(...draft.segments);
+      previous.body = [previous.body, draft.body].filter(Boolean).join(" ");
+    } else {
+      chapters.push(draft);
+    }
+  };
+
   for (const entry of entries_) {
     const filePart = decodeURIComponent(entry.target.split("#")[0]).trim();
-    if (!filePart || !filePart.toLowerCase().endsWith(".smil")) continue;
-    const smilName = normalizePath(`${dirName(pack.toc.name)}/${filePart}`);
-    if (!byName.has(smilName)) continue;
-    const segments = smilSegments(smilName);
-    if (entry.frontMatter) {
-      frontMatter = frontMatter.concat(segments);
-    } else if (level === "sentence") {
-      for (const mark of smilMarks(smilName)) chapters.push({ title: "", segments: [...mark.segments], text: mark.text });
-    } else if (level === "chapter" && entry.level > chapterLevel && chapters.length > 0) {
-      chapters[chapters.length - 1].segments.push(...segments);
-    } else {
-      chapters.push({
+    const base = dirName(pack.toc.name);
+    if (filePart && filePart.toLowerCase().endsWith(".smil")) {
+      const smilName = normalizePath(`${base}/${filePart}`);
+      if (!byName.has(smilName)) continue;
+      const segments = smilSegments(smilName);
+      if (entry.frontMatter) {
+        frontMatter = frontMatter.concat(segments);
+        continue;
+      }
+      const marks = smilMarks(smilName);
+      if (level === "sentence") {
+        for (const mark of marks) {
+          chapters.push({ title: "", segments: [...mark.segments], text: mark.text, body: mark.text, level: entry.level });
+        }
+        continue;
+      }
+      place({
         title: entry.title || `Part ${chapters.length + 1}`,
         segments: [...segments],
-        text: openingText(smilMarks(smilName)),
+        text: openingText(marks),
+        body: marks.map((mark) => mark.text).filter(Boolean).join(" "),
+        level: entry.level,
       });
+      continue;
     }
+
+    const document = splitDocument(entry.target);
+    if (!document) continue;
+    const name = normalizePath(`${base}/${document.path}`);
+    if (!byName.has(name)) continue;
+    if (!pageCache.has(name)) {
+      const root = parse(name);
+      pageCache.set(name, root ? documentTexts(root, documents.get(document.path)) : new Map());
+    }
+    const body = pageCache.get(name).get(document.anchor) ?? "";
+    if (level === "sentence") {
+      for (const sentence of sentences(body)) {
+        chapters.push({ title: "", segments: [], text: sentence, body: sentence, level: entry.level });
+      }
+      continue;
+    }
+    place({
+      title: entry.title || `Part ${chapters.length + 1}`,
+      segments: [],
+      text: firstWords(body),
+      body,
+      level: entry.level,
+    });
   }
+
+  if (!frontMatter.length && !pack.isNcc) frontMatter = ncxFrontMatter(tocRoot, pack.toc.name, byName);
 
   return {
     title: metadata.get("dc:title") || pack.root.split("/").pop() || "Untitled",
@@ -293,8 +473,15 @@ export function extractBook(entries, level = "chapter") {
     source: metadata.get("dc:source") || null,
     totalTime: parseClock(metadata.get("ncc:totaltime")),
     chapters: chapters
-      .filter((c) => c.segments.length)
-      .map((c, index) => ({ title: c.title || `Part ${index + 1}`, text: c.text ?? "", segments: merge(c.segments) })),
+      .filter((c) => c.segments.length || c.body)
+      .map((c, index) => ({
+        title: c.title || `Part ${index + 1}`,
+        text: c.text ?? "",
+        // What a part says, whether or not the pack also recorded it: a pack with
+        // no audio has only this, which this page cannot turn into sound.
+        body: c.body ?? "",
+        segments: merge(c.segments),
+      })),
     frontMatter: merge(frontMatter),
   };
 }
@@ -323,18 +510,50 @@ function nccEntries(root) {
   return out;
 }
 
-function ncxEntries(root, level = 1) {
+/**
+ * The outline of a DAISY 3 pack or an EPUB. Both spell the element `navPoint`
+ * and put the label inside a `navLabel`, and both say how deep a point sits with
+ * `class="h1".."h6"` rather than with an attribute.
+ */
+function ncxEntries(root) {
+  const navMap = childNamed(root, "navmap");
+  return navMap ? ncxPoints(navMap) : [];
+}
+
+function ncxPoints(navMap, level = 1) {
   const out = [];
-  for (const navPoint of root.children) {
-    if (navPoint.tagName.toLowerCase() !== "navpoint") continue;
+  for (const navPoint of navMap.children) {
+    if (localName(navPoint.tagName).toLowerCase() !== "navpoint") continue;
     const declared = navPoint.get("playLevel") ?? navPoint.get("level");
     const current = declared && /^\d+$/.test(declared) ? Number(declared) : level;
-    const text = navPoint.children.find((c) => c.tagName.toLowerCase() === "text");
-    const content = navPoint.children.find((c) => c.tagName.toLowerCase() === "content");
+    const label = childNamed(navPoint, "navlabel") ?? navPoint;
+    const text = childNamed(label, "text") ?? label;
+    const content = childNamed(navPoint, "content");
     const title = text ? (text.get("value") ?? textOf(text)).trim() : "";
     const target = content ? content.get("src") ?? "" : "";
-    if (target) out.push({ level: current, title, target, frontMatter: false });
-    out.push(...ncxEntries(navPoint, current + 1));
+    if (target) {
+      out.push({
+        level: HEADING_LEVELS[(navPoint.get("class") ?? "").toLowerCase()] ?? current,
+        title,
+        target,
+        frontMatter: false,
+      });
+    }
+    out.push(...ncxPoints(navPoint, current + 1));
   }
   return out;
+}
+
+/** The spoken title and author a DAISY 3 NCX keeps in its own header. */
+function ncxFrontMatter(root, tocName, byName) {
+  const found = [];
+  for (const header of [childNamed(root, "doctitle"), childNamed(root, "docauthor")]) {
+    if (!header) continue;
+    for (const audio of header.children) {
+      if (localName(audio.tagName).toLowerCase() !== "audio") continue;
+      const target = resolveTarget(audio.get("src"), dirName(tocName), byName);
+      if (target) found.push({ src: target, ...clipOf(audio) });
+    }
+  }
+  return found;
 }

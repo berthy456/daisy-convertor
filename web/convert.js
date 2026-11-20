@@ -45,7 +45,16 @@ function firstSeconds(segments, bytesOf, seconds) {
 export async function buildStoryFiles(entries, silentMp3, onProgress = () => {}, options = {}) {
   const cut = options.cut ?? "chapter";
   const book = extractBook(entries, cut);
-  if (!book.chapters.length) throw new Error("no chapter with audio found in this pack");
+  if (!book.chapters.length) throw new Error("no chapter with audio or text found in this pack");
+  // A text-only DAISY pack or an EPUB has words and no sound. This page cuts audio
+  // out of a pack; it cannot make any, so it says so rather than build a silent story.
+  const silent = book.chapters.filter((chapter) => !chapter.segments.length);
+  if (silent.length) {
+    throw new Error(
+      `${silent.length} part(s) of this pack have no audio, starting with "${silent[0].title}". ` +
+        "This page only cuts the audio a pack already carries; the desktop app speaks their text instead.",
+    );
+  }
   const drop = new Set(options.drop ?? []);
   if (drop.size) book.chapters = book.chapters.filter((_, k) => !drop.has(k + 1));
 

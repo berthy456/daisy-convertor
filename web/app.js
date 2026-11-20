@@ -512,7 +512,7 @@ drop.addEventListener("drop", async (event) => {
   drop.classList.remove("over");
   const file = event.dataTransfer.files[0];
   if (!file) return;
-  if (!file.name.toLowerCase().endsWith(".zip")) {
+  if (!/\.(zip|epub)$/.test(file.name.toLowerCase())) {
     log(t("log_drop_zip"));
     return;
   }

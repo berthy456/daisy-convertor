@@ -169,7 +169,8 @@ def make_chatterbox_env() -> str:
     it externally managed and ship no pip module at all, so `python3 -m pip install`
     there fails before it starts. A venv of our own needs no root and leaves the
     system alone. Debian's own venv cannot bootstrap pip either, so pip is fetched
-    when `ensurepip` is missing.
+    when `ensurepip` is missing; where it cannot be fetched, an environment that
+    reads the system's packages runs the machine's own pip instead.
     """
     env = settings.chatterbox_env()
     exe = chatterbox_python(env)
@@ -184,32 +185,71 @@ def make_chatterbox_env() -> str:
     env.parent.mkdir(parents=True, exist_ok=True)
     log.info("making a Chatterbox environment in %s", env)
     result = subprocess.run([base, "-m", "venv", str(env)], capture_output=True, text=True)
+    if result.returncode == 0:
+        return exe
+    # Half an environment is worse than none: the retry has to start clean.
+    shutil.rmtree(env, ignore_errors=True)
+    log.info("this Python cannot make an environment with pip: %s", _reason(result))
+    result = subprocess.run(
+        [base, "-m", "venv", "--without-pip", str(env)], capture_output=True, text=True
+    )
     if result.returncode:
-        # Half an environment is worse than none: the retry has to start clean.
-        shutil.rmtree(env, ignore_errors=True)
-        result = subprocess.run(
-            [base, "-m", "venv", "--without-pip", str(env)], capture_output=True, text=True
-        )
-        if result.returncode:
-            detail = (result.stderr or result.stdout).strip().splitlines()
-            raise TtsError(f"could not make a Python environment: {detail[-1] if detail else 'venv failed'}")
+        raise TtsError(f"could not make a Python environment: {_reason(result)}")
+    try:
         _bootstrap_pip(exe)
+    except TtsError as exc:
+        # pip could not be fetched, so the only pip left is the machine's own. An
+        # environment that reads the system's packages can run it, and pip still
+        # installs inside the environment.
+        log.info("%s: trying the machine's own pip", exc)
+        if not _shared_pip(base, env):
+            raise TtsError(
+                "no pip for the Chatterbox environment: install Python's venv package "
+                "(on Debian: apt install python3-venv), or set a Chatterbox Python in the options"
+            ) from exc
     return exe
+
+
+def _reason(result: subprocess.CompletedProcess) -> str:
+    """What a failed command said, as one line: its own words, from the end."""
+    text = " ".join((result.stderr or result.stdout or "").split())
+    return text[-200:] if text else "no reason given"
+
+
+def _shared_pip(base: str, env: Path) -> bool:
+    """Rebuild `env` reading the system's packages, if that gives it a working pip."""
+    shutil.rmtree(env, ignore_errors=True)
+    result = subprocess.run(
+        [base, "-m", "venv", "--without-pip", "--system-site-packages", str(env)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode:
+        return False
+    probe = subprocess.run(
+        [chatterbox_python(env), "-m", "pip", "--version"], capture_output=True, text=True
+    )
+    if probe.returncode:
+        return False
+    log.info("pip comes from the machine's Python: %s", _reason(probe))
+    return True
 
 
 def _bootstrap_pip(exe: str) -> None:
     """Give an environment made with `--without-pip` its pip."""
     log.info("this Python has no ensurepip: fetching pip")
-    with urllib.request.urlopen(GET_PIP, timeout=60) as response:
-        script = Path(tempfile.mkstemp(prefix="get-pip-", suffix=".py")[1])
-        script.write_bytes(response.read())
     try:
-        result = subprocess.run([exe, str(script), "-q"], capture_output=True, text=True)
+        with urllib.request.urlopen(GET_PIP, timeout=60) as response:
+            script = Path(tempfile.mkstemp(prefix="get-pip-", suffix=".py")[1])
+            script.write_bytes(response.read())
+    except OSError as exc:
+        raise TtsError(f"could not reach {GET_PIP}: {exc}") from exc
+    try:
+        result = subprocess.run([exe, str(script)], capture_output=True, text=True)
     finally:
         script.unlink(missing_ok=True)
     if result.returncode:
-        detail = (result.stderr or result.stdout).strip().splitlines()
-        raise TtsError(f"could not install pip into the Chatterbox environment: {detail[-1] if detail else 'failed'}")
+        raise TtsError(f"could not install pip into the Chatterbox environment: {_reason(result)}")
 
 
 def install_chatterbox(python: str | None = None) -> str:

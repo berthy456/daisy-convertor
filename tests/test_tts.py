@@ -234,6 +234,80 @@ def test_an_environment_whose_python_lacks_ensurepip_is_given_its_pip(tmp_path, 
     assert env.exists() is False or True, "the half-made environment was cleared before the retry"
 
 
+def test_an_environment_falls_back_to_the_machines_own_pip(tmp_path, monkeypatch) -> None:
+    """No pip to fetch from the network: the machine's own pip can still fill the environment."""
+    started: list[list[str]] = []
+    env = tmp_path / "chatterbox"
+
+    def fake_run(argv, **kwargs):
+        started.append(argv)
+        if argv[1:3] == ["-m", "venv"]:
+            ok = "--without-pip" in argv or "--system-site-packages" in argv
+            return subprocess.CompletedProcess(argv, 0 if ok else 1, "", "ensurepip is not available")
+        if argv[1].endswith(".py"):
+            return subprocess.CompletedProcess(argv, 1, "", "ERROR: No matching distribution found for pip")
+        return subprocess.CompletedProcess(argv, 0, "pip 25.1.1 from /usr/lib/python3/dist-packages/pip", "")
+
+    class FakeDownload:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def read(self) -> bytes:
+            return b"#!/usr/bin/env python\n"
+
+    monkeypatch.setattr(tts.subprocess, "run", fake_run)
+    monkeypatch.setattr(tts.urllib.request, "urlopen", lambda *a, **k: FakeDownload())
+    monkeypatch.setattr(tts.settings, "chatterbox_env", lambda: env)
+    monkeypatch.setattr(tts, "_python", lambda python=None: "/usr/bin/python3")
+
+    exe = tts.make_chatterbox_env()
+
+    assert exe == str(env / "bin/python")
+    assert started[-2] == [
+        "/usr/bin/python3",
+        "-m",
+        "venv",
+        "--without-pip",
+        "--system-site-packages",
+        str(env),
+    ]
+    assert started[-1] == [exe, "-m", "pip", "--version"]
+
+
+def test_no_pip_at_all_names_the_package_to_install(tmp_path, monkeypatch) -> None:
+    env = tmp_path / "chatterbox"
+
+    def fake_run(argv, **kwargs):
+        if argv[1:3] == ["-m", "venv"]:
+            ok = "--without-pip" in argv
+            return subprocess.CompletedProcess(argv, 0 if ok else 1, "", "ensurepip is not available")
+        if argv[1].endswith(".py"):
+            return subprocess.CompletedProcess(argv, 1, "", "ERROR: No matching distribution found for pip")
+        return subprocess.CompletedProcess(argv, 1, "", "No module named pip")
+
+    class FakeDownload:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def read(self) -> bytes:
+            return b"#!/usr/bin/env python\n"
+
+    monkeypatch.setattr(tts.subprocess, "run", fake_run)
+    monkeypatch.setattr(tts.urllib.request, "urlopen", lambda *a, **k: FakeDownload())
+    monkeypatch.setattr(tts.settings, "chatterbox_env", lambda: env)
+    monkeypatch.setattr(tts, "_python", lambda python=None: "/usr/bin/python3")
+
+    with pytest.raises(tts.TtsError) as raised:
+        tts.make_chatterbox_env()
+    assert "python3-venv" in str(raised.value)
+
+
 def test_a_second_install_reuses_the_environment(tmp_path, monkeypatch) -> None:
     env = tmp_path / "chatterbox"
     exe = tts.chatterbox_python(env)

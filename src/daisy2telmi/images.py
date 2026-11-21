@@ -368,7 +368,28 @@ CROP_MODES = ("top", "center", "bottom")
 # the frame be dragged and enlarged anywhere inside these bounds, so the desktop
 # reads the same two numbers rather than only the three bands.
 CROP_FOCUS = {"top": (0.5, 0.0), "center": (0.5, 0.5), "bottom": (0.5, 1.0)}
+# The slider's ends are the two things a listener can see: the whole cover with the
+# frame's extra room filled by bands, and the cover filling the frame.
+MIN_ZOOM = 0.0
 MAX_ZOOM = 4.0
+
+
+def clamp_zoom(value: float) -> float:
+    return min(max(MIN_ZOOM, float(value)), MAX_ZOOM)
+
+
+def _rgb(value: tuple[int, int, int] | int) -> tuple[int, int, int]:
+    """The black-and-white palette holds its greys as one number; ffmpeg and Tk want three."""
+    return value if isinstance(value, tuple) else (value, value, value)
+
+
+def _hex(rgb: tuple[int, int, int] | int) -> str:
+    return "0x%02x%02x%02x" % _rgb(rgb)
+
+
+def band_colour(style: str) -> str:
+    """The colour a card fills the frame's empty room with, spelled as Tk wants it."""
+    return "#%02x%02x%02x" % _rgb(_palette(style)["band"])
 
 
 def _grey_chain(negative: bool = False) -> str:
@@ -390,24 +411,35 @@ def crop_view(mode: str = "center", zoom: float = 1.0, focus: Sequence[float] | 
     """The one picture of the crop: a band, a place, an enlargement.
 
     `focus` overrides the band as soon as the frame is moved, which is what the
-    web page's drag does; `zoom` enlarges the cover under a frame that stays put.
+    web page's drag does; `zoom` enlarges the cover under a frame that stays put,
+    and goes below 1 to show the whole cover with bands.
     """
     return {
         "crop": mode,
-        "zoom": min(max(1.0, zoom), MAX_ZOOM),
+        "zoom": clamp_zoom(zoom),
         "focus": list(focus) if focus else None,
     }
 
 
 def _scale_chain(width: int, height: int, zoom: float = 1.0) -> str:
-    """Scale the cover so it just fills `size`, then enlarge it by the zoom.
+    """Scale the cover for `size`.
+
+    Zoom 0 fits the whole cover inside the frame, zoom 1 fills the frame, and past
+    1 the cover grows further and the frame crops it. Between 0 and 1 the scale
+    moves geometrically from the fit to the fill, so the slider's ends land on the
+    two things a listener can see.
 
     `ceil` to an even number so the scaled cover always reaches the frame, which
     `crop` cannot place outside itself. The quotes matter: the filter graph would
     read max()'s comma as the end of the scale filter.
     """
-    fit = f"max({width}/iw,{height}/ih)"
-    return f"scale=w='ceil(iw*{fit}*{zoom}/2)*2':h='ceil(ih*{fit}*{zoom}/2)*2'"
+    fit = f"min({width}/iw,{height}/ih)"
+    fill = f"max({width}/iw,{height}/ih)"
+    zoom = clamp_zoom(zoom)
+    # The geometric step from the fit to the fill is only taken up to zoom 1; past it
+    # the cover simply grows by the zoom again.
+    factor = f"({fit})*(pow(({fill})/({fit}),min({zoom},1))*max(1,{zoom}))"
+    return f"scale=w='ceil(iw*{factor}/2)*2':h='ceil(ih*{factor}/2)*2'"
 
 
 def _crop(
@@ -417,13 +449,17 @@ def _crop(
     dest: Path,
     mode: str = "center",
     view: dict | None = None,
+    band: tuple[int, int, int] = BAND,
 ) -> None:
     width, height = size
-    zoom = min(max(1.0, float((view or {}).get("zoom") or 1.0)), MAX_ZOOM)
+    zoom = clamp_zoom((view or {}).get("zoom", 1.0))
     focus = (view or {}).get("focus") or CROP_FOCUS[mode]
+    # A cover smaller than the frame leaves room around it, which takes the card's
+    # own band colour rather than black: it belongs to the card, not to the photo.
     # The frame sits at `focus` of the room the enlarged cover leaves around it.
     chain = (
         f"{_scale_chain(width, height, zoom)},"
+        f"pad='max(iw,{width})':'max(ih,{height})':(ow-iw)/2:(oh-ih)/2:color={_hex(band)},"
         f"crop={width}:{height}:(iw-{width})*{focus[0]}:(ih-{height})*{focus[1]}"
     )
     _run(
@@ -468,7 +504,7 @@ def cover_fit(source: Path, size: tuple[int, int], zoom: float = 1.0) -> tuple[b
                 "-i",
                 str(source),
                 "-vf",
-                _scale_chain(*size, min(max(1.0, zoom), MAX_ZOOM)),
+                _scale_chain(*size, clamp_zoom(zoom)),
                 "-frames:v",
                 "1",
                 str(out),
@@ -532,6 +568,7 @@ def write_cover(
     images = out_dir / "images"
     images.mkdir(parents=True, exist_ok=True)
     margin, thumb_size, _, _ = _layout(scene[0])
+    band = _palette(style, negative)["band"]
 
     with tempfile.TemporaryDirectory(prefix="daisy2telmi-") as tmp:
         scratch = Path(tmp)
@@ -540,14 +577,14 @@ def write_cover(
         thumbnail = scratch / "thumb.png"
         plain = scratch / "plain.png"
         card_base = scratch / "card.png"
-        _crop(ffmpeg, source, scene, base, crop, view)
-        _crop(ffmpeg, source, cover_size, square, crop, view)
+        _crop(ffmpeg, source, scene, base, crop, view, band)
+        _crop(ffmpeg, source, cover_size, square, crop, view, band)
         if style == "bw":
             # The whole cover behind the lettering. It is flattened with the
             # lettering, once: flattening twice would push every grey up a level.
             shutil.copyfile(base, card_base)
         else:
-            _crop(ffmpeg, source, thumb_size, thumbnail, crop, view)
+            _crop(ffmpeg, source, thumb_size, thumbnail, crop, view, band)
             plain.write_bytes(flat_png(*scene, style=style))
             _overlay(ffmpeg, plain, thumbnail, card_base, margin, margin)
 

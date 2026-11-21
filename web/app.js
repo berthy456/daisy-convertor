@@ -2,6 +2,8 @@ import { CUT_LEVELS, cutChoices, extractBook } from "./daisy.js";
 import {
   CROP_FOCUS,
   MAX_ZOOM,
+  MIN_ZOOM,
+  bandColour,
   cropRect,
   loadCoverFile,
   loadCoverUrl,
@@ -211,6 +213,10 @@ function drawCrop() {
   }
   const ctx = cropCanvas.getContext("2d");
   ctx.clearRect(0, 0, width, height);
+  // A cover shown whole leaves room in the frame; the card fills that room with its
+  // band colour, so the preview shows what the card will show.
+  ctx.fillStyle = bandColour(format === "lunii" ? "bw" : "colour");
+  ctx.fillRect(0, 0, width, height);
   const [x, y, drawnWidth, drawnHeight] = cropRect(cover, width, height, cropView());
   ctx.drawImage(cover, x, y, drawnWidth, drawnHeight);
 }
@@ -229,9 +235,16 @@ function moveFocus(from, dx, dy) {
 }
 
 function setZoom(value) {
-  zoom = clamp(value, 1, MAX_ZOOM);
+  zoom = clamp(value, MIN_ZOOM, MAX_ZOOM);
   cropZoom.value = String(zoom);
   drawCrop();
+}
+
+/** A notch or a key scales the zoom, and zero scales to zero: from the whole cover
+ * the only way out is a step in, and there is nothing below it to step down to. */
+function stepZoom(factor) {
+  if (zoom) setZoom(zoom * factor);
+  else if (factor > 1) setZoom(0.25);
 }
 
 /** A moved frame answers to no band, so the three radios let go of it. */
@@ -267,6 +280,7 @@ function startCrop() {
       drawCrop();
     });
   }
+  cropZoom.min = String(MIN_ZOOM);
   cropZoom.max = String(MAX_ZOOM);
   cropZoom.addEventListener("input", () => setZoom(Number(cropZoom.value)));
   cropReset.addEventListener("click", resetCrop);
@@ -290,7 +304,7 @@ function startCrop() {
     (event) => {
       if (!cover) return;
       event.preventDefault();
-      setZoom(zoom * (1 - event.deltaY / 400));
+      stepZoom(1 - event.deltaY / 400);
     },
     { passive: false },
   );
@@ -300,8 +314,8 @@ function startCrop() {
     if (step) {
       event.preventDefault();
       moveFrame(step[0] * CROP_WIDTH / 10, step[1] * CROP_WIDTH / 10);
-    } else if (event.key === "+" || event.key === "=") setZoom(zoom * 1.2);
-    else if (event.key === "-") setZoom(zoom / 1.2);
+    } else if (event.key === "+" || event.key === "=") stepZoom(1.2);
+    else if (event.key === "-") stepZoom(1 / 1.2);
   });
 }
 

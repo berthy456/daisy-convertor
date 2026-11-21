@@ -1,6 +1,6 @@
-# daisy-convertor, for developers
+# daisy-convertor manual
 
-Reference for the command line, every flag, the files each format writes, what has been verified and what is not. For the app and the web page, see [README.md](README.md).
+How to use the tool: the command line, every flag, the files each format writes, the tests, and how to build the binaries. For the app and the web page as a listener meets them, see [README.md](README.md).
 
 Inputs: **DAISY 2.02, DAISY 3, text-only DAISY, EPUB** — a `.zip`, an `.epub` or an extracted folder.
 Outputs: **Telmi** story folder, **Lunii** STUdio zip, **Commercial PK** (`.plain.pk`), **Flam** pictures, **Merlin** card (beta).
@@ -57,7 +57,7 @@ Cover:
 | `--cover IMAGE` | | draws the cards over this picture instead of the placeholder |
 | `--find-cover` | | asks Open Library for the print book named in `dc:source` (`dc:identifier` is the DAISY edition's own number, which no cover service knows); falls back to a title and author search with no ISBN |
 | `--cover-crop` | `top` `center` `bottom` | `center` |
-| `--cover-zoom FACTOR` | 1–4 | enlarges the picture before cropping, so the frame shows less of it and can move sideways |
+| `--cover-zoom FACTOR` | 0–4 | 0 shows the whole picture and fills the frame's empty room with the card's own second colour, 1 fills the frame, more than 1 enlarges it past the frame so it can move sideways |
 
 Chapter card speech:
 
@@ -198,7 +198,7 @@ pytest
 node --test tests/web/*.test.mjs
 ```
 
-378 Python tests, 98 for the browser modules. The integration tests skip themselves if `gon-ruby-mp3.zip` or `ffprobe` is absent. `tests/test_published_pack.py` checks a real published Telmi story against the same validator; it skips unless `TELMI_SAMPLE` points at one. `tests/test_lunii_pk.py` re-encodes the pictures of a real `.plain.pk`; it skips unless `LUNII_SAMPLE` points at one. `tests/test_gui.py` skips where there is no Tk or no display.
+382 Python tests, 100 for the browser modules. The integration tests skip themselves if `gon-ruby-mp3.zip` or `ffprobe` is absent. `tests/test_published_pack.py` checks a real published Telmi story against the same validator; it skips unless `TELMI_SAMPLE` points at one. `tests/test_lunii_pk.py` re-encodes the pictures of a real `.plain.pk`; it skips unless `LUNII_SAMPLE` points at one. `tests/test_gui.py` skips where there is no Tk or no display.
 
 ## Build a binary
 

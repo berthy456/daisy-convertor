@@ -90,8 +90,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         type=float,
         default=1.0,
         metavar="FACTOR",
-        help=f"enlarge the cover by FACTOR (1 to {images.MAX_ZOOM}) before cropping it, so the "
-        "frame shows less of it and can be moved sideways as well",
+        help=f"scale the cover by FACTOR ({images.MIN_ZOOM} to {images.MAX_ZOOM}): 0 shows the whole "
+        "cover with the frame's empty room filled by bands, 1 fills the frame, and more than 1 "
+        "enlarges it past the frame so it can be moved sideways as well",
     )
     look = parser.add_argument_group("before converting")
     look.add_argument("--list", action="store_true", help="print the pack's chapters and stop")

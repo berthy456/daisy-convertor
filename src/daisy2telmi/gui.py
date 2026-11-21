@@ -245,7 +245,7 @@ class App:
             self.crop_boxes[mode] = box
         self._label(tools, "crop_zoom").pack(side="left", padx=(10, 4))
         self.crop_zoom = ttk.Scale(
-            tools, from_=1.0, to=images.MAX_ZOOM, length=110, command=self._slide_crop
+            tools, from_=images.MIN_ZOOM, to=images.MAX_ZOOM, length=110, command=self._slide_crop
         )
         self.crop_zoom.pack(side="left")
         self._button(tools, "crop_reset", self._reset_crop).pack(side="left", padx=10)
@@ -516,7 +516,10 @@ class App:
             self._clear_crop()
             return
         size = images.preview_size(self.format_var.get(), CROP_WIDTH)
-        self.crop_frame.configure(width=size[0], height=size[1])
+        # A cover smaller than the frame leaves its room empty on the canvas, which
+        # is the card's band colour and not the window's.
+        style = "bw" if self.format_var.get() == "lunii" else "colour"
+        self.crop_frame.configure(width=size[0], height=size[1], background=images.band_colour(style))
         key = (str(source), self.format_var.get(), self._crop_zoom_value)
         if self._crop_cover is None or self._crop_cover[:3] != key:
             try:
@@ -550,6 +553,7 @@ class App:
         self._crop_zoom_value = 1.0
         self.crop_zoom.set(1.0)
         self.crop_frame.itemconfigure(self._crop_item, image="")
+        self.crop_frame.configure(background=PAPER)
 
     def _grab_crop(self, event: tk.Event) -> None:
         if self._crop_cover is None:
@@ -599,13 +603,18 @@ class App:
         self._zoom_crop(1 - notches * 0.25)
 
     def _zoom_crop(self, factor: float) -> None:
-        self._set_crop_zoom(self._crop_zoom_value * factor)
+        # A wheel notch scales the zoom, and zero scales to zero: from the whole cover
+        # the only way out is a step in, and there is nothing below it to step down to.
+        if self._crop_zoom_value:
+            self._set_crop_zoom(self._crop_zoom_value * factor)
+        elif factor > 1:
+            self._set_crop_zoom(0.25)
 
     def _slide_crop(self, value: str) -> None:
         self._set_crop_zoom(float(value))
 
     def _set_crop_zoom(self, value: float) -> None:
-        zoom = min(max(1.0, value), images.MAX_ZOOM)
+        zoom = images.clamp_zoom(value)
         if abs(zoom - self._crop_zoom_value) < 0.01:
             return
         self._crop_zoom_value = zoom

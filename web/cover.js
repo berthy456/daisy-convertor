@@ -59,9 +59,11 @@ function layout(width) {
 export const STYLES = ["colour", "bw"];
 export const GREY_LEVELS = 16;
 const GREY_STEP = Math.floor(255 / (GREY_LEVELS - 1));
+// `band` fills the frame's empty room when the cover is shown whole: it belongs to
+// the card, so it is the card's own second colour and not black.
 const PALETTE = {
-  colour: { background: "#1a1e2a", ink: "#fff", border: "#000" },
-  bw: { background: "#fff", ink: "#000", border: "#fff" },
+  colour: { background: "#1a1e2a", band: "#4e5c7a", ink: "#fff", border: "#000" },
+  bw: { background: "#fff", band: "#bbbbbb", ink: "#000", border: "#fff" },
 };
 
 /**
@@ -148,26 +150,45 @@ export const CROP_MODES = ["top", "center", "bottom"];
 // 1 the right or bottom one. The three named modes are the presets a user picks
 // without a mouse; a drag sets the same two numbers anywhere between.
 export const CROP_FOCUS = { top: [0.5, 0], center: [0.5, 0.5], bottom: [0.5, 1] };
+export const MIN_ZOOM = 0;
 export const MAX_ZOOM = 4;
 
 /**
  * The part of the cover the frame shows: {crop} for a preset, or {focus, zoom}
- * for a place the user moved and scaled themselves. The cover always fills the
- * frame; zoom only enlarges it past the point where it fits.
+ * for a place the user moved and scaled themselves.
+ *
+ * Zoom 0 fits the whole cover inside the frame, zoom 1 fills the frame, and past 1
+ * the cover grows further and the frame crops it. Between 0 and 1 the scale moves
+ * geometrically from the fit to the fill, so the slider's ends land on the two
+ * things a listener can see.
  */
 export function cropRect(cover, width, height, view = {}) {
   const focus = view.focus ?? CROP_FOCUS[view.crop ?? "center"];
-  const zoom = Math.max(1, view.zoom ?? 1);
-  const scale = Math.max(width / cover.width, height / cover.height) * zoom;
+  const zoom = Math.min(Math.max(MIN_ZOOM, view.zoom ?? 1), MAX_ZOOM);
+  const fit = Math.min(width / cover.width, height / cover.height);
+  const fill = Math.max(width / cover.width, height / cover.height);
+  const scale = fit * (fill / fit) ** Math.min(Math.max(zoom, 0), 1) * Math.max(1, zoom);
   const drawnWidth = cover.width * scale;
   const drawnHeight = cover.height * scale;
   return [(width - drawnWidth) * focus[0], (height - drawnHeight) * focus[1], drawnWidth, drawnHeight];
 }
 
-/** The cover, cropped into the box at (left, top). */
-function drawCover(ctx, cover, left, top, width, height, view = {}) {
+/**
+ * The cover, cropped into the box at (left, top). What the cover leaves of the box
+ * takes the card's band colour, so a whole cover reads as a whole cover.
+ */
+function drawCover(ctx, cover, left, top, width, height, view = {}, style = "colour") {
   const [x, y, drawnWidth, drawnHeight] = cropRect(cover, width, height, view);
+  if (drawnWidth < width || drawnHeight < height) {
+    ctx.fillStyle = PALETTE[style].band;
+    ctx.fillRect(left, top, width, height);
+  }
   ctx.drawImage(cover, left + x, top + y, drawnWidth, drawnHeight);
+}
+
+/** The colour a card fills the frame's empty room with. */
+export function bandColour(style) {
+  return PALETTE[style].band;
 }
 
 /**
@@ -242,8 +263,8 @@ export async function cardPng(
   ctx.miterLimit = 2;
   ctx.textBaseline = "top";
   if (cover) {
-    if (band) drawCover(ctx, cover, 0, 0, width, height, view);
-    else drawCover(ctx, cover, margin, margin, ...thumb, view);
+    if (band) drawCover(ctx, cover, 0, 0, width, height, view, style);
+    else drawCover(ctx, cover, margin, margin, ...thumb, view, style);
   }
 
   if (band) {
@@ -304,7 +325,7 @@ export async function cardPng(
 export async function coverPng(cover, width, height, view = {}, style = "colour", negative = false) {
   const canvas = surface(width, height);
   const ctx = canvas.getContext("2d");
-  drawCover(ctx, cover, 0, 0, width, height, view);
+  drawCover(ctx, cover, 0, 0, width, height, view, style);
   if (style === "bw") toGreys(ctx, width, height, negative);
   return toPng(canvas);
 }

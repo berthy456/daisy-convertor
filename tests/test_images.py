@@ -209,6 +209,17 @@ def _colour(png: Path) -> tuple[int, int, int]:
     return struct.unpack("BBB", result.stdout[:3])
 
 
+def _pixel(png: Path, x: int, y: int) -> tuple[int, int, int]:
+    """One pixel of a picture, where a band and a cover meet."""
+    result = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(png),
+         "-vf", f"crop=1:1:{x}:{y}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr.decode()
+    return struct.unpack("BBB", result.stdout[:3])
+
+
 def _band(png: Path) -> str:
     """The channel that dominates a picture: ffmpeg moves a flat colour by a
     couple of units, so the loudest channel is what a crop can be checked on."""
@@ -252,6 +263,10 @@ def test_cover_fit_draws_a_picture_the_frame_can_move_over(tmp_path: Path) -> No
 def test_the_zoom_enlarges_the_picture_the_frame_moves_over(tmp_path: Path) -> None:
     source = _tall_cover(tmp_path)
     _, one = images.cover_fit(source, images.PREVIEW_SIZE)
+    _, whole = images.cover_fit(source, images.PREVIEW_SIZE, 0.0)
+    assert whole[1] == images.PREVIEW_SIZE[1] and whole[0] < images.PREVIEW_SIZE[0], (
+        "zoom 0 keeps the whole cover inside the frame, which leaves room sideways"
+    )
     _, twice = images.cover_fit(source, images.PREVIEW_SIZE, 2.0)
     assert twice == (one[0] * 2, one[1] * 2)
     _, clamped = images.cover_fit(source, images.PREVIEW_SIZE, 99)
@@ -261,9 +276,33 @@ def test_the_zoom_enlarges_the_picture_the_frame_moves_over(tmp_path: Path) -> N
 def test_crop_view_keeps_the_band_and_clamps_the_zoom() -> None:
     assert images.crop_view()["zoom"] == 1.0
     assert images.crop_view()["focus"] is None
-    assert images.crop_view("top", 0)["zoom"] == 1.0, "a zoom below one would shrink the cover"
+    assert images.crop_view("top", 0)["zoom"] == 0.0, "zoom 0 shows the whole cover"
+    assert images.crop_view("top", -1)["zoom"] == images.MIN_ZOOM, "no zoom below the whole cover"
     assert images.crop_view("top", 99)["zoom"] == images.MAX_ZOOM
     assert images.crop_view("top", 2, [0, 1])["focus"] == [0, 1]
+
+
+@NO_FFMPEG
+def test_a_whole_cover_leaves_the_bands_of_the_card(tmp_path: Path) -> None:
+    """600x300 in a 640x480 frame fits by 1.07: 640 across and 320 down, so the card
+    fills the 80 px above and below the cover with its own band colour."""
+    source = _sided_cover(tmp_path)
+    out = tmp_path / "whole.png"
+    images._crop("ffmpeg", source, images.IMAGE_SIZE, out, "center", {"zoom": 0}, images.BAND)
+    for y in (0, images.IMAGE_SIZE[1] - 1):
+        assert _pixel(out, 0, y) == pytest.approx(images.BAND, abs=6), f"y={y}"
+    assert _pixel(out, 0, 240)[0] > 200, "the middle of the frame is still the cover's red half"
+
+
+@NO_FFMPEG
+def test_a_whole_cover_still_lands_on_the_band_it_was_shown_from(tmp_path: Path) -> None:
+    """A tall cover shown whole fills the frame top to bottom and leaves its room on
+    the sides instead, where the card's own band colour goes."""
+    source = _tall_cover(tmp_path)
+    out = tmp_path / "whole-tall.png"
+    images._crop("ffmpeg", source, images.IMAGE_SIZE, out, "center", {"zoom": 0}, images.BAND)
+    assert _pixel(out, 0, 240) == pytest.approx(images.BAND, abs=6), "the room is on the cover's side"
+    assert _pixel(out, 320, 240) == pytest.approx((0, 255, 0), abs=6), "and the cover's middle band is still there"
 
 
 @NO_FFMPEG

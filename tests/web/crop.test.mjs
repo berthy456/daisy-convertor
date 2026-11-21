@@ -48,8 +48,26 @@ test("zooming enlarges the cover and opens room to move", async () => {
   assert.equal((await drawn({ zoom: 2, focus: [0, 0] }))[1], 0, "the sideways move lands on the cover's left edge");
 });
 
-test("a zoom below one is no zoom at all", async () => {
-  assert.deepEqual(await drawn({ zoom: 0.2 }), await drawn({ zoom: 1 }));
+test("no zoom shows the whole cover, and the card fills the room it leaves", async () => {
+  FILLS.length = 0;
+  const args = await drawn({ zoom: 0 });
+  // 640x480 from 1000x1500 fits by 0.32: 320 wide and 480 tall, so the sides stay empty.
+  assert.equal(args[3], 320);
+  assert.equal(args[4], 480);
+  assert.equal(args[1], 160, "centred, so the cover starts inside the frame's left edge");
+  assert.equal(args[2], 0);
+  assert.deepEqual(FILLS.at(-1).slice(0, 4), [0, 0, 640, 480], "the empty room is filled before the cover lands");
+});
+
+test("a cover that fills the frame leaves no room to fill", async () => {
+  FILLS.length = 0;
+  await drawn({ zoom: 1 });
+  assert.equal(FILLS.length, 0, "a plain crop draws the cover and nothing behind it");
+});
+
+test("the slider stops at its two ends", async () => {
+  assert.equal((await drawn({ zoom: -1 }))[3], 320, "below the whole cover there is nowhere to go");
+  assert.equal((await drawn({ zoom: 99 }))[3], 2560, "and past four times the frame the cover stops growing");
 });
 
 test("a card's thumbnail follows the same band", async () => {

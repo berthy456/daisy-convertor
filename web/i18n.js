@@ -55,7 +55,7 @@ export const UI = {
     crop_bottom: "Bottom",
     crop_zoom: "Zoom",
     crop_reset: "Reset",
-    crop_hint: "Drag the picture to move it; the slider or the mouse wheel enlarges it.",
+    crop_hint: "Drag the picture to move it; the slider or the mouse wheel zooms it, from the whole picture to past the frame.",
     what_title: "What you get",
     what_p1:
       "One part per chapter, paragraph or sentence you choose, each with a menu card before it so the story is navigable with the player's buttons. The pack's spoken title becomes title.mp3.",
@@ -140,7 +140,7 @@ export const UI = {
     crop_bottom: "Bas",
     crop_zoom: "Zoom",
     crop_reset: "Réinitialiser",
-    crop_hint: "Faites glisser l'image pour la déplacer ; le curseur ou la molette l'agrandit.",
+    crop_hint: "Faites glisser l'image pour la déplacer ; le curseur ou la molette zoome, de l'image entière à au-delà du cadre.",
     what_title: "Ce que vous obtenez",
     what_p1:
       "Une partie par chapitre, paragraphe ou phrase selon votre choix, chacune précédée d'une carte de menu pour naviguer avec les boutons du boîtier. Le titre parlé du pack devient title.mp3.",
@@ -224,7 +224,7 @@ export const UI = {
     crop_bottom: "下",
     crop_zoom: "缩放",
     crop_reset: "重置",
-    crop_hint: "拖动图片以移动；滑块或滚轮可放大。",
+    crop_hint: "拖动图片以移动；滑块或滚轮缩放，从完整图片到超出画框。",
     what_title: "你会得到什么",
     what_p1: "按你选择的章节、段落或句子切出故事部分，每部分前都有一张菜单卡，方便用故事机的按钮导航。包里的口述标题成为 title.mp3。",
     what_p2:
@@ -304,7 +304,7 @@ export const UI = {
     crop_bottom: "أسفل",
     crop_zoom: "تكبير",
     crop_reset: "إعادة ضبط",
-    crop_hint: "اسحب الصورة لتحريكها؛ يستخدم المؤشر أو العجلة التكبير.",
+    crop_hint: "اسحب الصورة لتحريكها؛ يستخدم المؤشر أو العجلة التكبير من الصورة كاملة إلى ما وراء الإطار.",
     what_title: "ماذا تحصل",
     what_p1: "جزء لكل فصل أو فقرة أو جملة تختارها، مع بطاقة قائمة قبل كل جزء لتسهيل التنقل بأزرار الجهاز. العنوان المنطوق في الحزمة يصبح title.mp3.",
     what_p2:
@@ -385,7 +385,7 @@ export const UI = {
     crop_bottom: "Alt",
     crop_zoom: "Yakınlaştır",
     crop_reset: "Sıfırla",
-    crop_hint: "Taşımak için resmi sürükleyin; kaydırıcı ya da tekerlek büyütür.",
+    crop_hint: "Taşımak için resmi sürükleyin; kaydırıcı ya da tekerlek tüm görüntüden çerçeve dışına kadar yakınlaştırır.",
     what_title: "Ne elde edersiniz",
     what_p1:
       "Seçtiğiniz bölüm, paragraf ya da cümle başına bir parça; her parçadan önce cihazın düğmeleriyle gezinmeyi sağlayan bir menü kartı. Paketin sesli başlığı title.mp3 olur.",
@@ -470,7 +470,7 @@ export const UI = {
     crop_bottom: "Unten",
     crop_zoom: "Zoom",
     crop_reset: "Zurücksetzen",
-    crop_hint: "Bild ziehen zum Verschieben; Regler oder Mausrad vergrößern.",
+    crop_hint: "Bild ziehen zum Verschieben; Regler oder Mausrad zoomen vom ganzen Bild bis über den Rahmen hinaus.",
     what_title: "Was Sie erhalten",
     what_p1:
       "Ein Teil pro Kapitel, Absatz oder Satz, je nach Wahl, jeweils mit einer Menükarte davor, damit die Geschichte mit den Knöpfen des Geräts navigierbar ist. Der gesprochene Titel des Pakets wird title.mp3.",
@@ -555,7 +555,7 @@ export const UI = {
     crop_bottom: "Basso",
     crop_zoom: "Zoom",
     crop_reset: "Reimposta",
-    crop_hint: "Trascina l'immagine per spostarla; la manopola o la rotellina la ingrandiscono.",
+    crop_hint: "Trascina l'immagine per spostarla; la manopola o la rotellina la ingrandiscono dall'immagine intera oltre la cornice.",
     what_title: "Cosa ottieni",
     what_p1:
       "Una parte per capitolo, paragrafo o frase a scelta, ciascuna preceduta da una carta menu, così la storia si naviga con i tasti del dispositivo. Il titolo parlato del pacchetto diventa title.mp3.",
@@ -640,7 +640,7 @@ export const UI = {
     crop_bottom: "Abajo",
     crop_zoom: "Zoom",
     crop_reset: "Restablecer",
-    crop_hint: "Arrastra la imagen para moverla; el deslizador o la rueda la amplían.",
+    crop_hint: "Arrastra la imagen para moverla; el deslizador o la rueda la amplían, de la imagen completa a más allá del marco.",
     what_title: "Qué obtienes",
     what_p1:
       "Una parte por capítulo, párrafo o frase según lo que elijas, cada una con una tarjeta de menú antes, para navegar con los botones del aparato. El título hablado del paquete pasa a ser title.mp3.",
@@ -725,7 +725,7 @@ export const UI = {
     crop_bottom: "Inferior",
     crop_zoom: "Zoom",
     crop_reset: "Redefinir",
-    crop_hint: "Arraste a imagem para movê-la; o cursor ou a roda ampliam.",
+    crop_hint: "Arraste a imagem para movê-la; o cursor ou a roda ampliam, da imagem inteira até além do quadro.",
     what_title: "O que você recebe",
     what_p1:
       "Uma parte por capítulo, parágrafo ou frase, conforme a sua escolha, cada uma com um cartão de menu antes, para navegar com os botões do aparelho. O título falado do pacote vira title.mp3.",
@@ -810,7 +810,7 @@ export const UI = {
     crop_bottom: "Onder",
     crop_zoom: "Zoom",
     crop_reset: "Herstellen",
-    crop_hint: "Sleep de afbeelding om te verschuiven; de schuif of muiswiel vergroot.",
+    crop_hint: "Sleep de afbeelding om te verschuiven; de schuif of muiswiel zoomt van de hele afbeelding tot voorbij het kader.",
     what_title: "Wat je krijgt",
     what_p1:
       "Een deel per hoofdstuk, paragraaf of zin naar keuze, elk voorafgegaan door een menukaart, zodat het verhaal met de knoppen van het apparaat te navigeren is. De gesproken titel van het pakket wordt title.mp3.",

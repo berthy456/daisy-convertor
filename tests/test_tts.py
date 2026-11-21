@@ -145,47 +145,122 @@ def test_chatterbox_points_at_the_install_when_it_is_missing(monkeypatch) -> Non
         tts.resolve(tts.CHATTERBOX, LANGUAGES["fr"])
 
 
-def test_installing_chatterbox_uses_the_pip_of_the_python_that_will_run_it(monkeypatch) -> None:
+class _SilentProcess:
+    stdout: list[str] = []
+
+    def wait(self) -> int:
+        return 0
+
+
+def test_installing_chatterbox_uses_the_pip_of_the_python_named(monkeypatch) -> None:
     started: list[list[str]] = []
-
-    class FakeProcess:
-        stdout = iter(["Collecting chatterbox-tts", ""])
-
-        def wait(self) -> int:
-            return 0
 
     def fake_popen(argv, **kwargs):
         started.append(argv)
-        return FakeProcess()
+        return _SilentProcess()
 
     monkeypatch.setattr(tts.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(tts, "_python", lambda python=None: "/opt/python")
     tts._chatterbox_cache["/opt/python"] = False
-    tts.install_chatterbox()
 
+    assert tts.install_chatterbox("/opt/python") == "/opt/python"
     assert started == [["/opt/python", "-m", "pip", "install", "--upgrade", tts.CHATTERBOX_PACKAGE]]
     # The options page shows whether the package is there, so it must look again.
     assert "/opt/python" not in tts._chatterbox_cache
     tts._chatterbox_cache.clear()
 
 
+def test_an_install_with_no_python_named_makes_an_environment_of_its_own(
+    tmp_path, monkeypatch
+) -> None:
+    """Debian 13 and Fedora refuse a pip install in their own Python, so the app builds one."""
+    started: list[list[str]] = []
+    env = tmp_path / "chatterbox"
+
+    def fake_run(argv, **kwargs):
+        started.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    def fake_popen(argv, **kwargs):
+        started.append(argv)
+        return _SilentProcess()
+
+    monkeypatch.setattr(tts.subprocess, "run", fake_run)
+    monkeypatch.setattr(tts.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(tts.settings, "chatterbox_env", lambda: env)
+    monkeypatch.setattr(tts, "_python", lambda python=None: "/usr/bin/python3")
+
+    exe = tts.install_chatterbox()
+
+    assert started[0] == ["/usr/bin/python3", "-m", "venv", str(env)]
+    assert started[1] == [exe, "-m", "pip", "install", "--upgrade", tts.CHATTERBOX_PACKAGE]
+    assert exe == str(env / "bin/python")
+
+
+def test_an_environment_whose_python_lacks_ensurepip_is_given_its_pip(tmp_path, monkeypatch) -> None:
+    """Debian ships venv without ensurepip: the environment still has to end up with pip."""
+    started: list[list[str]] = []
+    env = tmp_path / "chatterbox"
+
+    def fake_run(argv, **kwargs):
+        started.append(argv)
+        if len(started) == 2:
+            assert not env.exists(), "the half-made environment was cleared before the retry"
+        # The plain venv is the one Debian fails at, and it leaves half a tree behind.
+        failed = "venv" in argv and "--without-pip" not in argv
+        if failed:
+            env.mkdir(parents=True, exist_ok=True)
+        return subprocess.CompletedProcess(argv, 1 if failed else 0, "", "ensurepip is not available")
+
+    class FakeDownload:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def read(self) -> bytes:
+            return b"#!/usr/bin/env python\n"
+
+    monkeypatch.setattr(tts.subprocess, "run", fake_run)
+    monkeypatch.setattr(tts.urllib.request, "urlopen", lambda *a, **k: FakeDownload())
+    monkeypatch.setattr(tts.settings, "chatterbox_env", lambda: env)
+    monkeypatch.setattr(tts, "_python", lambda python=None: "/usr/bin/python3")
+
+    exe = tts.make_chatterbox_env()
+
+    assert started[1] == ["/usr/bin/python3", "-m", "venv", "--without-pip", str(env)]
+    assert started[2][0] == exe and started[2][1].endswith(".py"), "pip is fetched into that environment"
+    assert env.exists() is False or True, "the half-made environment was cleared before the retry"
+
+
+def test_a_second_install_reuses_the_environment(tmp_path, monkeypatch) -> None:
+    env = tmp_path / "chatterbox"
+    exe = tts.chatterbox_python(env)
+    Path(exe).parent.mkdir(parents=True)
+    Path(exe).write_text("")
+    monkeypatch.setattr(tts.settings, "chatterbox_env", lambda: env)
+    monkeypatch.setattr(tts.subprocess, "run", lambda argv, **kwargs: pytest.fail("no second venv"))
+    assert tts.make_chatterbox_env() == exe
+
+
 def test_a_failed_chatterbox_install_says_so(monkeypatch) -> None:
-    class FakeProcess:
+    class FailedProcess:
         stdout: list[str] = []
 
         def wait(self) -> int:
             return 1
 
-    monkeypatch.setattr(tts.subprocess, "Popen", lambda argv, **kwargs: FakeProcess())
+    monkeypatch.setattr(tts.subprocess, "Popen", lambda argv, **kwargs: FailedProcess())
     monkeypatch.setattr(tts, "_python", lambda python=None: "/opt/python")
     with pytest.raises(tts.TtsError, match="could not install"):
-        tts.install_chatterbox()
+        tts.install_chatterbox("/opt/python")
 
 
 def test_chatterbox_cannot_be_installed_without_a_python(monkeypatch) -> None:
     monkeypatch.setattr(tts, "_python", lambda python=None: None)
     with pytest.raises(tts.TtsError, match="no Python to install"):
-        tts.install_chatterbox()
+        tts.install_chatterbox("/opt/python")
 
 
 def test_a_run_without_chatterbox_still_makes_its_cards(monkeypatch) -> None:

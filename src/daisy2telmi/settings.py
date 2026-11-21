@@ -43,6 +43,22 @@ def config_path() -> Path:
     return config_dir() / "config.json"
 
 
+def data_dir() -> Path:
+    """Where the big downloads go: a gigabyte of speech model does not belong in the config folder."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+    return base / "daisy2telmi"
+
+
+def chatterbox_env() -> Path:
+    """The Python environment the app builds for Chatterbox when asked to."""
+    return data_dir() / "chatterbox"
+
+
 def load() -> dict:
     options = dict(DEFAULTS)
     try:

@@ -827,7 +827,7 @@ class Options:
         self.python_box.bind("<FocusOut>", lambda _e: self._recheck_chatterbox())
         self._fill_voices()
 
-        self.events: queue.Queue[str] = queue.Queue()
+        self.events: queue.Queue[str | None] = queue.Queue()
         self.top.after(200, self._drain)
 
     def _label_text(self, key: str | None, labels: dict[str, str] | None = None) -> str:
@@ -910,19 +910,22 @@ class Options:
 
     def _chatterbox_install(self, python: str | None = None) -> None:
         try:
-            tts.install_chatterbox(python)
+            self.events.put(tts.install_chatterbox(python))
         except tts.TtsError as exc:
             log.error("%s", exc)
-        self.events.put("chatterbox")
+            self.events.put(None)
 
     def _drain(self) -> None:
         if not self.top.winfo_exists():
             return
         try:
-            self.events.get_nowait()
+            installed = self.events.get_nowait()
         except queue.Empty:
             self.top.after(200, self._drain)
             return
+        if installed and not self.python_box.get().strip():
+            # The app built its own Python: show the user which one now speaks.
+            self.python_box.insert(0, installed)
         self.chatterbox_button.state(["!disabled"])
         self.chatterbox_button.configure(text=self.app.t("chatterbox_install"))
         self.chatterbox_state.configure(text=self._chatterbox_text())

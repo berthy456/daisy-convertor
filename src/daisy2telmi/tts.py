@@ -17,10 +17,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import audio
+from . import audio, settings
 from .extractor import AudioSegment
 from .i18n import Language, language
 
@@ -153,16 +154,75 @@ def available(name: str, python: str | None = None) -> bool:
 
 
 CHATTERBOX_PACKAGE = "chatterbox-tts"
+GET_PIP = "https://bootstrap.pypa.io/get-pip.py"
 
 
-def install_chatterbox(python: str | None = None) -> None:
-    """Install Chatterbox into the Python its cards will run in.
+def chatterbox_python(env: Path) -> str:
+    """The interpreter of the environment `env` holds, whether it was built or not."""
+    return str(env / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python"))
+
+
+def make_chatterbox_env() -> str:
+    """Build the app's own Python environment for Chatterbox, and return its interpreter.
+
+    The machine's Python is not a safe place to install: Debian 13 and Fedora mark
+    it externally managed and ship no pip module at all, so `python3 -m pip install`
+    there fails before it starts. A venv of our own needs no root and leaves the
+    system alone. Debian's own venv cannot bootstrap pip either, so pip is fetched
+    when `ensurepip` is missing.
+    """
+    env = settings.chatterbox_env()
+    exe = chatterbox_python(env)
+    if os.path.exists(exe):
+        return exe
+    base = _python(None)
+    if not base:
+        raise TtsError(
+            "no Python to build a Chatterbox environment with: install Python 3.11 or newer, "
+            "or set the Chatterbox Python in the options"
+        )
+    env.parent.mkdir(parents=True, exist_ok=True)
+    log.info("making a Chatterbox environment in %s", env)
+    result = subprocess.run([base, "-m", "venv", str(env)], capture_output=True, text=True)
+    if result.returncode:
+        # Half an environment is worse than none: the retry has to start clean.
+        shutil.rmtree(env, ignore_errors=True)
+        result = subprocess.run(
+            [base, "-m", "venv", "--without-pip", str(env)], capture_output=True, text=True
+        )
+        if result.returncode:
+            detail = (result.stderr or result.stdout).strip().splitlines()
+            raise TtsError(f"could not make a Python environment: {detail[-1] if detail else 'venv failed'}")
+        _bootstrap_pip(exe)
+    return exe
+
+
+def _bootstrap_pip(exe: str) -> None:
+    """Give an environment made with `--without-pip` its pip."""
+    log.info("this Python has no ensurepip: fetching pip")
+    with urllib.request.urlopen(GET_PIP, timeout=60) as response:
+        script = Path(tempfile.mkstemp(prefix="get-pip-", suffix=".py")[1])
+        script.write_bytes(response.read())
+    try:
+        result = subprocess.run([exe, str(script), "-q"], capture_output=True, text=True)
+    finally:
+        script.unlink(missing_ok=True)
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip().splitlines()
+        raise TtsError(f"could not install pip into the Chatterbox environment: {detail[-1] if detail else 'failed'}")
+
+
+def install_chatterbox(python: str | None = None) -> str:
+    """Install Chatterbox, and answer which interpreter now has it.
 
     Asked for rather than done on the side: the wheel brings torch with it, which
     is a download of a gigabyte or more. pip's own output goes to the log, since
     a silent minute and a half looks like a hang.
+
+    With no Python named, the app installs into one it made itself: the machine's
+    own Python refuses the install on Debian 13 and Fedora.
     """
-    exe = _python(python)
+    exe = _python(python) if python else make_chatterbox_env()
     if not exe:
         raise TtsError(
             "no Python to install Chatterbox into: set the Chatterbox Python in the options, "
@@ -179,6 +239,7 @@ def install_chatterbox(python: str | None = None) -> None:
         raise TtsError(f"pip could not install {CHATTERBOX_PACKAGE} into {exe}")
     _chatterbox_cache.clear()
     log.info("%s is installed", CHATTERBOX_PACKAGE)
+    return exe
 
 
 def engines(python: str | None = None) -> list[Engine]:

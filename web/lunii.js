@@ -112,22 +112,27 @@ export async function buildStudioFiles(story) {
 
   for (const [key, stage] of Object.entries(stages)) {
     const controls = stage.control || {};
+    const image = await register(find("images", stage.image, IMAGE_EXTS), "image");
     stageNodes.push({
       uuid: stageUuids[key],
       type: "stage",
       name: key,
       position: { x: 0, y: 0 },
-      image: await register(find("images", stage.image, IMAGE_EXTS), "image"),
+      image,
       audio: await register(find("audios", stage.audio, AUDIO_EXTS), "audio"),
       okTransition: transition(stage.ok),
       // A lit home with nothing behind it is the device's own way out of a story,
       // which is what Telmi's home button means too.
       homeTransition: transition(stage.home),
       controlSettings: {
-        wheel: Boolean(controls.wheel),
+        // Published cards switch the wheel on wherever a picture shows, so the
+        // chapter choices scroll and the audio plays untouched, and switch pause
+        // on the other way round: only a stage that is nothing but sound is a
+        // chapter you can stop.
+        wheel: image !== null,
         ok: Boolean(controls.ok),
         home: Boolean(controls.home),
-        pause: Boolean(controls.pause),
+        pause: image === null,
         autoplay: Boolean(controls.autoplay),
       },
     });

@@ -105,6 +105,29 @@ def test_home_leaves_the_story_the_way_the_device_expects(story) -> None:
     assert all(node["controlSettings"]["home"] and node["homeTransition"] is None for node in cards)
 
 
+def test_the_wheel_turns_where_a_picture_shows_and_the_pause_where_sound_plays(story) -> None:
+    """Read off a published card: the wheel is switched on where a picture shows, so the
+    chapter choices scroll, and pause on the stages that are nothing but sound, so a
+    chapter can be stopped."""
+    metadata, nodes = read(story)
+    story_json, _ = build_story_json(metadata, nodes, story)
+    cards = [node for node in story_json["stageNodes"] if node["name"].startswith("m")]
+    audio = [node for node in story_json["stageNodes"] if node["name"].startswith("s")]
+
+    assert len(cards) >= 2, "the story offers more than one chapter to scroll between"
+    assert all(node["image"] is not None and node["controlSettings"]["wheel"] for node in cards)
+    assert all(not node["controlSettings"]["pause"] for node in cards)
+    assert all(node["image"] is None and not node["controlSettings"]["wheel"] for node in audio)
+    assert all(node["controlSettings"]["pause"] for node in audio)
+
+    ni = ni_bytes(story_json)
+    for index, node in enumerate(story_json["stageNodes"]):
+        at = 0x200 + NODE_SIZE * index
+        for offset, key in ((32, "wheel"), (38, "pause")):
+            on = int.from_bytes(ni[at + offset : at + offset + 2], "little") != 0
+            assert on == node["controlSettings"][key], f"{node['name']} carries the {key} where the card reads it"
+
+
 def test_the_story_offers_itself_to_the_bedtime_playlist(story) -> None:
     """The flag only says the story can be followed without touching the machine,
     and a converted audiobook never asks for anything but the next chapter."""

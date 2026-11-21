@@ -100,6 +100,26 @@ test("a card stage keeps home as the way out of the story", async () => {
   assert.ok(cards.every((node) => node.controlSettings.ok && node.okTransition !== null));
 });
 
+test("the wheel turns where a picture shows, and the pause where only sound plays", async () => {
+  const book = await story();
+  const { storyJson } = await buildStudioFiles(book);
+
+  // Read off a published card: the wheel is switched on on the stages that show a
+  // picture, so the chapter choices scroll, and pause on the stages that are
+  // nothing but sound, so a chapter can be stopped.
+  const cards = storyJson.stageNodes.filter((node) => node.name.startsWith("m"));
+  const audio = storyJson.stageNodes.filter((node) => node.name.startsWith("s"));
+  assert.ok(cards.length >= 2, "the story offers more than one chapter to scroll between");
+  assert.ok(
+    cards.every((node) => node.image !== null && node.controlSettings.wheel && !node.controlSettings.pause),
+    "a chapter card scrolls to the next, and is not a clip to stop"
+  );
+  assert.ok(
+    audio.every((node) => node.image === null && !node.controlSettings.wheel && node.controlSettings.pause),
+    "a chapter's audio leaves the wheel still, and can be stopped"
+  );
+});
+
 test("converting the same story twice writes the same archive", async () => {
   const book = await story();
   const first = await buildStudioZip(book);
@@ -152,7 +172,7 @@ test("the .pk's tables are the desktop converter's", async () => {
 
   // Read off the `.plain.pk` the desktop converter writes for this same pack.
   for (const [name, [length, sum]] of [
-    ["ni", [1084, 0xae8fc608]],
+    ["ni", [1084, 0xc5b30aca]],
     ["li.plain", [48, 0x96d6a013]],
     ["ri.plain", [84, 0xcee966cb]],
     ["si.plain", [156, 0x5def39b4]],

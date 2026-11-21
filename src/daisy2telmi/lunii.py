@@ -128,23 +128,28 @@ def build_story_json(
 
     for key, stage in stages.items():
         controls = stage.get("control") or {}
+        image = register(_media(image_dir, "images", stage.get("image"), IMAGE_EXTS), "image")
         stage_nodes.append(
             {
                 "uuid": stage_uuids[key],
                 "type": "stage",
                 "name": key,
                 "position": {"x": 0, "y": 0},
-                "image": register(_media(image_dir, "images", stage.get("image"), IMAGE_EXTS), "image"),
+                "image": image,
                 "audio": register(_media(story_dir, "audios", stage.get("audio"), AUDIO_EXTS), "audio"),
                 "okTransition": transition(stage.get("ok")),
                 # A lit home with nothing behind it is the device's own way out of a
                 # story, which is what Telmi's home button means too.
                 "homeTransition": transition(stage.get("home")),
                 "controlSettings": {
-                    "wheel": bool(controls.get("wheel")),
+                    # Published cards switch the wheel on wherever a picture shows, so
+                    # the chapter choices scroll and the audio plays untouched, and
+                    # switch pause on the other way round: only a stage that is nothing
+                    # but sound is a chapter you can stop.
+                    "wheel": image is not None,
                     "ok": bool(controls.get("ok")),
                     "home": bool(controls.get("home")),
-                    "pause": bool(controls.get("pause")),
+                    "pause": image is None,
                     "autoplay": bool(controls.get("autoplay")),
                 },
             }

@@ -142,27 +142,46 @@ def _ffplay() -> str | None:
     return str(bundled) if bundled else shutil.which("ffplay")
 
 
-def open_preview(path: Path) -> None:
-    """Hand the rendered chapter to a player the machine already has.
+def open_preview(path: Path) -> subprocess.Popen | None:
+    """Start a player for the rendered chapter, and hand back what can be stopped.
 
-    The desktop's own opener is tried first because it is the player the user
-    chose for MP3s; a bare window manager has none, and ffmpeg is a dependency
-    already, so it can play the file itself.
+    A player the app started itself is the only one it can silence, which is what
+    the chapters window needs: one chapter at a time, and a Stop that stops. So
+    the app's own players come first — `afplay`, which macOS always has, then
+    ffplay, which the binaries carry next to ffmpeg. The desktop's opener is the
+    last resort: it is the player the user chose for MP3s, but once it has the
+    file the app cannot reach the sound again.
     """
+    play = shutil.which("afplay") if sys.platform == "darwin" else _ffplay()
+    if play:
+        args = [play, str(path)] if play.endswith("afplay") else [
+            play,
+            "-nodisp",
+            "-autoexit",
+            "-loglevel",
+            "quiet",
+            str(path),
+        ]
+        return subprocess.Popen(args)
     if sys.platform == "win32":
         try:
             os.startfile(str(path))  # type: ignore[attr-defined]
         except OSError as exc:
             raise ChapterError(f"could not open {path.name}: {exc}")
+        return None
+    try:
+        subprocess.Popen(["xdg-open", str(path)])
+        return None
+    except OSError:
+        raise ChapterError(f"no player on this machine: play {path} yourself")
+
+
+def stop_preview(player: subprocess.Popen | None) -> None:
+    """Silence a chapter the app started, and wait for the sound to actually stop."""
+    if player is None or player.poll() is not None:
         return
-    players = [["open" if sys.platform == "darwin" else "xdg-open", str(path)]]
-    play = _ffplay()
-    if play:
-        players.append([play, "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)])
-    for argv in players:
-        try:
-            subprocess.Popen(argv)
-            return
-        except OSError:
-            continue
-    raise ChapterError(f"no player on this machine: play {path} yourself")
+    player.terminate()
+    try:
+        player.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        player.kill()

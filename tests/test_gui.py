@@ -382,22 +382,122 @@ def test_clicking_a_row_s_tick_leaves_it_out(app: gui.App, three_chapters) -> No
     assert app.dropped == {2}
 
 
+def _playback(app: gui.App, monkeypatch, tmp_path) -> list:
+    """Let the chapters window play without ffmpeg or a speaker, and keep what it
+    started: the window can only offer Stop for a player it owns."""
+    started: list[_Player] = []
+
+    def render(info, chapter, out):
+        return tmp_path / f"{info.number}.mp3"
+
+    def open_preview(path):
+        player = _Player(path)
+        started.append(player)
+        return player
+
+    monkeypatch.setattr(gui.chapters, "render_preview", render)
+    monkeypatch.setattr(gui.chapters, "open_preview", open_preview)
+    return started
+
+
 def test_listening_to_a_part_says_so_in_its_own_window(
     app: gui.App, three_chapters, monkeypatch, tmp_path
 ) -> None:
-    played: list = []
-    monkeypatch.setattr(
-        gui.chapters, "render_preview", lambda info, chapter, out: tmp_path / f"{info.number}.mp3"
-    )
-    monkeypatch.setattr(gui.chapters, "open_preview", played.append)
+    started = _playback(app, monkeypatch, tmp_path)
 
     page = gui.ChapterList(app, Path("/tmp/pack.zip"))
-    page._render(page.info[1], page.book.chapters[1])
+    page._play(1)
+    assert page.play_button.instate(["disabled"]), "the part is still being rendered"
     page._drain()
 
-    assert played == [tmp_path / "2.mp3"]
+    assert [p.path for p in started] == [tmp_path / "2.mp3"]
     assert page.status.cget("text") == app.t("chapters_playing").format(n=2)
-    assert page.play_button.instate(["!disabled"])
+    assert page.play_button.cget("text") == app.t("chapters_stop")
+    page._close()
+
+
+def test_the_button_stops_the_part_that_is_playing(
+    app: gui.App, three_chapters, monkeypatch, tmp_path
+) -> None:
+    started = _playback(app, monkeypatch, tmp_path)
+
+    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
+    page._play(0)
+    page._drain()
+    page._play_or_stop()
+
+    assert started[0].stopped is True
+    assert page.play_button.cget("text") == app.t("chapters_play")
+    assert page.status.cget("text") == ""
+    page._close()
+
+
+def test_a_second_part_stops_the_one_before_it(
+    app: gui.App, three_chapters, monkeypatch, tmp_path
+) -> None:
+    started = _playback(app, monkeypatch, tmp_path)
+
+    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
+    page._play(0)
+    page._drain()
+    page._play(1)
+    page._drain()
+
+    assert [p.path for p in started] == [tmp_path / "1.mp3", tmp_path / "2.mp3"]
+    assert started[0].stopped is True, "two parts over each other is not what a click means"
+    assert started[1].stopped is False
+    page._close()
+
+
+def test_a_part_that_ran_to_its_end_gives_the_button_back(
+    app: gui.App, three_chapters, monkeypatch, tmp_path
+) -> None:
+    started = _playback(app, monkeypatch, tmp_path)
+
+    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
+    page._play(0)
+    page._drain()
+    assert page.play_button.cget("text") == app.t("chapters_stop")
+
+    started[0].ended = True
+    page._drain()
+    assert page.play_button.cget("text") == app.t("chapters_play")
+    page._close()
+
+
+def test_closing_the_window_stops_the_part_that_was_playing(
+    app: gui.App, three_chapters, monkeypatch, tmp_path
+) -> None:
+    started = _playback(app, monkeypatch, tmp_path)
+
+    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
+    page._play(0)
+    page._drain()
+    page._close()
+
+    assert started[0].stopped is True
+
+
+class _Player:
+    """The part of a player the chapters window uses: is it still playing, and stop it."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.stopped = False
+        self.ended = False
+
+    def poll(self) -> int | None:
+        return 0 if self.ended else None
+
+    def terminate(self) -> None:
+        self.stopped = True
+        self.ended = True
+
+    def wait(self, timeout: float) -> None:
+        return None
+
+    def kill(self) -> None:
+        raise AssertionError("terminate already worked")
 
 
 def test_a_part_that_will_not_play_says_why_under_the_cursor(

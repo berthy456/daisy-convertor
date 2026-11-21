@@ -102,35 +102,78 @@ def test_rendering_a_preview_writes_one_file_per_chapter(tmp_path: Path, monkeyp
     assert len(written) == 3
 
 
-def test_opening_a_preview_hands_the_file_to_the_desktop(monkeypatch) -> None:
+def test_a_preview_is_played_by_a_player_the_app_started(monkeypatch) -> None:
+    """The chapters window stops a chapter and starts only one at a time, so the
+    app has to own the player: the desktop's opener takes the file and lets go."""
     started: list[list[str]] = []
-    monkeypatch.setattr(chapters.sys, "platform", "darwin")
+    monkeypatch.setattr(chapters.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(subprocess, "Popen", lambda args: started.append(list(args)))
+
+    monkeypatch.setattr(chapters.sys, "platform", "darwin")
     chapters.open_preview(Path("/tmp/01 One.mp3"))
-    assert started == [["open", "/tmp/01 One.mp3"]]
+    assert started == [["/usr/bin/afplay", "/tmp/01 One.mp3"]]
 
     started.clear()
     monkeypatch.setattr(chapters.sys, "platform", "linux")
     chapters.open_preview(Path("/tmp/01 One.mp3"))
+    assert started == [["/usr/bin/ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "/tmp/01 One.mp3"]]
+
+
+def test_a_preview_falls_back_to_the_desktop_when_there_is_no_player(monkeypatch) -> None:
+    """No player of the app's own: the sound is out of reach, and it says so by
+    handing back nothing to stop."""
+    started: list[list[str]] = []
+    monkeypatch.setattr(chapters.shutil, "which", lambda name: None)
+    monkeypatch.setattr(chapters.sys, "platform", "linux")
+    monkeypatch.setattr(subprocess, "Popen", lambda args: started.append(list(args)))
+
+    assert chapters.open_preview(Path("/tmp/01 One.mp3")) is None
     assert started == [["xdg-open", "/tmp/01 One.mp3"]]
 
 
-def test_a_preview_falls_back_to_ffplay_when_the_desktop_has_no_player(monkeypatch) -> None:
-    """A bare window manager has no MP3 opener, and ffmpeg is a dependency already."""
-    started: list[list[str]] = []
+def test_a_machine_with_no_way_to_play_says_so(monkeypatch) -> None:
+    def refuse(args):
+        raise OSError("no default player")
 
-    def spawn(args):
-        if args[0] == "open":
-            raise OSError("no default player")
-        started.append(list(args))
+    monkeypatch.setattr(chapters.shutil, "which", lambda name: None)
+    monkeypatch.setattr(chapters.sys, "platform", "linux")
+    monkeypatch.setattr(subprocess, "Popen", refuse)
+    with pytest.raises(chapters.ChapterError, match="no player"):
+        chapters.open_preview(Path("/tmp/01 One.mp3"))
 
-    monkeypatch.setattr(chapters.sys, "platform", "darwin")
-    monkeypatch.setattr(chapters, "_ffplay", lambda: "/app/ffplay")
-    monkeypatch.setattr(subprocess, "Popen", spawn)
 
-    chapters.open_preview(Path("/tmp/01 One.mp3"))
+def test_stopping_a_preview_silences_the_player_it_started() -> None:
+    calls: list[str] = []
+    player = _Player(poll=None, on_terminate=lambda: calls.append("terminate"))
+    chapters.stop_preview(player)
+    assert calls == ["terminate"]
 
-    assert started == [["/app/ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "/tmp/01 One.mp3"]]
+
+def test_stopping_a_chapter_that_ended_by_itself_changes_nothing() -> None:
+    calls: list[str] = []
+    chapters.stop_preview(_Player(poll=0, on_terminate=lambda: calls.append("terminate")))
+    chapters.stop_preview(None)
+    assert calls == []
+
+
+class _Player:
+    """The part of a subprocess the chapters window uses."""
+
+    def __init__(self, poll: int | None, on_terminate) -> None:
+        self._poll = poll
+        self._terminate = on_terminate
+
+    def poll(self) -> int | None:
+        return self._poll
+
+    def terminate(self) -> None:
+        self._terminate()
+
+    def wait(self, timeout: float) -> None:
+        return None
+
+    def kill(self) -> None:
+        raise AssertionError("terminate already worked")
 
 
 def test_a_machine_with_no_player_at_all_says_so(monkeypatch) -> None:

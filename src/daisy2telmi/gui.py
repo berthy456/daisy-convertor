@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import queue
+import subprocess
 import sys
 import tempfile
 import threading
@@ -678,6 +679,9 @@ class ChapterList:
 
         self.cut = app.cut
         self.reported = False
+        # The chapter now playing, when the app started the player itself: only
+        # then can the window stop it, and only one chapter plays at a time.
+        self._playing: subprocess.Popen | None = None
         grid = ttk.Frame(self.top, padding=12)
         grid.grid(sticky="nsew")
         grid.columnconfigure(0, weight=1)
@@ -737,7 +741,7 @@ class ChapterList:
         actions.grid(row=4, column=0, sticky="ew", pady=(8, 0))
         actions.columnconfigure(1, weight=1)
         self.play_button = ttk.Button(
-            actions, text=app.t("chapters_play"), command=self._play_selected
+            actions, text=app.t("chapters_play"), command=self._play_or_stop
         )
         self.play_button.grid(row=0, column=0)
         self.status = ttk.Label(actions, text="")
@@ -798,6 +802,14 @@ class ChapterList:
         if index is not None:
             self._toggle(index)
 
+    def _play_or_stop(self) -> None:
+        """One button plays and stops. Two chapters over each other is not a choice
+        anyone means to make, and there was no way back once a row was clicked."""
+        if self._playing is not None:
+            self._stop()
+        else:
+            self._play_selected()
+
     def _play_selected(self) -> None:
         index = self._selected()
         if index is not None:
@@ -840,6 +852,8 @@ class ChapterList:
             self.events.put(("counts", chapters.describe_levels(books)))
 
     def _play(self, index: int) -> None:
+        chapters.stop_preview(self._playing)
+        self._playing = None
         self.play_button.state(["disabled"])
         self.status.configure(text=self.app.t("chapters_loading"))
         threading.Thread(
@@ -852,8 +866,19 @@ class ChapterList:
         except (chapters.ChapterError, audio.AudioError) as exc:
             self.events.put(("error", (info.number, str(exc))))
 
+    def _stop(self) -> None:
+        chapters.stop_preview(self._playing)
+        self._playing = None
+        self._enable()
+        self.status.configure(text="")
+
     def _enable(self) -> None:
+        """The button offers the one thing that makes sense now: Stop while a part
+        plays, Listen otherwise."""
         self.play_button.state(["!disabled"])
+        self.play_button.configure(
+            text=self.app.t("chapters_stop" if self._playing is not None else "chapters_play")
+        )
 
     def _drain(self) -> None:
         if not self.top.winfo_exists():
@@ -885,7 +910,7 @@ class ChapterList:
                     text=self.app.t("chapters_playing").format(n=number)
                 )
                 try:
-                    chapters.open_preview(path)
+                    self._playing = chapters.open_preview(path)
                 except chapters.ChapterError as exc:
                     self._report("chapters_failed", number, exc)
                 self._enable()
@@ -893,6 +918,10 @@ class ChapterList:
                 number, reason = payload
                 self._report("chapters_failed", number, reason)
                 self._enable()
+        if self._playing is not None and self._playing.poll() is not None:
+            # The part ran to its end on its own: the button goes back to Listen.
+            self._playing = None
+            self._enable()
         self.top.after(100, self._drain)
 
     def _report(self, key: str, number: int, reason: object) -> None:
@@ -908,6 +937,7 @@ class ChapterList:
         }
         self.app.options["cut"] = self.cut
         settings.save(self.app.options)
+        chapters.stop_preview(self._playing)
         self.packs.close()
         self.top.destroy()
 

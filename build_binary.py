@@ -167,8 +167,17 @@ def _speech_options() -> list[str]:
     return _stage_espeak(*found)
 
 
+def _ffplay(ffmpeg: str) -> Path | None:
+    """The player next to the ffmpeg being bundled, wherever it came from."""
+    companion = Path(ffmpeg).with_name("ffplay")
+    if companion.is_file():
+        return companion
+    found = shutil.which("ffplay")
+    return Path(found) if found else None
+
+
 def _ffmpeg_options(ffmpeg: str) -> list[str]:
-    """ffmpeg, and on Linux every library it loads.
+    """ffmpeg and ffplay, and on Linux every library they load.
 
     PyInstaller follows ffmpeg's own dependencies but leaves the ones it takes for
     part of the distribution behind — libdrm and libwayland among them — and a bare
@@ -176,23 +185,37 @@ def _ffmpeg_options(ffmpeg: str) -> list[str]:
     crop a cover. Copying the closure ourselves keeps the picture working anywhere.
     macOS needs none of this: Homebrew names its libraries by absolute path and
     PyInstaller rewrites them.
+
+    ffplay travels with ffmpeg because the chapters window can only offer Stop for
+    a player it started itself, and the desktop's opener is not one of those.
     """
+    players = [Path(ffmpeg)]
+    companion = _ffplay(ffmpeg)
+    if companion is None:
+        print("warning: no ffplay next to ffmpeg; a chapter will not be stoppable", file=sys.stderr)
+    else:
+        players.append(companion)
+
     if sys.platform != "linux":
-        return ["--add-binary", f"{ffmpeg}{os.pathsep}."]
+        return [arg for one in players for arg in ("--add-binary", f"{one}{os.pathsep}.")]
+
     stage = ROOT / "dist" / "ffmpeg"
     if stage.exists():
         shutil.rmtree(stage)
     stage.mkdir(parents=True)
-    staged_exe = stage / "ffmpeg"
-    shutil.copy2(ffmpeg, staged_exe)
-    staged_exe.chmod(0o755)
-    staged_libs = _copy_closure(ffmpeg, stage)
-    print(f"bundling ffmpeg with {len(staged_libs)} librar{'y' if len(staged_libs) == 1 else 'ies'}")
-    return [
-        "--add-binary",
-        f"{staged_exe}{os.pathsep}.",
-        *(arg for lib in staged_libs for arg in ("--add-binary", f"{lib}{os.pathsep}.")),
-    ]
+    staged: list[Path] = []
+    libraries = 0
+    for source in players:
+        target = stage / source.name
+        shutil.copy2(source, target)
+        target.chmod(0o755)
+        staged.append(target)
+        staged_libs = _copy_closure(str(source), stage)
+        libraries += len(staged_libs)
+        staged += staged_libs
+    names = " and ".join(one.name for one in players)
+    print(f"bundling {names} with {libraries} librar{'y' if libraries == 1 else 'ies'}")
+    return [arg for one in staged for arg in ("--add-binary", f"{one}{os.pathsep}.")]
 
 
 def _gui_options() -> list[str]:
@@ -222,6 +245,10 @@ def main() -> int:
         "--console",
         "--name",
         "daisy-convertor",
+        # Without this, a machine where the package was never pip-installed builds
+        # a binary that starts and then says there is no daisy2telmi module.
+        "--paths",
+        str(ROOT / "src"),
         "--hidden-import",
         "lxml.etree",
         "--hidden-import",

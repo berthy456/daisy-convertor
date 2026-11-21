@@ -53,7 +53,7 @@ Drag the picture to move it. The **Zoom** slider, the mouse wheel, or the arrow 
 
 ### 6. Listen, and drop what is not the story
 
-**Chapters** opens the list. Each line plays, so you can hear a chapter before deciding. Untick the ones that are not part of the story — the legal notice, the table of contents, the "end of book" announcement — and what is left is renumbered, so the cards still count from 1.
+**Chapters** opens the list. Select a line and press **Listen**, or double-click it, to hear a chapter before deciding. One part plays at a time, and the button becomes **Stop** while it plays, so a part you have heard enough of is over when you say so. Untick the ones that are not part of the story — the legal notice, the table of contents, the "end of book" announcement — and what is left is renumbered, so the cards still count from 1.
 
 ### 7. Decide what the cards say
 

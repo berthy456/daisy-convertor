@@ -231,8 +231,13 @@ def test_every_option_sits_inside_the_page_frame(app: gui.App) -> None:
     page = gui.Options(app)
     frames = page.top.winfo_children()
     assert len(frames) == 1, "the window holds one frame"
+    inside, pending = set(), list(frames)
+    while pending:
+        widget = pending.pop()
+        inside.add(widget)
+        pending.extend(widget.winfo_children())
     for box in (page.language_box, page.announce_box, page.engine_box, page.voice_box, page.device_box, page.python_box):
-        assert box.master is frames[0], box
+        assert box.master in inside, box
 
 
 def test_the_chatterbox_device_choice_is_saved(app: gui.App, tmp_path, monkeypatch) -> None:

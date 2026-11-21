@@ -105,6 +105,8 @@ def theme(root: tk.Misc) -> None:
     style.configure("TProgressbar", background=ACCENT, troughcolor=FIELD, bordercolor=LINE)
     style.configure("TSeparator", background=LINE)
     style.configure("TSizegrip", background=PAPER)
+    style.configure("TLabelframe", background=PAPER, bordercolor=LINE)
+    style.configure("TLabelframe.Label", background=PAPER, foreground=MUTED, font=("TkDefaultFont", 10, "bold"))
     # The window's own two lines of words: what it is for, under the mark, and the
     # name along the bottom.
     style.configure("Headline.TLabel", foreground=INK, font=("TkDefaultFont", 13, "bold"))
@@ -1191,43 +1193,46 @@ class Options:
         )
         self.engine_box = self._combo(grid, self.engine_keys, app.options["tts"])
         self.voice_box = self._combo(grid, [None], app.options["voice"])
-        self.device_box = self._combo(grid, self.device_keys, app.options["device"])
         self.card_total_var = tk.BooleanVar(value=bool(app.options["card_total"]))
         self.autoplay_var = tk.BooleanVar(value=bool(app.options["autoplay"]))
-        self.python_box = ttk.Entry(grid, width=28)
-        self.python_box.insert(0, app.options["python"] or "")
 
-        clip_row = ttk.Frame(grid)
+        self._row(grid, "opt_language", 0, self.language_box)
+        self._row(grid, "opt_announce", 1, self.announce_box)
+        self._check(grid, "opt_card_total", 2, self.card_total_var)
+        self._check(grid, "opt_autoplay", 3, self.autoplay_var)
+        self._row(grid, "opt_engine", 4, self.engine_box)
+        self._row(grid, "opt_voice", 5, self.voice_box)
+
+        # Chatterbox is a package that goes into the Python named below, not part of
+        # the app, so its rows sit behind their own border.
+        chatterbox = ttk.Labelframe(grid, text=app.t("opt_section_chatterbox"), padding=(10, 6))
+        chatterbox.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        chatterbox.columnconfigure(1, weight=1)
+        self.device_box = self._combo(chatterbox, self.device_keys, app.options["device"])
+        self.python_box = ttk.Entry(chatterbox, width=28)
+        self.python_box.insert(0, app.options["python"] or "")
+        clip_row = ttk.Frame(chatterbox)
         self.clip_box = ttk.Entry(clip_row, width=22)
         self.clip_box.insert(0, app.options["clip"] or "")
         self.clip_box.pack(side="left")
         ttk.Button(clip_row, text=app.t("browse_output"), command=self._pick_clip).pack(side="left", padx=(6, 0))
 
-        # The Chatterbox rows only mean something to that engine, so they sit
-        # under their own heading instead of continuing the list.
-        self._row(grid, "opt_language", 0, self.language_box)
-        self._row(grid, "opt_announce", 1, self.announce_box)
-        self._row(grid, "opt_card_total", 2, ttk.Checkbutton(grid, variable=self.card_total_var))
-        self._row(grid, "opt_autoplay", 3, ttk.Checkbutton(grid, variable=self.autoplay_var))
-        self._row(grid, "opt_engine", 4, self.engine_box)
-        self._row(grid, "opt_voice", 5, self.voice_box)
-        self._heading(grid, "opt_section_chatterbox", 6)
-        ttk.Label(grid, text=app.t("opt_chatterbox_hint")).grid(
-            row=7, column=0, columnspan=2, sticky="w", pady=(0, 6)
+        ttk.Label(chatterbox, text=app.t("opt_chatterbox_hint")).grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 6)
         )
-        # Chatterbox is not inside the app: it is a package that goes into the
-        # Python named below, so the page says whether it is there already.
-        self.chatterbox_state = ttk.Label(grid, text=self._chatterbox_text())
-        self.chatterbox_state.grid(row=8, column=0, sticky="w")
+        # Whether the package is already in the Python named below, and the way to put it there.
+        self.chatterbox_state = ttk.Label(chatterbox, text=self._chatterbox_text())
+        self.chatterbox_state.grid(row=1, column=0, sticky="w")
         self.chatterbox_button = ttk.Button(
-            grid, text=app.t("chatterbox_install"), command=self._install_chatterbox
+            chatterbox, text=app.t("chatterbox_install"), command=self._install_chatterbox
         )
-        self.chatterbox_button.grid(row=8, column=1, sticky="e", padx=(8, 0))
-        self._row(grid, "opt_python", 9, self.python_box)
-        self._row(grid, "opt_device", 10, self.device_box)
-        self._row(grid, "opt_clip", 11, clip_row)
+        self.chatterbox_button.grid(row=1, column=1, sticky="e", padx=(8, 0))
+        self._row(chatterbox, "opt_python", 2, self.python_box)
+        self._row(chatterbox, "opt_device", 3, self.device_box)
+        self._row(chatterbox, "opt_clip", 4, clip_row)
+
         ttk.Button(grid, text=app.t("opt_close"), command=self._close).grid(
-            row=12, column=0, columnspan=2, sticky="e", pady=(12, 0)
+            row=7, column=0, columnspan=2, sticky="e", pady=(12, 0)
         )
 
         self.engine_box.bind("<<ComboboxSelected>>", lambda _e: self._fill_voices())
@@ -1274,9 +1279,11 @@ class Options:
         ttk.Label(grid, text=self.app.t(key)).grid(row=row, column=0, sticky="w", pady=4)
         widget.grid(row=row, column=1, sticky="ew", padx=(8, 0), pady=4)
 
-    def _heading(self, grid: ttk.Frame, key: str, row: int) -> None:
-        ttk.Label(grid, text=self.app.t(key), font=("TkDefaultFont", 10, "bold")).grid(
-            row=row, column=0, columnspan=2, sticky="w", pady=(14, 2)
+    def _check(self, grid: ttk.Frame, key: str, row: int, var: tk.BooleanVar) -> None:
+        """The tick and its words in one widget: a label in the left column would
+        leave the box a hand's width from the sentence it belongs to."""
+        ttk.Checkbutton(grid, text=self.app.t(key), variable=var).grid(
+            row=row, column=0, columnspan=2, sticky="w", pady=4
         )
 
     def _fill_voices(self) -> None:

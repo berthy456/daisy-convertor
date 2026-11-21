@@ -1,24 +1,13 @@
 # daisy-convertor, for developers
 
-How the converter works: every option, the formats it writes, what has been verified and what it cannot do. To use the tool, see [README.md](README.md).
+Reference for the command line, every flag, the files each format writes, what has been verified and what is not. For the app and the web page, see [README.md](README.md).
 
-Converts a **DAISY 2.02, DAISY 3, text-only DAISY or EPUB book** into a **Telmi story folder** (Telmi Sync / Telmi OS), a **Lunii STUdio zip** or **`.plain.pk`** story card, **Flam** pictures, or a **Merlin** card (beta).
+Inputs: **DAISY 2.02, DAISY 3, text-only DAISY, EPUB** — a `.zip`, an `.epub` or an extracted folder.
+Outputs: **Telmi** story folder, **Lunii** STUdio zip, **Commercial PK** (`.plain.pk`), **Flam** pictures, **Merlin** card (beta).
 
 `berthy456/daisy2telmi` is this tool under its old name, left at v3.0.1.
 
-One Telmi part per top-level heading in the book's outline. A part that carries recorded audio keeps it; a part that carries only words — a text-only DAISY pack, an EPUB — has them spoken by the TTS engine. Scene images are generated placeholders unless a cover is supplied.
-
-```
-daisy-convertor <path-to-daisy-pack> <output-folder>
-```
-
-Works with a `.zip` or `.epub` pack or an already-extracted folder.
-
----
-
-## Install
-
-Requires Python 3.11+ and **ffmpeg on PATH**.
+## Source install
 
 ```bash
 python -m venv .venv
@@ -26,137 +15,81 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -e .
 ```
 
-ffmpeg is **mandatory**, not optional: every source MP3 in the test pack is 22050 Hz / mono / 56 kbps and Telmi requires 44100 Hz / CBR 64–192 kbps, so every scene is re-encoded. It is not a Python dependency, so install it:
+Python 3.11+. ffmpeg must be on `PATH` (`winget install Gyan.FFmpeg`, `brew install ffmpeg`, `apt install ffmpeg`); the built binaries bundle their own copy, so only a source install needs it. Tkinter for the GUI: `pip install -e .[gui]` adds drag-and-drop; on macOS, Homebrew's Python needs `brew install python-tk@3.15`.
 
-- Windows: `winget install Gyan.FFmpeg`
-- macOS: `brew install ffmpeg`
-- Linux: `apt install ffmpeg`
-
-The built `daisy-convertor.exe` **bundles ffmpeg** (see Build below), so an end user running the exe does not need it installed. Only a source install needs it on PATH. The converter checks for ffmpeg before doing any work and exits with a clear message if it can find neither a bundled copy nor one on PATH.
-
-## Usage
+## Command line
 
 ```bash
-daisy-convertor gon-ruby-mp3.zip stories
-daisy-convertor --verbose gon-ruby-mp3.zip stories   # logs every ffmpeg call
-daisy-convertor --force gon-ruby-mp3.zip stories     # overwrite an existing story folder
+daisy-convertor <pack> [output-folder]
 ```
 
-Exit codes: `0` success, `1` pack unreadable or ffmpeg failed, `2` bad arguments / not a DAISY pack / story folder already exists.
+No arguments opens the GUI. The output folder is a parent: inside it the story gets Telmi's `<category>_<age>_<title>_<uuid>` name, unless the path already has that name.
 
-### Output format
+| Exit | Meaning |
+| :--- | :--- |
+| 0 | written |
+| 1 | pack unreadable, or ffmpeg failed |
+| 2 | bad arguments, not a DAISY pack, output folder not empty |
 
-```bash
-daisy-convertor --format lunii gon-ruby-mp3.zip stories
-```
+### Flags
 
-`--format telmi|lunii|lunii-pk|flam|merlin` picks the player the story is written for; Telmi is the default. The story folder is always written, and one archive comes out of it: `story.zip` for the Telmi Sync and the Flam launcher, which both import TELMI folders, `<story>-lunii.zip` in the STUdio form for a Lunii, `<Title>.<8 hex>.plain.pk` in the layout a Lunii story card keeps itself, or `<story>_merlin.zip` for a Merlin story-teller. A plain Lunii has no colour panel and four grey levels, so either Lunii choice draws a second set of cards — white ground, black ink, flattened to `0/96/192/255` — and builds the archive from those. The GUI has the same five choices under the cover field.
+| Flag | Values | Default |
+| :--- | :--- | :--- |
+| `-v`, `--verbose` | | logs every ffmpeg call |
+| `-f`, `--force` | | writes into a non-empty output folder |
+| `--format` | `telmi` `lunii` `lunii-pk` `flam` `merlin` | `telmi` |
+| `--merlin-merge` | a `playlist.bin` copied off a Merlin card | |
+| `--version` | | |
 
-#### Lunii `.plain.pk`
+Before converting:
 
-`--format lunii-pk` writes the same story the way a Lunii's own card stores it, which is what Lunii.QT and open-story-teller read and write. The graph is flattened into fixed-size records instead of a `story.json`, and the media is renamed to the eight hex characters the card reads:
+| Flag | Values | Notes |
+| :--- | :--- | :--- |
+| `--list` | | prints one line per part (number, length, title, clip count) and stops; needs no output folder |
+| `--cut` | `chapter` `paragraph` `sentence` | where the book is cut; `chapter` follows the pack's own outline |
+| `--preview FOLDER` | | writes one playable MP3 per part into FOLDER and stops |
+| `--drop CHAPTERS` | `2`, `2,4-6` | leaves those parts out, by the numbers `--list` prints; what is left is renumbered. A number outside the book, or dropping every part, exits 2 |
 
-- `nm` — no bytes; its presence is what offers night mode.
-- `ni` — a 0x200 header (format version, story version, header size, node size, and the node, `ri` and `si` counts), then one 0x2C record per stage: its picture and sound as `ri`/`si` indices, an OK and a home press each as `(base, count, pick)` into `li`, then the wheel, ok, home, pause and autoplay flags as 16-bit words. `-1` is the device's own "nowhere to go".
-- `li.plain` — the stage indices a choice leads to, four bytes each. One action node owns one unbroken run of them, which is what a transition's `base` and `count` point at.
-- `ri.plain`, `si.plain` — one 12-character name per picture and per sound: `000\` then eight hex characters.
-- `rf/000/<8 hex>.bmp` — the card: 320×240, four bits a pixel, BI_RLE4, sixteen greys, lines stored top line first.
-- `sf/000/<8 hex>.mp3` — the audio as the device wants it: MP3, at least 44100 Hz, mono. Anything else is re-encoded on the way in.
-- `uuid.bin` — the story's 16 uuid bytes.
-- `_metadata.json`, `_thumbnail.png` — the title and picture Lunii.QT lists the story under. Neither reaches a card.
+Cover:
 
-The `bt` authorisation file a card really carries needs that card's own key, which is why only Lunii.QT writes it, as it copies a `.plain.pk` onto one.
+| Flag | Values | Notes |
+| :--- | :--- | :--- |
+| `--cover IMAGE` | | draws the cards over this picture instead of the placeholder |
+| `--find-cover` | | asks Open Library for the print book named in `dc:source` (`dc:identifier` is the DAISY edition's own number, which no cover service knows); falls back to a title and author search with no ISBN |
+| `--cover-crop` | `top` `center` `bottom` | `center` |
+| `--cover-zoom FACTOR` | 1–4 | enlarges the picture before cropping, so the frame shows less of it and can move sideways |
 
-#### Merlin (beta)
+Chapter card speech:
 
-The Merlin has no screen and no story graph: its micro-SD card holds one flat folder of `.mp3` and `.jpg` files named with a uuid, and a `playlist.bin` that lists them as records 152 bytes each — the tree, the titles and the order are all in that file. `--format merlin` writes it: one record for the story, one per part, each MP3 at 44.1 kHz stereo 128 kb/s with no ID3 tag, each picture a 128×128 JPEG. Because the device never reads a record's title aloud, each part's audio starts with its chapter card spoken, so a chapter's name is still heard.
+| Flag | Values | Notes |
+| :--- | :--- | :--- |
+| `--announce` | `off` `number` `number_of` `title` `number_title` `title_number` `chapter` `prompt` | what the card says; `prompt` is the default. A pattern needing a name falls back to `chapter` when the parts carry no synced text |
+| `--card-total` / `--no-card-total` | | whether the drawn card counts the parts: `4/12` or `4` |
+| `--card-negative` / `--no-card-negative` | | draws the black-and-white Lunii cards light-for-dark. Only those cards have a negative |
+| `--language` | `ar de en es fr it nl pt tr zh` | the phrase and the voice; wording in `src/daisy2telmi/i18n.py` |
+| `--autoplay` | | a part advances by itself instead of waiting for OK. A card's audio plays as soon as the card is drawn either way |
+| `--tts` | `chatterbox` `auto` `espeak` `say` `sapi` `command` `off` | `chatterbox`; `auto` is espeak-ng, then macOS `say`, then Windows speech. Asking for Chatterbox where it is missing logs a warning and uses `auto` |
+| `--tts-voice` | | voice name |
+| `--tts-clip` | | a few seconds of someone speaking, which Chatterbox copies as a voice |
+| `--tts-python` | | the interpreter that has `chatterbox-tts` |
+| `--tts-device` | `auto` `cpu` `mps` `cuda` | `auto` picks the fastest and logs it; a forced device the machine lacks stops the run |
+| `--tts-command` | | a template with `{text}` `{out}` `{lang}` `{locale}` `{voice}` |
 
-`--merlin-merge PLAYLIST.bin` takes a `playlist.bin` copied off the card and writes a new one holding the card's own records plus this story under its root; without it the file lists only this story, and the card's own content stops showing until its original file is put back. `IMPORT.txt` in the archive says which files to copy and which ones (`sleep.cfg`, `wifi.cfg`, the `default` folder) never to delete.
+Cards get a spoken number only when the cut is by chapter. At paragraph or sentence level a card plays the opening seconds of its own part instead, which is the only way to tell hundreds of cards apart.
 
-This is beta: the format is undocumented, the tools that edit a card are awkward, and nothing here has been read back off a real Merlin. Telmi, Lunii and Flam are the stable outputs.
+## Formats
 
-A Lunii archive carries one word, `nightModeAvailable`, saying the story can be followed without touching the machine. A converted audiobook never asks for anything but the next chapter, so the word is always written. The Telmi story folder has no such word: its night mode takes the story already open in front of it, and what decides whether a chapter joins that playlist is the graph's own `control.autoplay` and `control.ok`, which are set so a chapter runs on by itself.
+| `--format` | Archive written | |
+| :--- | :--- | :--- |
+| `telmi` | `<story folder>.zip` | for Telmi Sync's **Import → zip** |
+| `lunii` | `<story>-lunii.zip` | Lunii STUdio; cards drawn in the screen's sixteen greys |
+| `lunii-pk` | `<Title>.<8 hex>.plain.pk` | the layout a Lunii story card keeps itself; Lunii.QT or open-story-teller writes it onto a card |
+| `flam` | `<story folder>.zip` | the Telmi archive, at the Flam's own screen sizes (320×212 scene, 104×136 thumbnail) |
+| `merlin` | `<story>_merlin.zip` | beta |
 
-### Spoken chapter cards
+The Telmi story folder is always written as well; the archive is made from it.
 
-A chapter card can speak when it appears, so a listener who cannot see the screen knows where the book is:
-
-```bash
-daisy-convertor --announce prompt --language fr gon-ruby-mp3.zip stories
-daisy-convertor --announce chapter --autoplay gon-ruby-mp3.zip stories
-```
-
-`--announce` chooses what the card says: `off`; `number` (the number alone); `number_of` (the number and how many parts the story has); `title` (the part's own name, as the DAISY outline labels it); `number_title` and `title_number` (that name with the number, either order); `chapter` ("Chapter 4"); or `prompt` (the number plus a question inviting OK, the default). A pattern that needs a name falls back to `chapter` in a pack whose parts carry no synced text. If no speech engine is found the run logs a warning and the cards stay silent — the story is still valid. The player plays a card's audio as soon as it draws the card, whether or not autoplay is on; `--autoplay` only decides whether it then advances by itself or waits for OK.
-
-`--language` sets the phrase and the voice — `ar, de, en, es, fr, it, nl, pt, tr, zh` (`src/daisy2telmi/i18n.py` holds the wording). `--tts` picks the engine: `chatterbox` (the default), `auto` (espeak-ng, then macOS `say`, then Windows speech), `espeak`, `say`, `sapi` or `command`. A run that asks for Chatterbox on a machine that does not have it logs a warning and reads the cards with `auto` instead. `--tts-voice` names a voice, and `--tts-command` is a template with `{text}`, `{out}`, `{lang}`, `{locale}` and `{voice}`, which is how any other engine gets used. Cards only get a spoken number when the cut is by chapter; at paragraph or sentence level a card plays the opening seconds of its own part instead, which is the only way to tell hundreds of cards apart.
-
-What the card *says* and what it *shows* are set apart: `--announce number_of` says the total out loud, while `--card-total` / `--no-card-total` decides whether the drawn card counts the parts at all — `CHAPTER 4/12` or `CHAPTER 4`. The web page asks the three questions directly, under **The chapter cards**: show how many parts there are, say the word chapter, say how many parts there are.
-
-`--tts chatterbox` speaks with [Chatterbox](https://github.com/resemble-ai/chatterbox). It is not bundled — the binaries carry no torch — so daisy-convertor runs `src/daisy2telmi/chatterbox_speak.py` in an interpreter of your own: `pip install chatterbox-tts` first, and `--tts-python` picks the interpreter if the `python3` on `PATH` is not the one that has it. The app offers to do that install instead of asking you to type it: on Save, a machine without the package gets one dialog, OK runs `pip install --upgrade chatterbox-tts` in the interpreter named in the options and streams pip's output into the log, Cancel uses the machine's own voice for that story. The options page says whether the package is in the interpreter it is pointed at, and has an **Install Chatterbox** button for the same pip run. `--tts-clip` points at a few seconds of someone speaking, which the model copies as a voice; without it the model speaks in its own voice. One process speaks the whole batch, because loading the model costs more than saying a chapter number. `--tts-device auto|cpu|mps|cuda` says what it runs on: Chatterbox leaves the GPU alone unless asked, so `mps` takes the Apple GPU and `cuda` an Nvidia one. `auto` picks the fastest device it finds and logs which one it chose; a forced device the machine does not have stops the run rather than falling back. Chatterbox is retired upstream: as of August 2026 the repository is an unmaintained MIT archive.
-
-The built binaries carry espeak-ng, its shared libraries and its language data, so speech works with nothing installed. Windows builds rely on the speech engine that ships with Windows.
-
-### Cover art
-
-DAISY 2.02 audio packs carry no cover, so the user supplies one:
-
-```bash
-daisy-convertor --cover cover.jpg gon-ruby-mp3.zip stories
-```
-
-The pack does name the print book it was read from: `dc:source` holds that book's ISBN (`dc:identifier` is the DAISY edition's own number, which no cover service knows). `--find-cover` asks Open Library for that ISBN, or searches by title and author when the pack has no ISBN, and uses the picture it returns:
-
-```bash
-daisy-convertor --find-cover gon-ruby-mp3.zip stories
-```
-
-ffmpeg crops the picture to `640x480` for `title.png` and for every chapter card, and to `512x512` for `cover.png`. Each card gets its number drawn across the middle in white with a black border — `CHAPTER 2/23`, in the `--language` of the story — so the listener sees which chapter of how many is playing. Without `--cover` the images are the placeholders described under [Output](#output).
-
-`--cover-crop top|center|bottom` says how the picture is cropped to fit those three different ratios; the middle is the default, and a tall cover loses its title there. `--cover-zoom FACTOR` (1 to 4) enlarges the picture before cropping it, so the frame shows less of it and can be moved sideways as well.
-
-The number is drawn by the converter rather than by ffmpeg: Homebrew's ffmpeg has no `drawtext`, so `src/daisy2telmi/images.py` carries a 5x7 bitmap font and ffmpeg only composites the result. The font is Latin, so Chinese and Arabic cards show `2/23` alone; the spoken card still says the word.
-
-The GUI has the same field below the output folder, and looks a cover up by itself as soon as a pack is picked or dropped: the answer lands in the field, and a cover already typed there is never replaced. The web page does the same once it has read the pack. Both keep their own link, which opens a Google image search for the pack's title, and both take a cover from a file or from a link. Both then draw one frame at the chosen player's ratio over the cover, and you move it by dragging it, or with the slider, the wheel or the arrow keys, which enlarge the picture under it. The frame's place travels with the conversion: `images.crop_view` carries it as a focus point, and the desktop keeps it until the cover, the player or the zoom changes. Open Library is asked rather than isbndb.com because it needs no key and answers browser requests; isbndb.com's key costs money.
-
-### Listening before converting
-
-```bash
-daisy-convertor --list gon-ruby-mp3.zip
-daisy-convertor --preview /tmp/listen gon-ruby-mp3.zip
-daisy-convertor --drop 2,5-6 gon-ruby-mp3.zip stories
-```
-
-`--list` prints one line per chapter — number, length, title, clip count — and stops. It needs no output folder. `--preview FOLDER` writes one playable MP3 per chapter (`01 一.mp3`, `02 二.mp3`, ...) into FOLDER and stops, so a chapter can be heard before anything is built. The lengths come from ffmpeg's container header, not from decoding the file.
-
-`--drop` leaves chapters out of the story, by the numbers `--list` prints: `2`, or `2,4-6`. What is left is renumbered, so dropping chapter 1 makes the old chapter 2 the first one: its card reads `CHAPTER 1/5` and its announcement says `Chapter 1`. A number outside the book, or a selection that drops every chapter, stops the run with exit code 2.
-
-The GUI's **Chapters** button opens the same list. Each row shows the chapter's length, plays it through the system's audio player, and has a box to leave it out; closing the window keeps the unticked numbers for the next conversion.
-
-### GUI
-
-Running `daisy-convertor` with no arguments opens a Tkinter window: pick or drop a pack, pick an output folder and an optional cover, watch the same log the CLI writes. The conversion runs on a worker thread.
-
-**Options** opens a second window with the interface language (the same ten), what the cards say, whether the drawn card counts the parts, autoplay, the speech engine and the voice, and under them the Chatterbox rows: which Python runs it, which device it runs on, the voice clip, and whether the package is in that Python — with an **Install Chatterbox** button when it is not. Closing the window writes `~/.config/daisy2telmi/config.json` (`%APPDATA%\daisy2telmi\config.json` on Windows), which the CLI reads too, so a flag like `--language` only overrides what is already saved.
-
-Drag-and-drop needs the optional `tkinterdnd2` (`pip install -e .[gui]`); without it the browse buttons work and the window says so. `build_binary.py` passes `--collect-all tkinterdnd2` when it is installed, so the built binaries get drop support.
-
-On macOS, Homebrew's Python needs the Tk package separately: `brew install python-tk@3.15`.
-
-### Web page
-
-`web/` is a static converter that runs entirely in the browser, deployed to GitHub Pages from the `web` job. It shares no code with the Python package, so `tests/web/converter.test.mjs` pins it to the same naming, uuid and outline behaviour, and `tests/test_web_converter.py` runs the browser modules under Node and validates their output with the same validator as the CLI.
-
-Once a pack has been read, the page lists the parts it was cut into with their lengths, each with a box: untick one to leave it out of the story. The numbers belong to the chosen cut level, so changing level redraws the list; past 400 parts the page only says how many there are.
-
-Its chapter cards speak as well, and the page asks what each one says and shows. **The chapter cards** holds three boxes: show how many parts there are on the drawn card, say the word chapter, say how many parts there are. The choices are kept in `localStorage` and travel to the drawn card text and to the card audio.
-
-`web/voices/<language>/01.mp3` … `50.mp3` are the pre-recorded announcements ("Chapter 4"), `n-01.mp3` … `n-50.mp3` the numbers alone, and `of-pre.mp3`, `of-mid.mp3` and `of-post.mp3` the words the language puts around the total, split out of its own `{n} of {total}` pattern so a language that names the part before the number, or after both, is recorded as it speaks. `tools/make_web_voices.py` generates them all, from Chatterbox (`--engine chatterbox --python <interpreter with chatterbox-tts>`) or from espeak-ng, which is the default and needs no download, and levels every clip to the same loudness the app levels its cards to. The chapter clips committed are the Chatterbox ones; the bare numbers and the fragments are espeak-ng, because Chatterbox 0.1.7 loses its place on a one-word phrase and answers "of" with 23 seconds of noise. With the boxes left at their defaults a card only uses the Chatterbox clips. A browser tab can play speech but cannot capture it into a file, so the clips are committed rather than synthesised during conversion; past chapter 50 the cards stay silent.
-
-It differs from the CLI in one way that matters: it concatenates MP3 frame data instead of re-encoding. That is safe because the player resamples, but it means no clip trimming and no bitrate normalisation. See [Known limitations](#known-limitations).
-
-## Output
-
-The second argument is a parent folder. Inside it the story gets Telmi's own folder name, `<category>_<age>_<title>_<uuid>`:
+### Telmi story folder
 
 ```
 stories/_00_Wesh la fee_292b74ca-d8be-53f9-a5d5-5224a36bbd02/
@@ -164,21 +97,15 @@ stories/_00_Wesh la fee_292b74ca-d8be-53f9-a5d5-5224a36bbd02/
   nodes.json
   notes.json
   title.mp3      the pack's spoken title, played on the story's title screen
-  title.png      640x480: the --cover picture, or a placeholder
+  title.png      640x480: the cover, or a placeholder
   cover.png      512x512 copy of the same, referenced by metadata.json
   audios/
-    s0.mp3 ... sN.mp3      one per chapter
+    s0.mp3 ... sN.mp3      one per part
   images/
-    m0.png ... mN.png      640x480: the cover with `CHAPTER k/N` over it, or the number on a placeholder
+    m0.png ... mN.png      640x480: the cover with the card text over it, or the number on a placeholder
 ```
 
-If the second argument already has the conventional name it is used directly instead of nesting.
-
-Alongside the folder the converter writes `<story folder name>.zip`, which is what you hand to Telmi Sync's *Import → zip*. The folder goes in nested one level, because `findDirectory` in `ConvertZip.js` identifies the format by counting `metadata.json`, `nodes.json`, `title.mp3` and `title.png` in a single zip directory and requires exactly four.
-
-Telmi-Sync renames the folder to the same convention on import, so the name is for readability before import. `generateDirNameStory` is reproduced exactly — see the contract below.
-
-### The story graph
+The zip nests the folder one level, because `findDirectory` in Telmi-Sync's `ConvertZip.js` counts `metadata.json`, `nodes.json`, `title.mp3` and `title.png` in a single zip directory and requires exactly four. Telmi-Sync renames the folder on import, so the name is for readability before import.
 
 `nodes.json` uses the same shape as Telmi-Sync's own audio-list importer:
 
@@ -190,25 +117,122 @@ s<k>   chapter:   audio s<k>.mp3, autoplay on, ok → m[k+1], home → m[k]
 
 The last chapter's `ok` is `null`, which is how the published sample packs end a story.
 
+A Telmi story has no night-mode flag: the player's night mode takes the story already open in front of it. What decides whether a chapter joins that playlist is the graph's own `control.autoplay` and `control.ok`, set so a chapter runs on by itself. A Lunii archive carries one word, `nightModeAvailable`, and a converted audiobook always sets it, because it never asks for anything but the next chapter.
+
+### Lunii `.plain.pk`
+
+The graph is flattened into fixed-size records instead of a `story.json`; the media is renamed to the eight hex characters the card reads. Stored, not deflated.
+
+| File | |
+| :--- | :--- |
+| `nm` | no bytes; its presence is what offers night mode |
+| `ni` | a 0x200 header (format version, story version, header size, node size, and the node, `ri` and `si` counts), then one 0x2C record per stage: its picture and sound as `ri`/`si` indices, an OK and a home press each as `(base, count, pick)` into `li`, then the wheel, ok, home, pause and autoplay flags as 16-bit words. `-1` is the device's own "nowhere to go" |
+| `li.plain` | the stage indices a choice leads to, four bytes each. One action node owns one unbroken run of them, which is what a transition's `base` and `count` point at |
+| `ri.plain`, `si.plain` | one 12-character name per picture and per sound: `000\` then eight hex characters |
+| `rf/000/<8 hex>.bmp` | the card: 320×240, four bits a pixel, BI_RLE4, sixteen colours, lines stored top line first, `biClrUsed` left at zero and `biClrImportant` at 16 |
+| `sf/000/<8 hex>.mp3` | MP3, at least 44100 Hz, mono. Anything else is re-encoded on the way in |
+| `uuid.bin` | the story's 16 uuid bytes |
+| `_metadata.json`, `_thumbnail.png` | the title and picture Lunii.QT lists the story under. Neither reaches a card |
+
+The `bt` authorisation file a card really carries needs that card's own key, which is why only Lunii.QT writes it, as it copies a `.plain.pk` onto one.
+
+### Merlin (beta)
+
+No screen, no story graph: the micro-SD card holds one flat folder of `.mp3` and `.jpg` files named with a uuid, and a `playlist.bin` listing them as 152-byte records — the tree, the titles and the order are all in that file. `--format merlin` writes one record for the story and one per part, each MP3 at 44.1 kHz stereo 128 kb/s with no ID3 tag, each picture a 128×128 JPEG. The device never reads a record's title aloud, so each part's audio starts with its chapter card spoken.
+
+`--merlin-merge PLAYLIST.bin` writes a file holding the card's own records plus this story under its root; without it the file lists only this story, and the card's own content stops showing until its original file is put back. `IMPORT.txt` in the archive says which files to copy and which ones (`sleep.cfg`, `wifi.cfg`, the `default` folder) never to delete.
+
+The format is undocumented and nothing here has been read back off a real Merlin. Telmi, Lunii and Flam are the stable outputs.
+
 ### Contract, taken from the reference implementations
 
 `DantSu/Telmi-Sync` (`ConvertFolder.js`, `Stories.js`, `Strings.js`, `FFmpegCommand.js`) and `DantSu/Telmi-story-teller` (`stories_reader.h`):
 
 - A story folder must contain **all six** of `audios/`, `images/`, `metadata.json`, `nodes.json`, `title.mp3`, `title.png`. `readStoryMetadata` deletes a folder missing any of them, and `storyFormatDetector` reports "Invalid story format".
 - `metadata.json` needs `title`, `uuid`, `image`, `version`; `age`, `category` and `description` are optional.
-- Audio is accepted unconverted only as MP3, 44100 Hz, mono or stereo, 64–192 kbps. Otherwise Telmi-Sync re-encodes it to 44100 Hz stereo — but **only on the conversion import paths**. `ConvertFolderTelmi.js`, which handles a pack already in Telmi format, is a plain `copyFileSync` of every file: no re-encode. A Telmi-format pack must arrive with audio already inside the range.
-- The player itself is not that strict: `mp3_reader.h` calls `mpg123_format(handle, 44100, 2, …)`, so mpg123 resamples any source rate to 44100 Hz stereo. A 22050 Hz mono MP3 plays; it just stays at source quality.
+- Audio is accepted unconverted only as MP3, 44100 Hz, mono or stereo, 64–192 kbps. Telmi-Sync re-encodes otherwise, but **only on the conversion import paths**: `ConvertFolderTelmi.js`, which handles a pack already in Telmi format, is a plain `copyFileSync` of every file. A Telmi-format pack must arrive with audio already inside the range.
+- The player is not that strict: `mp3_reader.h` calls `mpg123_format(handle, 44100, 2, …)`, so mpg123 resamples any source rate. A 22050 Hz mono MP3 plays; it stays at source quality.
 - A stage's `image` and `audio` may be `null`. `image` is loaded from `images/`, `audio` from `audios/`.
 - An action is a **list** of `{stage}` options; a transition's `index` selects one. With no `index`, the player picks at random.
 - A `null`-audio stage with `autoplay: true` advances immediately — Telmi-Sync's own idiom for a skipped stage.
 
----
+## Cover
 
-## What the test pack actually contains
+ffmpeg crops the cover to `640x480` for `title.png` and every card, and to `512x512` for `cover.png`. The card text is drawn by the converter, not by ffmpeg: Homebrew's ffmpeg has no `drawtext`, so `src/daisy2telmi/images.py` carries a 5x7 bitmap font and ffmpeg only composites the result. The font is Latin, so Chinese and Arabic cards show the number alone; the spoken card still says the word.
+
+The GUI looks a cover up by itself as soon as a pack is picked or dropped, and never replaces one already typed. The web page does the same once it has read the pack. Both keep a link that opens a Google image search for the pack's title, and both take a cover from a file or from a link. Both draw one frame at the chosen player's ratio over the cover, moved by dragging, by the slider, the wheel or the arrow keys. The frame's place travels with the conversion: `images.crop_view` carries it as a focus point, and the desktop keeps it until the cover, the player or the zoom changes. Open Library is asked rather than isbndb.com because it needs no key and answers browser requests.
+
+## Speech
+
+Chatterbox is not bundled — the binaries carry no torch — so daisy-convertor runs `src/daisy2telmi/chatterbox_speak.py` in an interpreter of your own: `pip install chatterbox-tts` first, and `--tts-python` picks the interpreter if the `python3` on `PATH` is not the one that has it. The app offers that install instead of asking you to type it: on Save, a machine without the package gets one dialog, OK runs the install in the interpreter named in the options and streams pip's output into the log, Cancel uses the machine's own voice. The options page says whether the package is in the interpreter it is pointed at and has an **Install Chatterbox** button.
+
+One process speaks the whole batch, because loading the model costs more than saying a chapter number. Chatterbox leaves the GPU alone unless asked, so `--tts-device mps` takes the Apple GPU and `cuda` an Nvidia one. Chatterbox is retired upstream: as of August 2026 the repository is an unmaintained MIT archive.
+
+Where `python3 -m venv` cannot bootstrap pip — Debian ships `venv` without `ensurepip` unless `python3-venv` is installed — the app fetches `get-pip.py`; where that cannot be fetched either, it rebuilds the environment with `--system-site-packages` so it can run the machine's own pip, which still installs inside the environment.
+
+The built binaries carry espeak-ng, its shared libraries and its language data, so speech works with nothing installed. Windows builds use the Windows engine.
+
+## GUI
+
+`daisy-convertor` with no arguments opens a Tkinter window: pick or drop a pack, pick an output folder and an optional cover, watch the same log the CLI writes. The conversion runs on a worker thread; each run starts on an empty log and ends with a report repeating its errors.
+
+**Options** holds the interface language, what the cards say, whether the drawn card counts the parts, autoplay, the speech engine and the voice, and the Chatterbox rows: which Python runs it, which device, the voice clip, and whether the package is in that Python. Closing it writes `~/.config/daisy2telmi/config.json` (`%APPDATA%\daisy2telmi\config.json` on Windows), which the CLI reads too, so a flag only overrides what is already saved.
+
+Drag-and-drop needs the optional `tkinterdnd2`; without it the browse buttons work and the window says so. `build_binary.py` passes `--collect-all tkinterdnd2` when it is installed.
+
+## Web page
+
+`web/` is a static converter that runs entirely in the browser, deployed to GitHub Pages from the `web` job. It shares no code with the Python package, so `tests/web/converter.test.mjs` pins it to the same naming, uuid and outline behaviour, and `tests/test_web_converter.py` runs the browser modules under Node and validates their output with the same validator as the CLI.
+
+Once a pack has been read, the page lists the parts with their lengths, each with a box: untick one to leave it out. The numbers belong to the chosen cut level, so changing level redraws the list; past 400 parts the page only says how many there are. **The chapter cards** holds three boxes: show how many parts there are on the drawn card, say the word chapter, say how many parts there are. The choices are kept in `localStorage` and travel to the drawn card text and to the card audio.
+
+`web/voices/<language>/01.mp3` … `50.mp3` are the pre-recorded announcements ("Chapter 4"), `n-01.mp3` … `n-50.mp3` the numbers alone, and `of-pre.mp3`, `of-mid.mp3` and `of-post.mp3` the words the language puts around the total, split out of its own `{n} of {total}` pattern so a language that names the part before the number, or after both, is recorded as it speaks. `tools/make_web_voices.py` generates them all, from Chatterbox (`--engine chatterbox --python <interpreter with chatterbox-tts>`) or from espeak-ng, which is the default and needs no download, and levels every clip to the loudness the app levels its cards to. The chapter clips committed are the Chatterbox ones; the bare numbers and the fragments are espeak-ng, because Chatterbox 0.1.7 loses its place on a one-word phrase and answers "of" with 23 seconds of noise. A browser tab can play speech but cannot capture it into a file, so the clips are committed rather than synthesised during conversion; past chapter 50 the cards stay silent.
+
+The page concatenates MP3 frame data instead of re-encoding. That is safe because the player resamples, but it means no clip trimming and no bitrate normalisation.
+
+## Tests
+
+```bash
+pip install -e .[dev]
+pytest
+node --test tests/web/*.test.mjs
+```
+
+378 Python tests, 98 for the browser modules. The integration tests skip themselves if `gon-ruby-mp3.zip` or `ffprobe` is absent. `tests/test_published_pack.py` checks a real published Telmi story against the same validator; it skips unless `TELMI_SAMPLE` points at one. `tests/test_lunii_pk.py` re-encodes the pictures of a real `.plain.pk`; it skips unless `LUNII_SAMPLE` points at one. `tests/test_gui.py` skips where there is no Tk or no display.
+
+## Build a binary
+
+`build_binary.py` produces a `--onefile` executable for the machine it runs on. PyInstaller cannot cross-compile, so build on the target OS:
+
+```bat
+py -3.11 -m venv .venv
+.venv\Scripts\activate
+pip install -e .[dev]
+python build_binary.py
+```
+
+Produces `dist\daisy-convertor.exe` (`dist/daisy-convertor` on macOS and Linux). `lxml.etree` and `lxml._elementpath` are passed as hidden imports; PyInstaller's own lxml hook does the rest.
+
+`build_binary.py` locates ffmpeg on the build machine and embeds it with `--add-binary`. On Linux it copies ffmpeg's whole library closure first: PyInstaller follows ffmpeg's own dependencies but leaves `libdrm` and `libwayland` for the distribution, and a machine without them cannot crop a cover. If ffmpeg is missing the script stops rather than shipping something that needs a separate install. `DAISY2TELMI_FFMPEG` overrides the search. At runtime the converter looks for the bundled copy (`sys._MEIPASS`, then the executable's own folder) before falling back to PATH.
+
+The Linux and macOS builds also bundle espeak-ng, the libraries it links and its language data: `build_binary.py` copies them to `dist/speech/` and rewrites the macOS load commands to `@loader_path`; at runtime `tts.py` points `ESPEAK_DATA_PATH` at the copied data and, on Linux, `LD_LIBRARY_PATH` at the copied libraries. Without a data folder the script says so and ships without speech — on Debian and Ubuntu that data is a separate package, `espeak-ng-data`, which `espeak-ng` only recommends.
+
+### CI
+
+`.github/workflows/build.yml` builds on push to `main`, each on its own runner, and attaches the artifacts to a GitHub Release on a `v*` tag:
+
+| Artifact | Built on | Notes |
+| :--- | :--- | :--- |
+| `daisy-convertor.exe` | `windows-latest` | ffmpeg bundled; speech uses the Windows engine |
+| `daisy-convertor_<version>_<arch>.deb` | `ubuntu-latest` | installs to `/usr/local/bin/daisy-convertor`, declares `ffmpeg` as a dependency rather than duplicating it. Written by `tools/make_deb.py` using only the standard library, so it can be produced and checked on any OS without `dpkg` or `fakeroot`. The job removes the `espeak-ng` package before its smoke test so the run has to use the bundled copy |
+| `daisy-convertor-<version>-x86_64.AppImage` | `ubuntu-latest` | the same binary, packaged by `tools/make_appimage.py`; `appimagetool` is unpacked with `--appimage-extract` because runners have no FUSE |
+| `daisy-convertor-<version>-macos-<arch>.dmg` | `macos-latest` (arm64) and `macos-15-intel` (x86_64) | **unsigned and un-notarised**: Gatekeeper blocks the first run, so open it with right-click → Open or `xattr -d com.apple.quarantine daisy-convertor` |
+
+## What the test pack contains
 
 `gon-ruby-mp3.zip` — ATDO, *ごんぎつね* (Gon, the Fox), 2009, 86 files. It is **not** a textbook DAISY 2.02 pack, and the parser follows the pack rather than the spec.
 
-| Observation | Consequence for the converter |
+| Observation | Consequence |
 | :--- | :--- |
 | There is **no `package.opf`**. Metadata lives in `ncc.html` as `<meta name="dc:*">`. | `ncc.html` alone is enough to accept a pack. `package.opf` is read only if present. |
 | `ncc.html` has 26 outline items: 1 `h1 class="title"`, 6 `h1`, 19 `h2`, plus 6 `span class="page-normal"`. `ncc:depth` is 2. | `h1` opens a chapter, `h2`+ fold into it, `h1 class="title"` is front matter, `page-normal` spans are skipped. |
@@ -218,8 +242,6 @@ The last chapter's `ok` is `null`, which is how the published sample packs end a
 | A chapter's own SMIL covers only its heading audio (chapter 一 = 29.8 s). The body is in its `h2` children, each with its own MP3. | A chapter is its own SMIL **plus every descendant SMIL**, concatenated. Ignoring this would drop 95% of the book. |
 | All 26 MP3s are 22050 Hz, mono, 56 kbps. | Re-encode is mandatory to reach Telmi's 44100 Hz / 64–192 kbps CBR. |
 | `er_book_info.xml` lists a duration per SMIL; total 1376.645 s, matching `ncc:totalTime 00:22:56`. | Used as the independent check that no audio was dropped. |
-
-Chapter → audio, as produced:
 
 | Scene | Chapter | SMILs merged | Source MP3s |
 | :--- | :--- | ---: | ---: |
@@ -246,51 +268,6 @@ All 26 source MP3s are consumed; none are dropped.
 9. Every chapter is re-encoded to 44100 Hz, mono, CBR 128 kbps, even when the source is already compliant.
 10. `age` is 0 and `category` is empty: DAISY 2.02 carries no audience-age field, and both feed the folder name.
 11. Every top-level outline entry with audio becomes a chapter, including entries such as *Table des matières* or *Fin du livre*. Nothing is dropped on a title guess.
-
-## Build a binary
-
-`build_binary.py` produces a `--onefile` executable for the machine it runs on. PyInstaller cannot cross-compile, so build on the target OS. On Windows:
-
-```bat
-py -3.11 -m venv .venv
-.venv\Scripts\activate
-pip install -e .[dev]
-python build_binary.py
-```
-
-Produces `dist\daisy-convertor.exe` (`dist/daisy-convertor` on macOS and Linux). `lxml.etree` and `lxml._elementpath` are passed as hidden imports; PyInstaller's own lxml hook does the rest.
-
-`build_binary.py` locates ffmpeg on the build machine and embeds it with `--add-binary`, so the binary is self-contained. On Linux it copies ffmpeg's whole library closure first: PyInstaller follows ffmpeg's own dependencies but leaves `libdrm` and `libwayland` for the distribution to provide, and a machine that does not have them cannot crop a cover. If ffmpeg is missing the script stops rather than shipping something that needs a separate install. Set `DAISY2TELMI_FFMPEG` to override the search. At runtime the converter looks for the bundled copy (`sys._MEIPASS`, then the executable's own folder) before falling back to PATH.
-
-### CI artifacts
-
-`.github/workflows/build.yml` builds all three on push to `main`, each on its own runner, and attaches them to a GitHub Release on a `v*` tag:
-
-| Artifact | Built on | Notes |
-| :--- | :--- | :--- |
-| `daisy-convertor.exe` | `windows-latest` | ffmpeg bundled; speech uses the Windows engine |
-| `daisy-convertor_<version>_<arch>.deb` | `ubuntu-latest` | installs to `/usr/local/bin/daisy-convertor`, declares `ffmpeg` as a dependency rather than duplicating it |
-| `daisy-convertor-<version>-x86_64.AppImage` | `ubuntu-latest` | the same binary, packaged by `tools/make_appimage.py`; `appimagetool` is unpacked with `--appimage-extract` because runners have no FUSE |
-| `daisy-convertor-<version>-macos-<arch>.dmg` | `macos-latest` (arm64) and `macos-15-intel` (x86_64) | **unsigned and un-notarised**: Gatekeeper blocks the first run, so open it with right-click → Open or `xattr -d com.apple.quarantine daisy-convertor` |
-
-The Linux and macOS builds also bundle espeak-ng, the libraries it links and its language data. `build_binary.py` copies them to `dist/speech/` and rewrites the macOS load commands to `@loader_path`; at runtime `tts.py` points `ESPEAK_DATA_PATH` at the copied data and, on Linux, `LD_LIBRARY_PATH` at the copied libraries. Without a data folder the script says so and ships without speech — on Debian and Ubuntu that data is a separate package, `espeak-ng-data`, which `espeak-ng` only recommends. The `linux-deb` job removes the `espeak-ng` package before its smoke test so the run has to use the bundled copy.
-
-The `.deb` is written by `tools/make_deb.py` using only the standard library, so it can be produced and checked on any OS without `dpkg` or `fakeroot`.
-
-## Tests
-
-```bash
-pip install -e .[dev]
-pytest
-```
-
-378 Python tests and 98 for the browser modules. The integration tests skip themselves if `gon-ruby-mp3.zip` or `ffprobe` is absent. `tests/test_published_pack.py` additionally checks a real published Telmi story against the same validator; it skips unless `TELMI_SAMPLE` points at one. `tests/test_lunii_pk.py` re-encodes the pictures of a real `.plain.pk` the same way; it skips unless `LUNII_SAMPLE` points at one. `tests/test_gui.py` skips where there is no Tk or no display.
-
-The browser modules have their own suite, run with Node's test runner:
-
-```bash
-node --test tests/web/*.test.mjs
-```
 
 ## What was verified
 
@@ -340,10 +317,10 @@ Builds:
 ## Known limitations
 
 - **DAISY 3 has been run against one book.** `*.opf` + `*.ncx` + per-chapter SMIL is parsed, and verified on a single published 3.x pack; other 3.x dialects are unproven.
-- **A pack with no recorded audio is only spoken on the desktop.** Its words are read out by the TTS engine there. The web page makes no speech of its own, so it refuses such a pack rather than build a silent story.
+- **A pack with no recorded audio is only spoken on the desktop.** The web page makes no speech of its own, so it refuses such a pack rather than build a silent story.
 - **TTS speaks the cards and any part that has no audio of its own.** The default voice is Chatterbox, which is not in the binaries; the engine the binaries do carry, espeak-ng, is robotic, and `--tts command` is the way to put any other model behind it.
 - **The bundled ffmpeg is the build machine's binary**, unmodified and unsigned.
-- **No cover art comes from the pack.** DAISY 2.02 audio packs carry no usable cover, so `--cover` supplies one and `--find-cover` asks Open Library for the print book named in `dc:source`; with neither, `cover.png`, `title.png` and the chapter images are generated placeholders. A lookup needs the network, and a pack with no ISBN and no searchable title has nothing to ask with.
+- **No cover art comes from the pack.** DAISY 2.02 audio packs carry no usable cover. A lookup needs the network, and a pack with no ISBN and no searchable title has nothing to ask with.
 - **The drawn card label is uppercase Latin.** The bitmap font in `src/daisy2telmi/images.py` covers the eight Latin-script languages plus accented letters; Chinese and Arabic cards fall back to the bare number.
 - **A non-Latin title collapses in the folder name.** `stringNormalizeFileName` keeps only `a-zA-Z0-9-.`, so *ごんぎつね* becomes a single space and the folder is `_00_ _<uuid>`. This is Telmi-Sync's own behaviour, not a converter bug; `metadata.json` keeps the real title.
 - **Chapter granularity is fixed.** A pack with a single flat heading level becomes one chapter; there is no option to split on `h2`.
@@ -353,7 +330,7 @@ Builds:
 
 ## Next
 
-Chatterbox voice selection from a reference clip, the Merlin archive in the web page, a re-arranged Options page.
+A story-teller emulator that plays a converted story, a re-arranged Options page, DAISY import in Telmi-Sync.
 
 ## Licence
 

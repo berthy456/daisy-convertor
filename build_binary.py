@@ -94,6 +94,28 @@ def _linked_libs(binary: str) -> list[str]:
     return [p for p in paths if p.startswith("/") and not p.split("/")[-1].startswith(_LINUX_RUNTIME)]
 
 
+def _copy_closure(binary: str, stage: Path) -> list[Path]:
+    """Copy every library `binary` loads into `stage`, following them to the end.
+
+    apt and Homebrew name the same library through different paths, so a copy's
+    file name is what identifies it.
+    """
+    staged_libs: list[Path] = []
+    pending = [binary]
+    seen: set[str] = set()
+    while pending:
+        for dep in _linked_libs(pending.pop()):
+            if Path(dep).name in seen or not Path(dep).is_file():
+                continue
+            seen.add(Path(dep).name)
+            target = stage / Path(dep).name
+            shutil.copy2(dep, target)
+            target.chmod(0o755)
+            staged_libs.append(target)
+            pending.append(dep)
+    return staged_libs
+
+
 def _stage_espeak(binary: str, data: str) -> list[str]:
     """Copy espeak-ng, its libraries and its language data into dist/speech.
 
@@ -111,21 +133,7 @@ def _stage_espeak(binary: str, data: str) -> list[str]:
     shutil.copy2(binary, staged_exe)
     staged_exe.chmod(0o755)
 
-    staged_libs: list[Path] = []
-    pending = [binary]
-    seen: set[str] = set()
-    while pending:
-        for dep in _linked_libs(pending.pop()):
-            # apt and Homebrew name the same library through different paths, so
-            # the copy's file name is what identifies it.
-            if Path(dep).name in seen or not Path(dep).is_file():
-                continue
-            seen.add(Path(dep).name)
-            target = stage / Path(dep).name
-            shutil.copy2(dep, target)
-            target.chmod(0o755)
-            staged_libs.append(target)
-            pending.append(dep)
+    staged_libs = _copy_closure(binary, stage)
 
     if sys.platform == "darwin":
         for target in [staged_exe, *staged_libs]:
@@ -159,6 +167,34 @@ def _speech_options() -> list[str]:
     return _stage_espeak(*found)
 
 
+def _ffmpeg_options(ffmpeg: str) -> list[str]:
+    """ffmpeg, and on Linux every library it loads.
+
+    PyInstaller follows ffmpeg's own dependencies but leaves the ones it takes for
+    part of the distribution behind — libdrm and libwayland among them — and a bare
+    Debian 13 has neither, so the ffmpeg inside the AppImage died before it could
+    crop a cover. Copying the closure ourselves keeps the picture working anywhere.
+    macOS needs none of this: Homebrew names its libraries by absolute path and
+    PyInstaller rewrites them.
+    """
+    if sys.platform != "linux":
+        return ["--add-binary", f"{ffmpeg}{os.pathsep}."]
+    stage = ROOT / "dist" / "ffmpeg"
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir(parents=True)
+    staged_exe = stage / "ffmpeg"
+    shutil.copy2(ffmpeg, staged_exe)
+    staged_exe.chmod(0o755)
+    staged_libs = _copy_closure(ffmpeg, stage)
+    print(f"bundling ffmpeg with {len(staged_libs)} librar{'y' if len(staged_libs) == 1 else 'ies'}")
+    return [
+        "--add-binary",
+        f"{staged_exe}{os.pathsep}.",
+        *(arg for lib in staged_libs for arg in ("--add-binary", f"{lib}{os.pathsep}.")),
+    ]
+
+
 def _gui_options() -> list[str]:
     """tkinterdnd2 carries Tcl/Tk scripts and a tkdnd library PyInstaller cannot see."""
     if importlib.util.find_spec("tkinterdnd2") is None:
@@ -190,8 +226,7 @@ def main() -> int:
         "lxml.etree",
         "--hidden-import",
         "lxml._elementpath",
-        "--add-binary",
-        f"{ffmpeg}{os.pathsep}.",
+        *_ffmpeg_options(ffmpeg),
         # Chatterbox runs in the user's own Python, so its helper has to be a real
         # file on disk; PyInstaller keeps this one at the top of the unpacked folder.
         "--add-data",

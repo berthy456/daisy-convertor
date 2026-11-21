@@ -233,15 +233,23 @@ def test_the_crop_choice_reaches_every_image_write_cover_draws(tmp_path: Path) -
 
 
 @NO_FFMPEG
-def test_crop_previews_shows_every_band_small(tmp_path: Path) -> None:
-    previews = images.crop_previews(_tall_cover(tmp_path))
-    assert list(previews) == list(images.CROP_MODES)
-    for mode, png in previews.items():
-        assert png_header(png)[:2] == images.PREVIEW_SIZE, mode
-    saved = tmp_path / "preview.png"
-    for mode, png in previews.items():
-        saved.write_bytes(png)
-        assert _band(saved) == BANDS[mode], mode
+def test_cover_fit_draws_a_picture_the_frame_can_move_over(tmp_path: Path) -> None:
+    """The frame shows a part of this picture, so it has to reach past the frame
+    in the direction the cover has more of."""
+    png, size = images.cover_fit(_tall_cover(tmp_path), images.PREVIEW_SIZE)
+    assert png_header(png)[:2] == size, "the size said is the size drawn"
+    assert size[0] == images.PREVIEW_SIZE[0], "a wide frame is filled across"
+    assert size[1] > images.PREVIEW_SIZE[1], "a tall cover runs past it the other way"
+
+
+@NO_FFMPEG
+def test_the_zoom_enlarges_the_picture_the_frame_moves_over(tmp_path: Path) -> None:
+    source = _tall_cover(tmp_path)
+    _, one = images.cover_fit(source, images.PREVIEW_SIZE)
+    _, twice = images.cover_fit(source, images.PREVIEW_SIZE, 2.0)
+    assert twice == (one[0] * 2, one[1] * 2)
+    _, clamped = images.cover_fit(source, images.PREVIEW_SIZE, 99)
+    assert clamped == (one[0] * images.MAX_ZOOM, one[1] * images.MAX_ZOOM), "no zoom past the ceiling"
 
 
 def test_crop_view_keeps_the_band_and_clamps_the_zoom() -> None:
@@ -331,8 +339,9 @@ def test_a_colour_card_keeps_its_thumbnail_and_its_flat_ground(tmp_path: Path) -
     images.write_cover(
         _tall_cover(tmp_path), out, ["1/1"], [""], "center", "colour", (320, 240), (320, 240)
     )
-    # ffmpeg moves a flat colour by a unit on the way through, as it does in _band.
-    assert _pixel(out / "images" / "m0.png", 160, 120) == pytest.approx(images.BACKGROUND, abs=2)
+    # ffmpeg moves a flat colour on the way through, and by how much depends on the
+    # build: two units on Homebrew's, four on Debian 13's.
+    assert _pixel(out / "images" / "m0.png", 160, 120) == pytest.approx(images.BACKGROUND, abs=6)
 
 
 def _inked(ink: list[bytearray], top: int, bottom: int) -> tuple[int, int]:

@@ -119,7 +119,7 @@ def test_a_missing_cover_is_refused_before_any_work(app: gui.App, tmp_path) -> N
 
 def test_the_cover_reaches_the_converter(app: gui.App, tmp_path, monkeypatch) -> None:
     seen: list = []
-    monkeypatch.setattr(gui, "convert", lambda *args: seen.append(args) or 0)
+    monkeypatch.setattr(gui, "convert", lambda *args, **kwargs: seen.append(args) or 0)
 
     cover = tmp_path / "cover.png"
     cover.write_bytes(b"not really a png")
@@ -420,7 +420,7 @@ def test_unchecking_a_chapter_leaves_it_out_of_the_story(
     app: gui.App, three_chapters, monkeypatch, tmp_path
 ) -> None:
     seen: list = []
-    monkeypatch.setattr(gui, "convert", lambda *args: seen.append(args) or 0)
+    monkeypatch.setattr(gui, "convert", lambda *args, **kwargs: seen.append(args) or 0)
 
     page = gui.ChapterList(app, Path("/tmp/pack.zip"))
     page.keep[1].set(False)
@@ -437,7 +437,7 @@ def test_unchecking_a_chapter_leaves_it_out_of_the_story(
 
 def test_keeping_every_chapter_sends_no_selection(app: gui.App, three_chapters, monkeypatch, tmp_path) -> None:
     seen: list = []
-    monkeypatch.setattr(gui, "convert", lambda *args: seen.append(args) or 0)
+    monkeypatch.setattr(gui, "convert", lambda *args, **kwargs: seen.append(args) or 0)
 
     gui.ChapterList(app, Path("/tmp/pack.zip"))._close()
 
@@ -476,7 +476,7 @@ def test_the_chosen_cut_level_reaches_the_conversion(
     app: gui.App, three_chapters, monkeypatch, tmp_path
 ) -> None:
     seen: list = []
-    monkeypatch.setattr(gui, "convert", lambda *args: seen.append(args) or 0)
+    monkeypatch.setattr(gui, "convert", lambda *args, **kwargs: seen.append(args) or 0)
     monkeypatch.setattr(gui.settings, "save", lambda options: None)
 
     page = gui.ChapterList(app, Path("/tmp/pack.zip"))
@@ -494,7 +494,7 @@ def test_the_chosen_cut_level_reaches_the_conversion(
 
 def test_the_chosen_crop_reaches_the_conversion(app: gui.App, monkeypatch, tmp_path) -> None:
     seen: list = []
-    monkeypatch.setattr(gui, "convert", lambda *args: seen.append(args) or 0)
+    monkeypatch.setattr(gui, "convert", lambda *args, **kwargs: seen.append(args) or 0)
     monkeypatch.setattr(gui.settings, "save", lambda options: None)
 
     app.crop_var.set("top")
@@ -508,7 +508,7 @@ def test_the_chosen_crop_reaches_the_conversion(app: gui.App, monkeypatch, tmp_p
 
 def test_the_chosen_format_reaches_the_conversion(app: gui.App, monkeypatch, tmp_path) -> None:
     seen: list = []
-    monkeypatch.setattr(gui, "convert", lambda *args: seen.append(args) or 0)
+    monkeypatch.setattr(gui, "convert", lambda *args, **kwargs: seen.append(args) or 0)
     monkeypatch.setattr(gui.settings, "save", lambda options: None)
 
     app.format_var.set("lunii")
@@ -530,13 +530,57 @@ def test_the_window_offers_every_player(app: gui.App) -> None:
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
-def test_a_cover_draws_its_three_bands_on_the_crop_buttons(app: gui.App, tmp_path) -> None:
+def test_a_cover_is_drawn_under_the_crop_frame(app: gui.App, tmp_path) -> None:
     cover = tmp_path / "cover.png"
     cover.write_bytes(images.placeholder_png(300, 900))
     app.cover_var.set(str(cover))
-    drawn = [str(box["image"]) for box in app.crop_boxes.values()]
-    assert all(drawn), "every crop button carries its own picture of that band"
-    assert len(set(drawn)) == 3
+    assert app.crop_frame.itemcget(app._crop_item, "image"), "the frame carries the cover"
+    # A 300x900 cover under a 360x270 frame is drawn 360x1080 to fill it, so the
+    # frame shows 270 of its 1080 lines; centred, it starts 405 lines in.
+    assert tuple(app.crop_frame.coords(app._crop_item)) == (0, -405), "the frame sits in the middle of the cover"
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_dragging_the_cover_moves_the_frame_it_crops(app: gui.App, tmp_path) -> None:
+    cover = tmp_path / "cover.png"
+    cover.write_bytes(images.placeholder_png(300, 900))
+    app.cover_var.set(str(cover))
+    before = app.crop_frame.coords(app._crop_item)
+
+    app._move_crop(0, 100)
+
+    after = app.crop_frame.coords(app._crop_item)
+    assert after[1] > before[1], "the cover slides the way the pointer went"
+    assert app.crop_var.get() == "", "a moved frame answers to no band"
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_a_moved_frame_goes_back_to_the_band_it_is_clicked_onto(app: gui.App, tmp_path) -> None:
+    cover = tmp_path / "cover.png"
+    cover.write_bytes(images.placeholder_png(300, 900))
+    app.cover_var.set(str(cover))
+    app._move_crop(0, 100)
+
+    app.crop_var.set("bottom")
+    app._pick_crop()
+
+    assert app.crop_frame.coords(app._crop_item)[1] == -810, "the frame sits on the band's edge"
+
+
+def test_the_zoom_and_a_moved_frame_reach_the_conversion(app: gui.App, monkeypatch, tmp_path) -> None:
+    seen: list = []
+    monkeypatch.setattr(gui, "convert", lambda *args, **kwargs: seen.append((args, kwargs)) or 0)
+    monkeypatch.setattr(gui.settings, "save", lambda options: None)
+
+    app._crop_zoom_value = 2.0
+    app._crop_focus = (0.2, 0.8)
+    (tmp_path / "pack.zip").write_bytes(b"PK")
+    app.pack_var.set(str(tmp_path / "pack.zip"))
+    app.out_var.set(str(tmp_path / "out"))
+    app._start()
+    app._drain()
+    assert seen[0][1]["zoom"] == 2.0
+    assert seen[0][1]["focus"] == (0.2, 0.8)
 
 
 def test_a_pack_the_window_cannot_open_is_reported(app: gui.App, monkeypatch) -> None:

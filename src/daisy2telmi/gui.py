@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import queue
+import sys
 import tempfile
 import threading
 import tkinter as tk
@@ -37,6 +38,10 @@ except ImportError:  # drag and drop is a bonus, browsing works without it
 log = logging.getLogger("daisy2telmi")
 
 ANNOUNCE_KEYS = {mode: f"announce_{mode}" for mode in ANNOUNCE_MODES}
+
+# The crop frame is drawn this wide, whatever the player's ratio: the same room to
+# move the cover in on every machine, and the web page draws it at the same size.
+CROP_WIDTH = 360
 
 
 class _QueueHandler(logging.Handler):
@@ -74,8 +79,14 @@ class App:
         self._pack_title: str | None = None
         self.crop_var = tk.StringVar(value=self.options["cover_crop"])
         self.format_var = tk.StringVar(value=self.options["format"])
-        self._previews: tuple[str, dict[str, bytes]] | None = None
-        self._crop_images: dict[str, tk.PhotoImage] = {}
+        # The cover drawn at the frame's ratio: the file it came from, the player it
+        # was drawn for, the zoom it was drawn at, then the picture and its size.
+        self._crop_cover: tuple[str, str, float, tuple[bytes, tuple[int, int]]] | None = None
+        self._crop_photo: tk.PhotoImage | None = None
+        self._crop_zoom_value = 1.0
+        self._crop_focus: tuple[float, float] | None = None
+        self._crop_drag: tuple[int, int, tuple[float, float]] | None = None
+        self._crop_redraw = None
         self.force_var = tk.BooleanVar(value=False)
         self.language_var = tk.StringVar(value=self.options["language"])
         self.cut = self.options["cut"]
@@ -144,20 +155,51 @@ class App:
 
         crop_row = ttk.Frame(grid)
         crop_row.grid(row=6, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        self._label(crop_row, "cover_crop_label").pack(side="left", padx=(0, 10))
+        tools = ttk.Frame(crop_row)
+        tools.pack(anchor="w")
+        self._label(tools, "cover_crop_label").pack(side="left", padx=(0, 10))
         self.crop_boxes: dict[str, ttk.Radiobutton] = {}
         for mode in images.CROP_MODES:
             box = ttk.Radiobutton(
-                crop_row,
+                tools,
                 text=self.t(f"crop_{mode}"),
                 variable=self.crop_var,
                 value=mode,
-                compound="top",
                 command=self._pick_crop,
             )
             self._labels[f"crop_{mode}"] = box
             box.pack(side="left", padx=(0, 10))
             self.crop_boxes[mode] = box
+        self._label(tools, "crop_zoom").pack(side="left", padx=(10, 4))
+        self.crop_zoom = ttk.Scale(
+            tools, from_=1.0, to=images.MAX_ZOOM, length=110, command=self._slide_crop
+        )
+        self.crop_zoom.pack(side="left")
+        self._button(tools, "crop_reset", self._reset_crop).pack(side="left", padx=10)
+
+        # The frame the chosen player shows, drawn from the cover: drag it to move,
+        # the wheel or the arrows to enlarge. What is inside here is what the story
+        # carries, so the choice is made on the picture instead of described to it.
+        self.crop_frame = tk.Canvas(crop_row, highlightthickness=0, cursor="fleur", takefocus=1)
+        self.crop_frame.pack(anchor="w", pady=(6, 0))
+        self._crop_item = self.crop_frame.create_image(0, 0, anchor="nw")
+        self.crop_frame.bind("<ButtonPress-1>", self._grab_crop)
+        self.crop_frame.bind("<B1-Motion>", self._drag_crop)
+        self.crop_frame.bind("<ButtonRelease-1>", lambda _e: setattr(self, "_crop_drag", None))
+        self.crop_frame.bind("<MouseWheel>", self._wheel_crop)
+        self.crop_frame.bind("<Button-4>", lambda _e: self._zoom_crop(1.25))
+        self.crop_frame.bind("<Button-5>", lambda _e: self._zoom_crop(0.8))
+        for key, step in (
+            ("<KeyPress-Left>", (1, 0)),
+            ("<KeyPress-Right>", (-1, 0)),
+            ("<KeyPress-Up>", (0, 1)),
+            ("<KeyPress-Down>", (0, -1)),
+        ):
+            self.crop_frame.bind(key, lambda event, move=step: self._step_crop(*move))
+        self.crop_frame.bind("<KeyPress-plus>", lambda _e: self._zoom_crop(1.2))
+        self.crop_frame.bind("<KeyPress-equal>", lambda _e: self._zoom_crop(1.2))
+        self.crop_frame.bind("<KeyPress-minus>", lambda _e: self._zoom_crop(1 / 1.2))
+        self._label(crop_row, "crop_hint").pack(anchor="w", pady=(2, 0))
         self.cover_var.trace_add("write", lambda *_: self._show_crop())
 
         controls = ttk.Frame(grid)
@@ -324,35 +366,141 @@ class App:
             self.cover_var.set(path)
 
     def _pick_crop(self) -> None:
+        """A band chosen by name: the frame goes back to it."""
+        if self.crop_var.get() not in images.CROP_MODES:
+            return
         self.options["cover_crop"] = self.crop_var.get()
         settings.save(self.options)
+        self._crop_focus = None
+        self._draw_crop()
 
     def _pick_format(self) -> None:
         self.options["format"] = self.format_var.get()
         settings.save(self.options)
-        # The crop preview shows the chosen player's screen, so it is redrawn.
-        self._previews = None
+        # The frame is the chosen player's screen, so it is drawn at its ratio again.
+        self._crop_cover = None
         self._show_crop()
 
     def _show_crop(self) -> None:
-        """Draw each crop band on its own button: which band a tall cover loses
-        is not something a word can tell you."""
+        """Draw the crop frame over the cover: which part of a tall cover the frame
+        keeps is not something a word can tell you.
+
+        The cover is scaled once per zoom, so dragging stays instant: a move only
+        shifts the picture already on the canvas.
+        """
         source = self._typed_path(self.cover_var)
         if source is None or not source.is_file():
-            for box in self.crop_boxes.values():
-                box.configure(image="")
-            self._crop_images.clear()
+            self._clear_crop()
             return
-        if self._previews is None or self._previews[0] != (str(source), self.format_var.get()):
+        size = images.preview_size(self.format_var.get(), CROP_WIDTH)
+        self.crop_frame.configure(width=size[0], height=size[1])
+        key = (str(source), self.format_var.get(), self._crop_zoom_value)
+        if self._crop_cover is None or self._crop_cover[:3] != key:
             try:
-                size = images.preview_size(self.format_var.get())
-                self._previews = (str(source), self.format_var.get(), images.crop_previews(source, size))
+                self._crop_cover = (*key, images.cover_fit(source, size, self._crop_zoom_value))
             except images.ImageError as exc:
                 self._append(f"ERROR: {exc}")
+                self._clear_crop()
                 return
-        for mode, png in self._previews[2].items():
-            self._crop_images[mode] = tk.PhotoImage(data=png)
-            self.crop_boxes[mode].configure(image=self._crop_images[mode])
+        self._draw_crop()
+
+    def _draw_crop(self) -> None:
+        """Slide the drawn cover under the frame until the frame sits at its focus."""
+        if self._crop_cover is None:
+            return
+        png, picture = self._crop_cover[3]
+        frame = images.preview_size(self.format_var.get(), CROP_WIDTH)
+        focus = self._crop_focus or images.CROP_FOCUS.get(self.crop_var.get(), images.CROP_FOCUS["center"])
+        self._crop_photo = tk.PhotoImage(data=png)
+        self.crop_frame.itemconfigure(self._crop_item, image=self._crop_photo)
+        self.crop_frame.coords(
+            self._crop_item,
+            -round((picture[0] - frame[0]) * focus[0]),
+            -round((picture[1] - frame[1]) * focus[1]),
+        )
+
+    def _clear_crop(self) -> None:
+        """The frame belongs to the cover that went away; the chosen band does not."""
+        self._crop_cover = None
+        self._crop_photo = None
+        self._crop_focus = None
+        self._crop_zoom_value = 1.0
+        self.crop_zoom.set(1.0)
+        self.crop_frame.itemconfigure(self._crop_item, image="")
+
+    def _grab_crop(self, event: tk.Event) -> None:
+        if self._crop_cover is None:
+            return
+        self.crop_frame.focus_set()
+        self._crop_drag = (event.x, event.y, self._current_focus())
+
+    def _drag_crop(self, event: tk.Event) -> None:
+        """A drag moves the cover, so the frame's place moves the other way. It is
+        measured from where the pointer went down, not from the move before."""
+        if self._crop_drag is None:
+            return
+        x, y, start = self._crop_drag
+        self._move_crop(event.x - x, event.y - y, start)
+
+    def _step_crop(self, dx: int, dy: int) -> None:
+        """The keyboard reaches the same frame: the arrows move it by a tenth."""
+        self._move_crop(dx * CROP_WIDTH / 10, dy * CROP_WIDTH / 10)
+
+    def _move_crop(
+        self, dx: float, dy: float, start: tuple[float, float] | None = None
+    ) -> None:
+        if self._crop_cover is None:
+            return
+        frame = images.preview_size(self.format_var.get(), CROP_WIDTH)
+        picture = self._crop_cover[3][1]
+        focus = start or self._current_focus()
+        room = (picture[0] - frame[0], picture[1] - frame[1])
+        self._crop_focus = (
+            min(1.0, max(0.0, focus[0] - dx / room[0])) if room[0] > 0 else focus[0],
+            min(1.0, max(0.0, focus[1] - dy / room[1])) if room[1] > 0 else focus[1],
+        )
+        # A moved frame answers to no band, so the three radios let go of it.
+        self.crop_var.set("")
+        self._draw_crop()
+
+    def _current_focus(self) -> tuple[float, float]:
+        """The frame's place over the cover: the chosen band until it is moved."""
+        return self._crop_focus or images.CROP_FOCUS.get(
+            self.crop_var.get(), images.CROP_FOCUS["center"]
+        )
+
+    def _wheel_crop(self, event: tk.Event) -> None:
+        """The wheel enlarges the cover. macOS reports a notch as 1 unit and Windows
+        as 120; X11 sends buttons 4 and 5, which are bound on their own."""
+        notches = event.delta / (1 if sys.platform == "darwin" else 120)
+        self._zoom_crop(1 - notches * 0.25)
+
+    def _zoom_crop(self, factor: float) -> None:
+        self._set_crop_zoom(self._crop_zoom_value * factor)
+
+    def _slide_crop(self, value: str) -> None:
+        self._set_crop_zoom(float(value))
+
+    def _set_crop_zoom(self, value: float) -> None:
+        zoom = min(max(1.0, value), images.MAX_ZOOM)
+        if abs(zoom - self._crop_zoom_value) < 0.01:
+            return
+        self._crop_zoom_value = zoom
+        self.crop_zoom.set(zoom)
+        # A new zoom means a new picture, which takes a moment: a wheel gesture
+        # asks for one, at the end of it.
+        if self._crop_redraw is not None:
+            self.root.after_cancel(self._crop_redraw)
+        self._crop_redraw = self.root.after(120, self._show_crop)
+
+    def _reset_crop(self) -> None:
+        self.crop_var.set("center")
+        self._crop_focus = None
+        self.options["cover_crop"] = "center"
+        settings.save(self.options)
+        self._crop_zoom_value = 1.0
+        self.crop_zoom.set(1.0)
+        self._show_crop()
 
     def _on_drop(self, event: tk.Event) -> None:
         dropped = self.root.tk.splitlist(event.data)
@@ -410,7 +558,9 @@ class App:
                 ",".join(str(number) for number in dropped) if dropped else None,
                 self.cut,
                 self.format_var.get(),
-                self.crop_var.get(),
+                self.crop_var.get() or "center",
+                self._crop_zoom_value,
+                self._crop_focus,
             ),
             daemon=True,
         ).start()
@@ -443,6 +593,8 @@ class App:
         cut: str,
         fmt: str,
         crop: str,
+        zoom: float = 1.0,
+        focus: tuple[float, float] | None = None,
     ) -> None:
         if install:
             try:
@@ -451,7 +603,10 @@ class App:
                 log.error("%s: the machine's own voice will read the cards instead", exc)
                 announce = replace(announce, engine=tts.AUTO)
         self.events.put(
-            ("code", convert(source, out_dir, force, announce, cover, drop, cut, fmt, crop))
+            (
+                "code",
+                convert(source, out_dir, force, announce, cover, drop, cut, fmt, crop, zoom=zoom, focus=focus),
+            )
         )
 
     def _drain(self) -> None:

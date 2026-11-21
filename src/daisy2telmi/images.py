@@ -375,6 +375,17 @@ def crop_view(mode: str = "center", zoom: float = 1.0, focus: Sequence[float] | 
     }
 
 
+def _scale_chain(width: int, height: int, zoom: float = 1.0) -> str:
+    """Scale the cover so it just fills `size`, then enlarge it by the zoom.
+
+    `ceil` to an even number so the scaled cover always reaches the frame, which
+    `crop` cannot place outside itself. The quotes matter: the filter graph would
+    read max()'s comma as the end of the scale filter.
+    """
+    fit = f"max({width}/iw,{height}/ih)"
+    return f"scale=w='ceil(iw*{fit}*{zoom}/2)*2':h='ceil(ih*{fit}*{zoom}/2)*2'"
+
+
 def _crop(
     ffmpeg: str,
     source: Path,
@@ -386,15 +397,9 @@ def _crop(
     width, height = size
     zoom = min(max(1.0, float((view or {}).get("zoom") or 1.0)), MAX_ZOOM)
     focus = (view or {}).get("focus") or CROP_FOCUS[mode]
-    # The cover is scaled to just cover the frame, then enlarged by the zoom; the
-    # frame then sits at `focus` of the room that leaves. `ceil` to an even number
-    # so the scaled cover always reaches the frame, which `crop` cannot place
-    # outside itself.
-    fit = f"max({width}/iw,{height}/ih)"
+    # The frame sits at `focus` of the room the enlarged cover leaves around it.
     chain = (
-        # The quotes matter: the filter graph would read max()'s comma as the end
-        # of the scale filter.
-        f"scale=w='ceil(iw*{fit}*{zoom}/2)*2':h='ceil(ih*{fit}*{zoom}/2)*2',"
+        f"{_scale_chain(width, height, zoom)},"
         f"crop={width}:{height}:(iw-{width})*{focus[0]}:(ih-{height})*{focus[1]}"
     )
     _run(
@@ -422,16 +427,37 @@ def preview_size(player: str, width: int = PREVIEW_SIZE[0]) -> tuple[int, int]:
     return width, round(width * scene[1] / scene[0])
 
 
-def crop_previews(source: Path, size: tuple[int, int] = PREVIEW_SIZE) -> dict[str, bytes]:
-    """Every crop band of `source`, small, so the choice can be made by eye."""
+def cover_fit(source: Path, size: tuple[int, int], zoom: float = 1.0) -> tuple[bytes, tuple[int, int]]:
+    """The cover scaled to fill `size` and enlarged by `zoom`, and the picture's size.
+
+    The crop frame sits on this picture and shows only what falls inside it, which
+    is what the web page's canvas does; a desktop Canvas does the same with one
+    image item. The picture is drawn once per zoom, so dragging stays instant.
+    """
     ffmpeg = require_ffmpeg()
-    previews: dict[str, bytes] = {}
     with tempfile.TemporaryDirectory(prefix="daisy2telmi-") as tmp:
-        out = Path(tmp) / "preview.png"
-        for mode in CROP_MODES:
-            _crop(ffmpeg, source, size, out, mode)
-            previews[mode] = out.read_bytes()
-    return previews
+        out = Path(tmp) / "fit.png"
+        _run(
+            [
+                ffmpeg,
+                "-y",
+                "-i",
+                str(source),
+                "-vf",
+                _scale_chain(*size, min(max(1.0, zoom), MAX_ZOOM)),
+                "-frames:v",
+                "1",
+                str(out),
+            ],
+            f"could not read {source.name}",
+        )
+        png = out.read_bytes()
+    return png, _png_size(png)
+
+
+def _png_size(png: bytes) -> tuple[int, int]:
+    """The width and height a PNG holds: its header sits at a fixed offset."""
+    return struct.unpack(">II", png[16:24])
 
 
 def _overlay(ffmpeg: str, base: Path, overlay: Path, dest: Path, x: int, y: int) -> None:

@@ -286,6 +286,7 @@ def convert(
     crop: str = "center",
     find_cover: bool = False,
     zoom: float = 1.0,
+    focus: tuple[float, float] | None = None,
     merge: Path | None = None,
 ) -> int:
     """Convert one pack. Logs through this module's logger so a GUI can follow along."""
@@ -321,7 +322,7 @@ def convert(
                 log.error("%s is not empty; pass --force to overwrite", target)
                 return 2
             target.mkdir(parents=True, exist_ok=True)
-            view = images.crop_view(crop, zoom)
+            view = images.crop_view(crop, zoom, focus)
             # The Merlin has no story graph to write: its card is made from the
             # Telmi story, so that one is built at Telmi's sizes first.
             player = "telmi" if fmt == "merlin" else fmt
@@ -399,7 +400,7 @@ def main(argv: list[str] | None = None) -> int:
         cover_crop(args),
         args.find_cover,
         args.cover_zoom,
-        args.merlin_merge,
+        merge=args.merlin_merge,
     )
 
 

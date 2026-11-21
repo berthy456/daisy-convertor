@@ -76,6 +76,8 @@ LANGUAGES: dict[str, Language] = {
 UI: dict[str, dict[str, str]] = {
     "en": {
         "app_title": "daisy-convertor",
+        "app_headline": "Daisy packs to story teller machines converter",
+        "brand": "Daisy Convertor",
         "pack_label": "DAISY pack",
         "browse_zip": "Browse zip...",
         "browse_folder": "Browse folder...",
@@ -150,6 +152,8 @@ UI: dict[str, dict[str, str]] = {
     },
     "fr": {
         "app_title": "daisy-convertor",
+        "app_headline": "Convertisseur de packs daisy pour conteuses",
+        "brand": "Daisy Convertor",
         "pack_label": "Pack DAISY",
         "browse_zip": "Choisir un zip...",
         "browse_folder": "Choisir un dossier...",
@@ -224,6 +228,8 @@ UI: dict[str, dict[str, str]] = {
     },
     "zh": {
         "app_title": "daisy-convertor",
+        "app_headline": "将 Daisy 包转换为故事机故事",
+        "brand": "Daisy Convertor",
         "pack_label": "DAISY 音频包",
         "browse_zip": "选择 zip...",
         "browse_folder": "选择文件夹...",
@@ -298,6 +304,8 @@ UI: dict[str, dict[str, str]] = {
     },
     "ar": {
         "app_title": "daisy-convertor",
+        "app_headline": "محوّل حزم Daisy إلى أجهزة سرد القصص",
+        "brand": "Daisy Convertor",
         "pack_label": "حزمة DAISY",
         "browse_zip": "‏اختيار ملف zip…",
         "browse_folder": "اختيار مجلد...",
@@ -372,6 +380,8 @@ UI: dict[str, dict[str, str]] = {
     },
     "tr": {
         "app_title": "daisy-convertor",
+        "app_headline": "Daisy paketlerini hikâye anlatıcısına dönüştürme",
+        "brand": "Daisy Convertor",
         "pack_label": "DAISY paketi",
         "browse_zip": 'Zip seç...',
         "browse_folder": 'Klasör seç...',
@@ -446,6 +456,8 @@ UI: dict[str, dict[str, str]] = {
     },
     "de": {
         "app_title": "daisy-convertor",
+        "app_headline": "DAISY-Pakete für Erzählgeräte konvertieren",
+        "brand": "Daisy Convertor",
         "pack_label": "DAISY-Paket",
         "browse_zip": 'Zip wählen...',
         "browse_folder": 'Ordner wählen...',
@@ -520,6 +532,8 @@ UI: dict[str, dict[str, str]] = {
     },
     "it": {
         "app_title": "daisy-convertor",
+        "app_headline": "Convertitore di pacchetti Daisy per raccontastorie",
+        "brand": "Daisy Convertor",
         "pack_label": "Pacchetto DAISY",
         "browse_zip": "Scegli zip...",
         "browse_folder": "Scegli cartella...",
@@ -594,6 +608,8 @@ UI: dict[str, dict[str, str]] = {
     },
     "es": {
         "app_title": "daisy-convertor",
+        "app_headline": "Convertidor de paquetes Daisy para cuentacuentos",
+        "brand": "Daisy Convertor",
         "pack_label": "Paquete DAISY",
         "browse_zip": "Elegir zip...",
         "browse_folder": "Elegir carpeta...",
@@ -668,6 +684,8 @@ UI: dict[str, dict[str, str]] = {
     },
     "pt": {
         "app_title": "daisy-convertor",
+        "app_headline": "Conversor de pacotes Daisy para contadores de histórias",
+        "brand": "Daisy Convertor",
         "pack_label": "Pacote DAISY",
         "browse_zip": "Escolher zip...",
         "browse_folder": "Escolher pasta...",
@@ -742,6 +760,8 @@ UI: dict[str, dict[str, str]] = {
     },
     "nl": {
         "app_title": "daisy-convertor",
+        "app_headline": "Daisy-pakketten omzetten voor verhalenvertellers",
+        "brand": "Daisy Convertor",
         "pack_label": "DAISY-pakket",
         "browse_zip": "Kies zip...",
         "browse_folder": "Kies map...",

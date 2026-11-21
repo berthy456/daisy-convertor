@@ -45,14 +45,17 @@ ANNOUNCE_KEYS = {mode: f"announce_{mode}" for mode in ANNOUNCE_MODES}
 CROP_WIDTH = 360
 
 # Tk has no theme of its own that looks the same on the three platforms, so the
-# window brings its own: one flat set of colours, drawn by `clam` everywhere.
-PAPER = "#ffffff"
-INK = "#1b1f27"
-FIELD = "#f1f3f7"
-LINE = "#c9ced8"
-ACCENT = "#2f6feb"
-MUTED = "#6c7480"
-ALERT = "#c0392b"
+# window brings its own: one flat set of colours, drawn by `clam` everywhere. The
+# ground is a dark lavender, the same hue as the icon's magenta so the mark sits on
+# it without changing colour; the two sunken frames go one step darker.
+PAPER = "#3b3852"
+SUNK = "#322f46"
+INK = "#eeeaf6"
+FIELD = "#484563"
+LINE = "#5c5878"
+ACCENT = "#d24fc9"
+MUTED = "#b3aecb"
+ALERT = "#ff8978"
 
 
 def theme(root: tk.Misc) -> None:
@@ -76,7 +79,7 @@ def theme(root: tk.Misc) -> None:
     style.configure("TButton", padding=(10, 5), relief="flat", background=FIELD, bordercolor=LINE)
     style.map(
         "TButton",
-        background=[("active", "#e4e8ef"), ("disabled", PAPER)],
+        background=[("active", "#565274"), ("disabled", PAPER)],
         foreground=[("disabled", MUTED)],
         bordercolor=[("disabled", PAPER)],
     )
@@ -95,13 +98,36 @@ def theme(root: tk.Misc) -> None:
         selectbackground=[("readonly", FIELD)],
         selectforeground=[("readonly", INK)],
     )
-    style.configure("Treeview", background=PAPER, fieldbackground=PAPER, bordercolor=LINE, rowheight=22)
-    style.map("Treeview", background=[("selected", ACCENT)], foreground=[("selected", PAPER)])
+    style.configure("Treeview", background=SUNK, fieldbackground=SUNK, bordercolor=LINE, rowheight=22)
+    style.map("Treeview", background=[("selected", ACCENT)], foreground=[("selected", "#ffffff")])
     style.configure("Treeview.Heading", background=FIELD, foreground=MUTED, relief="flat")
     style.configure("TScrollbar", background=FIELD, troughcolor=PAPER, bordercolor=LINE, arrowsize=12, relief="flat")
     style.configure("TProgressbar", background=ACCENT, troughcolor=FIELD, bordercolor=LINE)
     style.configure("TSeparator", background=LINE)
     style.configure("TSizegrip", background=PAPER)
+    # The window's own two lines of words: what it is for, under the mark, and the
+    # name along the bottom.
+    style.configure("Headline.TLabel", foreground=INK, font=("TkDefaultFont", 13, "bold"))
+    style.configure("Brand.TLabel", foreground=MUTED)
+
+
+# The window's icon, drawn from assets/icon.svg by tools/make_icons.py. A frozen
+# binary unpacks the PNG next to this module, which is the same place `__file__`
+# points from, so one path covers the checkout, the wheel and the binary.
+ICON = Path(__file__).resolve().parent / "assets" / "icon.png"
+
+
+def set_icon(root: tk.Misc) -> None:
+    """Give the window and its dialogs the app icon.
+
+    macOS ignores `iconphoto` and takes the icon from the binary itself, which is
+    what `--icon` sets there. The image has to stay referenced: Tkinter deletes the
+    Tcl image when the Python object goes away.
+    """
+    if not ICON.is_file():
+        return
+    root._icon = tk.PhotoImage(file=str(ICON))
+    root.iconphoto(True, root._icon)
 
 
 class _QueueHandler(logging.Handler):
@@ -138,6 +164,7 @@ class App:
         root.option_add("*icons.canvas.width", "460p", "widgetDefault")
         root.option_add("*icons.canvas.height", "300p", "widgetDefault")
         theme(root)
+        set_icon(root)
         self.pack_var.trace_add("write", self._follow_pack)
         self.cover_var = tk.StringVar()
         # A looked-up cover has to stay on disk while the cards are drawn, so the
@@ -172,16 +199,33 @@ class App:
         self._labels[key] = widget
         return widget
 
+    def _mark_photo(self, side: int) -> tk.PhotoImage | None:
+        """The mark at the size a frame asks for. Tk cannot scale a photo image, so
+        tools/make_icons.py writes one PNG for each size the window draws."""
+        path = ICON.parent / f"icon-{side}.png"
+        return tk.PhotoImage(file=str(path)) if path.is_file() else None
+
     def _button(self, parent: tk.Widget, key: str, command, **kwargs) -> ttk.Button:
         widget = ttk.Button(parent, text=self.t(key), command=command, **kwargs)
         self._labels[key] = widget
         return widget
 
     def _build(self) -> None:
-        grid = ttk.Frame(self.root, padding=12)
-        grid.grid(sticky="nsew")
         self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
+        self.root.rowconfigure(1, weight=1)
+
+        # The mark and what the window is for, centred along the top, and the name
+        # along the bottom: the work itself sits between them.
+        brand = ttk.Frame(self.root)
+        brand.grid(row=0, column=0, sticky="ew", pady=(4, 10))
+        brand.columnconfigure(0, weight=1)
+        self._logo = self._mark_photo(64)
+        if self._logo:
+            ttk.Label(brand, image=self._logo).grid(row=0, column=0)
+        self._label(brand, "app_headline", style="Headline.TLabel").grid(row=1, column=0, pady=(6, 0))
+
+        grid = ttk.Frame(self.root, padding=(12, 0))
+        grid.grid(row=1, column=0, sticky="nsew")
         grid.columnconfigure(1, weight=1)
         grid.rowconfigure(8, weight=1)
 
@@ -254,7 +298,7 @@ class App:
         # the wheel or the arrows to enlarge. What is inside here is what the story
         # carries, so the choice is made on the picture instead of described to it.
         self.crop_frame = tk.Canvas(
-            crop_row, highlightthickness=0, cursor="fleur", takefocus=1, background=PAPER
+            crop_row, highlightthickness=0, cursor="fleur", takefocus=1, background=SUNK
         )
         self.crop_frame.pack(anchor="w", pady=(6, 0))
         self._crop_item = self.crop_frame.create_image(0, 0, anchor="nw")
@@ -293,11 +337,13 @@ class App:
 
         self.log_view = tk.Text(
             grid,
-            height=18,
+            # Twelve lines: with the mark and the headline above it, eighteen would
+            # make the window taller than a laptop screen.
+            height=12,
             width=72,
             state="disabled",
             wrap="word",
-            background=PAPER,
+            background=SUNK,
             foreground=INK,
             relief="flat",
             highlightthickness=1,
@@ -317,6 +363,13 @@ class App:
         self.log_view.tag_configure("error", foreground=ALERT, font=bold)
         self.log_view.tag_configure("report", foreground=INK, font=bold)
         self._errors: list[str] = []
+
+        bar = ttk.Frame(self.root)
+        bar.grid(row=2, column=0, sticky="ew", padx=12, pady=(2, 8))
+        self._stamp = self._mark_photo(16)
+        if self._stamp:
+            ttk.Label(bar, image=self._stamp).pack(side="left")
+        self._label(bar, "brand", style="Brand.TLabel").pack(side="left", padx=(6, 0))
 
         hint = self.t("drop_hint") if DND_FILES else self.t("drop_unavailable")
         self._append(hint)
@@ -553,7 +606,7 @@ class App:
         self._crop_zoom_value = 1.0
         self.crop_zoom.set(1.0)
         self.crop_frame.itemconfigure(self._crop_item, image="")
-        self.crop_frame.configure(background=PAPER)
+        self.crop_frame.configure(background=SUNK)
 
     def _grab_crop(self, event: tk.Event) -> None:
         if self._crop_cover is None:
@@ -834,6 +887,7 @@ class ChapterList:
         self.app = app
         self.top = tk.Toplevel(app.root)
         self.top.title(app.t("chapters"))
+        self.top.configure(background=PAPER)
         self.events: queue.Queue = queue.Queue()
         self.packs = contextlib.ExitStack()
         try:
@@ -1119,6 +1173,7 @@ class Options:
         self.app = app
         self.top = tk.Toplevel(app.root)
         self.top.title(app.t("opt_title"))
+        self.top.configure(background=PAPER)
         self.top.resizable(False, False)
 
         self.language_keys = list(LANGUAGES)
@@ -1324,9 +1379,6 @@ def make_root() -> tk.Misc:
 
 def run_gui() -> int:
     root = make_root()
-    root.columnconfigure(0, weight=1)
-    root.rowconfigure(0, weight=1)
-
     app = App(root)
     root.title(app.t("app_title"))
     handler = attach_log_handler(app)

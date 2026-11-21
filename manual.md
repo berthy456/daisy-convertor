@@ -200,7 +200,7 @@ pytest
 node --test tests/web/*.test.mjs
 ```
 
-383 Python tests, 110 for the browser modules. The integration tests skip themselves if `gon-ruby-mp3.zip` or `ffprobe` is absent. `tests/test_published_pack.py` checks a real published Telmi story against the same validator; it skips unless `TELMI_SAMPLE` points at one. `tests/test_lunii_pk.py` re-encodes the pictures of a real `.plain.pk`; it skips unless `LUNII_SAMPLE` points at one. `tests/test_gui.py` skips where there is no Tk or no display.
+385 Python tests, 110 for the browser modules. The integration tests skip themselves if `gon-ruby-mp3.zip` or `ffprobe` is absent. `tests/test_published_pack.py` checks a real published Telmi story against the same validator; it skips unless `TELMI_SAMPLE` points at one. `tests/test_lunii_pk.py` re-encodes the pictures of a real `.plain.pk`; it skips unless `LUNII_SAMPLE` points at one. `tests/test_gui.py` skips where there is no Tk or no display.
 
 ## Build a binary
 
@@ -214,6 +214,8 @@ python build_binary.py
 ```
 
 Produces `dist\daisy-convertor.exe` (`dist/daisy-convertor` on macOS and Linux). `lxml.etree` and `lxml._elementpath` are passed as hidden imports; PyInstaller's own lxml hook does the rest.
+
+`assets/icon.svg` is the one drawing; `tools/make_icons.py` redraws `assets/icon.ico`, `assets/icon.icns` and the three PNGs in `src/daisy2telmi/assets` from it, and those are committed because no build runner has an SVG rasteriser. `build_binary.py` passes the `.icns` on macOS and the `.ico` on Windows, and unpacks `icon.png` next to `gui.py`, which is where the window looks for it; `tools/make_appimage.py` uses it for the desktop file. Tk cannot scale a photo image, so the header's 64-pixel mark and the status bar's 16-pixel one are separate files.
 
 `build_binary.py` locates ffmpeg on the build machine and embeds it with `--add-binary`. On Linux it copies ffmpeg's whole library closure first: PyInstaller follows ffmpeg's own dependencies but leaves `libdrm` and `libwayland` for the distribution, and a machine without them cannot crop a cover. If ffmpeg is missing the script stops rather than shipping something that needs a separate install. `DAISY2TELMI_FFMPEG` overrides the search. At runtime the converter looks for the bundled copy (`sys._MEIPASS`, then the executable's own folder) before falling back to PATH.
 

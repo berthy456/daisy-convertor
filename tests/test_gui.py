@@ -38,6 +38,23 @@ def test_the_window_builds(app: gui.App) -> None:
     assert app.save_button.instate(["!disabled"])
 
 
+def test_the_window_is_given_the_app_icon(app: gui.App) -> None:
+    """The PNG is committed as package data and unpacked next to the module in a
+    frozen binary, so the window can always draw it."""
+    assert gui.ICON.is_file()
+    assert gui.ICON.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    assert app.root._icon is not None
+
+
+def test_each_mark_is_its_own_file(app: gui.App) -> None:
+    """Tk cannot scale a photo image, so a size the window asks for has to be
+    shipped as its own PNG; a missing one draws nothing at all."""
+    for side in (64, 16):
+        photo = app._mark_photo(side)
+        assert photo is not None, f"no {side}-pixel mark"
+        assert (photo.width(), photo.height()) == (side, side)
+
+
 def test_the_output_folder_follows_the_pack(app: gui.App, tmp_path: Path) -> None:
     app.pack_var.set(str(tmp_path / "Wesh.zip"))
     assert app.out_var.get() == str(tmp_path)

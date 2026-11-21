@@ -122,6 +122,27 @@
           </div>
         </div>
 
+        <!-- What the card between two parts shows and says. The words are the
+             page's own; the sound is one of the clips under voices/, so the two
+             are asked for separately. -->
+        <div class="cards">
+          <h2 data-i18n="cards_title"></h2>
+          <div class="cards-row">
+            <label>
+              <input id="card-total" type="checkbox" checked />
+              <span data-i18n="cards_show_total"></span>
+            </label>
+            <label>
+              <input id="card-word" type="checkbox" checked />
+              <span data-i18n="cards_say_word"></span>
+            </label>
+            <label>
+              <input id="card-count" type="checkbox" />
+              <span data-i18n="cards_say_total"></span>
+            </label>
+          </div>
+        </div>
+
         <!-- The parts the pack was cut into, so unwanted ones can be left out.
              The numbers mean the parts of the chosen level, so the list is drawn
              again whenever that level changes. -->

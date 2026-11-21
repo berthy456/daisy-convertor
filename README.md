@@ -57,7 +57,7 @@ Drag the picture to move it. The **Zoom** slider, the mouse wheel, or the arrow 
 
 ### 7. Decide what the cards say
 
-**Options** holds the interface language (English, French, Chinese, Arabic, Turkish, German, Italian, Spanish, Portuguese, Dutch) and what each chapter card says when it appears: nothing, the number, the number and how many parts there are, the part's own name, "Chapter 4", or the number and a question inviting the listener to continue.
+**Options** holds the interface language (English, French, Chinese, Arabic, Turkish, German, Italian, Spanish, Portuguese, Dutch) and what each chapter card says when it appears: nothing, the number, the number and how many parts there are, the part's own name, "Chapter 4", or the number and a question inviting the listener to continue. A box next to it decides whether the card also *shows* how many parts there are — `4/12` or just `4`. The web page asks the same three things under **The chapter cards**: show how many parts there are, say the word chapter, say how many parts there are.
 
 The app can read the cards in a real voice. On the first conversion it offers to install that voice; say no and the machine's own voice reads them, or the cards stay silent. The web page uses recorded announcements instead, which are already in the page.
 

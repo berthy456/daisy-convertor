@@ -385,6 +385,18 @@ def test_the_device_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -> No
     assert forced.device == "mps"
 
 
+def test_the_card_total_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    settings.save({**settings.DEFAULTS, "card_total": False})
+
+    saved = cli.announce_options(cli._parse_args(["pack.zip", "out"]))
+    drawn = cli.announce_options(cli._parse_args(["pack.zip", "out", "--card-total"]))
+    hidden = cli.announce_options(cli._parse_args(["pack.zip", "out", "--no-card-total"]))
+    assert saved.show_total is False, "the saved choice is used when no flag is given"
+    assert drawn.show_total is True
+    assert hidden.show_total is False
+
+
 def test_auto_takes_the_apple_gpu_when_there_is_one() -> None:
     class Mps:
         class cuda:

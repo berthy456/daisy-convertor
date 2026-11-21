@@ -313,7 +313,9 @@ def card_layer_png(
     return _grid_png(_card_grid(label, text, width, height, band=style == "bw"), None, style)
 
 
-def card_label(language_code: str, number: int, total: int, word: bool = True) -> str:
+def card_label(
+    language_code: str, number: int, total: int, word: bool = True, show_total: bool = True
+) -> str:
     """The words drawn on a card, in the story's language.
 
     The font is Latin, so Chinese and Arabic cards carry the number alone: it is
@@ -321,10 +323,11 @@ def card_label(language_code: str, number: int, total: int, word: bool = True) -
     A part cut below chapter level gets the number alone as well, because none
     of the words we have would be the right one for it.
     """
-    label = f"{number}/{total}" if not word else f"{language(language_code).card.upper()} {number}/{total}"
+    shown = f"{number}/{total}" if show_total else str(number)
+    label = f"{language(language_code).card.upper()} {shown}" if word else shown
     if all(character in GLYPHS for character in label):
         return label
-    return f"{number}/{total}"
+    return shown
 
 
 def flat_png(width: int = IMAGE_SIZE[0], height: int = IMAGE_SIZE[1], style: str = "colour") -> bytes:

@@ -74,6 +74,8 @@ class Announce:
     mode: str = "prompt"
     language: str = "en"
     autoplay: bool = False
+    # Whether the drawn card counts the parts as well as numbering them.
+    show_total: bool = True
     engine: str = tts.AUTO
     voice: str | None = None
     command: str | None = None
@@ -404,7 +406,10 @@ def build_story(
         title_source = "generated silence"
 
     code = announce.language if announce is not None else "en"
-    labels = [images.card_label(code, k + 1, count, cut == "chapter") for k in range(count)]
+    show_total = announce.show_total if announce is not None else True
+    labels = [
+        images.card_label(code, k + 1, count, cut == "chapter", show_total) for k in range(count)
+    ]
     texts = [chapter.text for chapter in book.chapters]
 
     def draw(target: Path, style: str) -> None:

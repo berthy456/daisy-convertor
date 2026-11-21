@@ -117,6 +117,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "prompt to continue",
     )
     speech.add_argument(
+        "--card-total",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="draw how many parts there are on each chapter card, as in '4/12' (--no-card-total for the number alone)",
+    )
+    speech.add_argument(
         "--language",
         choices=sorted(LANGUAGES),
         help="language of the spoken chapter cards",
@@ -177,6 +183,7 @@ def announce_options(args: argparse.Namespace) -> Announce:
         mode=args.announce or saved["announce"],
         language=args.language or saved["language"],
         autoplay=bool(args.autoplay or saved["autoplay"]),
+        show_total=saved["card_total"] if args.card_total is None else args.card_total,
         engine=args.tts or saved["tts"],
         voice=args.tts_voice or saved["voice"],
         command=args.tts_command or saved["command"],

@@ -16,7 +16,8 @@ test("every language translates every key", () => {
 });
 
 // "source" is French too, and Spanish writes `error:` the same way, so those two
-// keys may match English; `card_number` is digits around a slash in every language;
+// keys may match English; `card_number` is digits around a slash in every language,
+// and `card_number_one` is the digits alone;
 // Telmi, Lunii, the Flam and the Merlin are the players' names, which no language
 // translates, and "beta" and "Zoom" are the words the Latin-script languages all
 // borrow as is.
@@ -26,6 +27,7 @@ test("no language is left in English by accident", () => {
     "footer_line",
     "log_error",
     "card_number",
+    "card_number_one",
     "fmt_telmi",
     "fmt_lunii",
     "fmt_flam",

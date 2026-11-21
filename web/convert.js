@@ -39,7 +39,7 @@ function firstSeconds(segments, bytesOf, seconds) {
  * options.style: "colour", or "bw" for a plain Lunii's four grey levels.
  * options.player: "telmi", "lunii" or "flam" — whose screen sizes every picture is drawn at.
  * options.cardLabel(number, total, worded): the words drawn on a card.
- * options.cardAudio(number): bytes for the card to say, or null to leave it silent.
+ * options.cardAudio(number, count): bytes for the card to say, or null to leave it silent.
  * options.drop: 1-based part numbers to leave out of the story.
  */
 export async function buildStoryFiles(entries, silentMp3, onProgress = () => {}, options = {}) {
@@ -98,7 +98,7 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
 
     let card = null;
     if (cut === "chapter") {
-      const voice = await spoken(k + 1);
+      const voice = await spoken(k + 1, partCount);
       if (voice !== null) {
         files.push({ name: `${dirName}/audios/c${k}.mp3`, data: voice });
         card = `c${k}.mp3`;

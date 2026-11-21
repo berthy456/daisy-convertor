@@ -32,10 +32,25 @@ def run(argv: list[str]) -> None:
     subprocess.run(argv, check=True, capture_output=True, text=True)
 
 
+def fragments(pattern: str) -> list[tuple[str, str]]:
+    """The words around the numbers of a "{n} of {total}" pattern.
+
+    Recorded as three clips rather than one phrase, because the total is a
+    different number on every card. A language that puts its word for chapter
+    after the total gets it back as a suffix, and one that puts it before both
+    numbers gets it as a prefix.
+    """
+    head, _, tail = pattern.partition("{n}")
+    middle, _, last = tail.partition("{total}")
+    return [(head, "of-pre.mp3"), (middle, "of-mid.mp3"), (last, "of-post.mp3")]
+
+
 def rows(lang, max_number: int) -> list[tuple[str, str]]:
     """The phrases one language needs, with the file name each one becomes."""
     every = [(lang.chapter.format(n=n), f"{n:02d}.mp3") for n in range(1, max_number + 1)]
-    return every + [(lang.next_prompt, "next.mp3")]
+    bare = [(str(n), f"n-{n:02d}.mp3") for n in range(1, max_number + 1)]
+    words = [(text, name) for text, name in fragments(lang.number_of) if any(c.isalnum() for c in text)]
+    return every + bare + words + [(lang.next_prompt, "next.mp3")]
 
 
 def encode(raw: Path, dest: Path, bitrate: str) -> None:
@@ -118,7 +133,7 @@ def main() -> int:
                 encode(raw, dest, args.bitrate)
                 total += dest.stat().st_size
                 written += 1
-        print(f"{code}: {args.max} number(s) + the continue prompt")
+        print(f"{code}: {len(wanted)} clip(s) — numbers with and without the word, the total, the prompt")
 
     print(f"{written} file(s), {total / 1e6:.2f} MB in {args.out}")
     return 0

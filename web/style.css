@@ -140,7 +140,8 @@ input[type="file"] {
 }
 
 .cover,
-.cut {
+.cut,
+.cards {
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid var(--line);
@@ -156,6 +157,7 @@ input[type="file"] {
 
 .cover-row,
 .cut-row,
+.cards-row,
 .format-row {
   display: flex;
   gap: 0.5rem;
@@ -172,6 +174,7 @@ input[type="file"] {
 }
 
 .cut-row label,
+.cards-row label,
 .format-row label {
   display: inline-flex;
   gap: 0.35rem;

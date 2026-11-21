@@ -29,6 +29,11 @@ const cropCanvas = document.getElementById("crop-canvas");
 const cropInputs = [...document.querySelectorAll('input[name="crop"]')];
 const cropZoom = document.getElementById("crop-zoom");
 const cropReset = document.getElementById("crop-reset");
+const cardBoxes = {
+  total: document.getElementById("card-total"),
+  word: document.getElementById("card-word"),
+  count: document.getElementById("card-count"),
+};
 const formatInputs = [...document.querySelectorAll('input[name="format"]')];
 const partsBox = document.getElementById("parts");
 const partsList = document.getElementById("parts-list");
@@ -40,6 +45,7 @@ const STORED_LANGUAGE = "daisy2telmi.language";
 const STORED_CUT = "daisy2telmi.cut";
 const STORED_FORMAT = "daisy2telmi.format";
 const STORED_CROP = "daisy2telmi.crop";
+const STORED_CARDS = "daisy2telmi.cards";
 // The summary lists the parts it starts; a book cut to the sentence level has hundreds.
 const LISTED_PARTS = 30;
 // A sentence-level book can run to thousands of parts: past this the page says
@@ -61,6 +67,9 @@ let format = "telmi";
 // user moves the frame themselves.
 let focus = null;
 let zoom = 1;
+// What the card between two parts shows and says: the total on the picture, the
+// word chapter in the phrase, and the total in it too.
+let cards = { total: true, word: true, count: false };
 // Part numbers left out of the story, in the numbering of the chosen cut level.
 let dropped = new Set();
 // Counts the lookups in flight, so an answer about a pack that has been replaced
@@ -114,6 +123,18 @@ function startCut() {
       cut = input.value;
       remember(STORED_CUT, cut);
       showParts();
+    });
+  }
+}
+
+function startCards() {
+  const stored = JSON.parse(saved(STORED_CARDS) ?? "null");
+  for (const [name, box] of Object.entries(cardBoxes)) {
+    if (stored && typeof stored[name] === "boolean") box.checked = stored[name];
+    cards[name] = box.checked;
+    box.addEventListener("change", () => {
+      cards[name] = box.checked;
+      remember(STORED_CARDS, JSON.stringify(cards));
     });
   }
 }
@@ -399,9 +420,16 @@ async function saveStory() {
         player: format,
         style: format === "lunii" ? "bw" : "colour",
         t: (key) => t(key),
-        cardLabel: (number, total, worded) => t(worded ? "card_label" : "card_number", { n: number, total }),
-        cardAudio: async (number) => {
-          const voice = await cardAudio(lang, number);
+        cardLabel: (number, total, worded) =>
+          t(cards.total ? (worded ? "card_label" : "card_number") : (worded ? "card_label_one" : "card_number_one"), {
+            n: number,
+            total,
+          }),
+        cardAudio: async (number, count) => {
+          const voice = await cardAudio(lang, number, {
+            word: cards.word,
+            count: cards.count ? count : null,
+          });
           if (voice === null) log(t("log_card_silent", { n: number }));
           return voice;
         },
@@ -546,4 +574,5 @@ saveButton.addEventListener("click", saveStory);
 startLanguage();
 startFormat();
 startCut();
+startCards();
 startCrop();

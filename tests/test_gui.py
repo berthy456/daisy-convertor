@@ -161,10 +161,12 @@ def test_the_options_page_saves_what_it_shows(app: gui.App, tmp_path, monkeypatc
     page = gui.Options(app)
     page.language_box.set("fr - Français")
     page.autoplay_var.set(True)
+    page.card_total_var.set(False)
     page._close()
 
     assert app.options["language"] == "fr"
     assert app.options["autoplay"] is True
+    assert app.options["card_total"] is False
     saved = (tmp_path / "daisy2telmi" / "config.json").read_text(encoding="utf-8")
     assert '"language": "fr"' in saved
     assert app._labels["save"].cget("text") == "Enregistrer le zip"

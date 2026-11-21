@@ -41,6 +41,12 @@ def test_the_card_word_is_written_in_the_story_language() -> None:
     assert images.card_label("nl", 9, 9) == "HOOFDSTUK 9/9"
 
 
+def test_a_card_can_leave_the_total_out() -> None:
+    assert images.card_label("en", 2, 23, show_total=False) == "CHAPTER 2"
+    assert images.card_label("en", 2, 23, word=False, show_total=False) == "2"
+    assert images.card_label("zh", 4, 23, show_total=False) == "4"
+
+
 def test_scripts_the_font_lacks_fall_back_to_the_number() -> None:
     for code in ("zh", "ar"):
         assert images.card_label(code, 4, 23) == "4/23"

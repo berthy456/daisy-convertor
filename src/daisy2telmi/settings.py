@@ -21,6 +21,7 @@ DEFAULTS: dict = {
     "language": "en",
     "announce": "prompt",
     "autoplay": False,
+    "card_total": True,
     "format": "telmi",
     "tts": "chatterbox",
     "voice": None,

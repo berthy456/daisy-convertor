@@ -252,11 +252,13 @@ class App:
             mode=self.options["announce"],
             language=self.language_var.get(),
             autoplay=self.options["autoplay"],
+            show_total=self.options["card_total"],
             engine=self.options["tts"],
             voice=self.options["voice"],
             command=self.options["command"],
             python=self.options["python"],
             clip=self.options["clip"],
+            device=self.options["device"],
         )
 
     def _follow_pack(self, *_: object) -> None:
@@ -971,6 +973,7 @@ class Options:
         self.engine_box = self._combo(grid, self.engine_keys, app.options["tts"])
         self.voice_box = self._combo(grid, [None], app.options["voice"])
         self.device_box = self._combo(grid, self.device_keys, app.options["device"])
+        self.card_total_var = tk.BooleanVar(value=bool(app.options["card_total"]))
         self.autoplay_var = tk.BooleanVar(value=bool(app.options["autoplay"]))
         self.python_box = ttk.Entry(grid, width=28)
         self.python_box.insert(0, app.options["python"] or "")
@@ -985,26 +988,27 @@ class Options:
         # under their own heading instead of continuing the list.
         self._row(grid, "opt_language", 0, self.language_box)
         self._row(grid, "opt_announce", 1, self.announce_box)
-        self._row(grid, "opt_autoplay", 2, ttk.Checkbutton(grid, variable=self.autoplay_var))
-        self._row(grid, "opt_engine", 3, self.engine_box)
-        self._row(grid, "opt_voice", 4, self.voice_box)
-        self._heading(grid, "opt_section_chatterbox", 5)
+        self._row(grid, "opt_card_total", 2, ttk.Checkbutton(grid, variable=self.card_total_var))
+        self._row(grid, "opt_autoplay", 3, ttk.Checkbutton(grid, variable=self.autoplay_var))
+        self._row(grid, "opt_engine", 4, self.engine_box)
+        self._row(grid, "opt_voice", 5, self.voice_box)
+        self._heading(grid, "opt_section_chatterbox", 6)
         ttk.Label(grid, text=app.t("opt_chatterbox_hint")).grid(
-            row=6, column=0, columnspan=2, sticky="w", pady=(0, 6)
+            row=7, column=0, columnspan=2, sticky="w", pady=(0, 6)
         )
         # Chatterbox is not inside the app: it is a package that goes into the
         # Python named below, so the page says whether it is there already.
         self.chatterbox_state = ttk.Label(grid, text=self._chatterbox_text())
-        self.chatterbox_state.grid(row=7, column=0, sticky="w")
+        self.chatterbox_state.grid(row=8, column=0, sticky="w")
         self.chatterbox_button = ttk.Button(
             grid, text=app.t("chatterbox_install"), command=self._install_chatterbox
         )
-        self.chatterbox_button.grid(row=7, column=1, sticky="e", padx=(8, 0))
-        self._row(grid, "opt_python", 8, self.python_box)
-        self._row(grid, "opt_device", 9, self.device_box)
-        self._row(grid, "opt_clip", 10, clip_row)
+        self.chatterbox_button.grid(row=8, column=1, sticky="e", padx=(8, 0))
+        self._row(grid, "opt_python", 9, self.python_box)
+        self._row(grid, "opt_device", 10, self.device_box)
+        self._row(grid, "opt_clip", 11, clip_row)
         ttk.Button(grid, text=app.t("opt_close"), command=self._close).grid(
-            row=11, column=0, columnspan=2, sticky="e", pady=(12, 0)
+            row=12, column=0, columnspan=2, sticky="e", pady=(12, 0)
         )
 
         self.engine_box.bind("<<ComboboxSelected>>", lambda _e: self._fill_voices())
@@ -1122,6 +1126,7 @@ class Options:
                 "language": self._chosen(self.language_box, self.language_keys),
                 "announce": self._chosen(self.announce_box, self.announce_keys, ANNOUNCE_KEYS),
                 "autoplay": self.autoplay_var.get(),
+                "card_total": self.card_total_var.get(),
                 "tts": self._chosen(self.engine_box, self.engine_keys),
                 "voice": self._chosen(self.voice_box, self.voice_keys),
                 "python": self.python_box.get().strip() or None,

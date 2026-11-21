@@ -51,6 +51,28 @@ def _device(requested: str | None, torch) -> str:
     return "cuda" if cuda else "mps" if mps else "cpu"
 
 
+def _tolerate_short_phrases() -> None:
+    """Let Chatterbox speak a number on its own.
+
+    Its alignment analyser looks at the last five columns of the attention map to
+    decide whether the phrase is over; a one-word phrase has no five columns, and
+    the slice raises IndexError before the word is said. Answering "not over yet"
+    is what that check was asking for, and the next token arrives normally.
+    """
+    from chatterbox.models.t3.inference.alignment_stream_analyzer import AlignmentStreamAnalyzer
+
+    real = AlignmentStreamAnalyzer.step
+
+    def step(self, logits, *args, **kwargs):
+        try:
+            return real(self, logits, *args, **kwargs)
+        except IndexError:
+            # `step` answers with the logits to sample next, untouched.
+            return logits
+
+    AlignmentStreamAnalyzer.step = step
+
+
 def speak(manifest: dict) -> None:
     import perth
     import torch
@@ -66,6 +88,7 @@ def speak(manifest: dict) -> None:
         )
         perth.PerthImplicitWatermarker = perth.DummyWatermarker
 
+    _tolerate_short_phrases()
     device = _device(manifest.get("device"), torch)
     print(f"chatterbox speaking on {device}")
     model = ChatterboxMultilingualTTS.from_pretrained(device=device)

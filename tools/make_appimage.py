@@ -68,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("output", type=Path)
     parser.add_argument("--appimagetool", type=Path, help="path to appimagetool; searched on PATH otherwise")
     parser.add_argument("--arch", default="x86_64")
-    parser.add_argument("--icon", type=Path, default=ROOT / "web" / "favicon.svg")
+    parser.add_argument("--icon", type=Path, default=ROOT / "src" / "daisy2telmi" / "assets" / "icon.png")
     args = parser.parse_args(argv)
 
     if not args.binary.is_file():

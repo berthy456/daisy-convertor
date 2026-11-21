@@ -225,6 +225,22 @@ def _gui_options() -> list[str]:
     return ["--collect-all", "tkinterdnd2"]
 
 
+def _icon_options() -> list[str]:
+    """The binary's own icon, and the PNG the window draws.
+
+    PyInstaller takes .icns on macOS and .ico on Windows only; on Linux the icon
+    belongs to the AppImage's desktop file instead. The PNG is not Python data, so
+    PyInstaller leaves it behind unless it is named: the window looks for it next
+    to its own module, which is where this unpacks it.
+    """
+    icon = {"darwin": "icon.icns", "win32": "icon.ico"}.get(sys.platform)
+    return [
+        *(["--icon", str(ROOT / "assets" / icon)] if icon else []),
+        "--add-data",
+        f"{ROOT / 'src' / 'daisy2telmi' / 'assets' / 'icon.png'}{os.pathsep}daisy2telmi/assets",
+    ]
+
+
 def main() -> int:
     ffmpeg = _locate_ffmpeg()
     if ffmpeg is None:
@@ -260,6 +276,7 @@ def main() -> int:
         f"{ROOT / 'src' / 'daisy2telmi' / 'chatterbox_speak.py'}{os.pathsep}.",
         *_speech_options(),
         *_gui_options(),
+        *_icon_options(),
         str(ROOT / "launcher.py"),
     ]
     print(" ".join(command))

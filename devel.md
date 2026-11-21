@@ -2,7 +2,7 @@
 
 How the converter works: every option, the formats it writes, what has been verified and what it cannot do. To use the tool, see [README.md](README.md).
 
-Converts a **DAISY 2.02, DAISY 3, text-only DAISY or EPUB book** into a **Telmi story folder** (Telmi Sync / Telmi OS), a **Lunii STUdio zip**, **Flam** pictures, or a **Merlin** card (beta).
+Converts a **DAISY 2.02, DAISY 3, text-only DAISY or EPUB book** into a **Telmi story folder** (Telmi Sync / Telmi OS), a **Lunii STUdio zip** or **`.plain.pk`** story card, **Flam** pictures, or a **Merlin** card (beta).
 
 `berthy456/daisy2telmi` is this tool under its old name, left at v3.0.1.
 
@@ -50,7 +50,22 @@ Exit codes: `0` success, `1` pack unreadable or ffmpeg failed, `2` bad arguments
 daisy-convertor --format lunii gon-ruby-mp3.zip stories
 ```
 
-`--format telmi|lunii|flam|merlin` picks the player the story is written for; Telmi is the default. The story folder is always written, and one archive comes out of it: `story.zip` for the Telmi Sync and the Flam launcher, which both import TELMI folders, `<story>-lunii.zip` in the STUdio form for a Lunii, or `<story>_merlin.zip` for a Merlin story-teller. A plain Lunii has no colour panel and four grey levels, so choosing it draws a second set of cards — white ground, black ink, flattened to `0/96/192/255` — and builds the archive from those. The GUI has the same four choices under the cover field.
+`--format telmi|lunii|lunii-pk|flam|merlin` picks the player the story is written for; Telmi is the default. The story folder is always written, and one archive comes out of it: `story.zip` for the Telmi Sync and the Flam launcher, which both import TELMI folders, `<story>-lunii.zip` in the STUdio form for a Lunii, `<Title>.<8 hex>.plain.pk` in the layout a Lunii story card keeps itself, or `<story>_merlin.zip` for a Merlin story-teller. A plain Lunii has no colour panel and four grey levels, so either Lunii choice draws a second set of cards — white ground, black ink, flattened to `0/96/192/255` — and builds the archive from those. The GUI has the same five choices under the cover field.
+
+#### Lunii `.plain.pk`
+
+`--format lunii-pk` writes the same story the way a Lunii's own card stores it, which is what Lunii.QT and open-story-teller read and write. The graph is flattened into fixed-size records instead of a `story.json`, and the media is renamed to the eight hex characters the card reads:
+
+- `nm` — no bytes; its presence is what offers night mode.
+- `ni` — a 0x200 header (format version, story version, header size, node size, and the node, `ri` and `si` counts), then one 0x2C record per stage: its picture and sound as `ri`/`si` indices, an OK and a home press each as `(base, count, pick)` into `li`, then the wheel, ok, home, pause and autoplay flags as 16-bit words. `-1` is the device's own "nowhere to go".
+- `li.plain` — the stage indices a choice leads to, four bytes each. One action node owns one unbroken run of them, which is what a transition's `base` and `count` point at.
+- `ri.plain`, `si.plain` — one 12-character name per picture and per sound: `000\` then eight hex characters.
+- `rf/000/<8 hex>.bmp` — the card: 320×240, four bits a pixel, BI_RLE4, sixteen greys, lines stored top line first.
+- `sf/000/<8 hex>.mp3` — the audio as the device wants it: MP3, at least 44100 Hz, mono. Anything else is re-encoded on the way in.
+- `uuid.bin` — the story's 16 uuid bytes.
+- `_metadata.json`, `_thumbnail.png` — the title and picture Lunii.QT lists the story under. Neither reaches a card.
+
+The `bt` authorisation file a card really carries needs that card's own key, which is why only Lunii.QT writes it, as it copies a `.plain.pk` onto one.
 
 #### Merlin (beta)
 
@@ -269,7 +284,7 @@ pip install -e .[dev]
 pytest
 ```
 
-356 Python tests and 93 for the browser modules. The integration tests skip themselves if `gon-ruby-mp3.zip` or `ffprobe` is absent. `tests/test_published_pack.py` additionally checks a real published Telmi story against the same validator; it skips unless `TELMI_SAMPLE` points at one. `tests/test_gui.py` skips where there is no Tk or no display.
+378 Python tests and 98 for the browser modules. The integration tests skip themselves if `gon-ruby-mp3.zip` or `ffprobe` is absent. `tests/test_published_pack.py` additionally checks a real published Telmi story against the same validator; it skips unless `TELMI_SAMPLE` points at one. `tests/test_lunii_pk.py` re-encodes the pictures of a real `.plain.pk` the same way; it skips unless `LUNII_SAMPLE` points at one. `tests/test_gui.py` skips where there is no Tk or no display.
 
 The browser modules have their own suite, run with Node's test runner:
 
@@ -299,6 +314,13 @@ Against a real published Telmi story (`_00_La reine des pirates_fffffd-19d14f92f
 - `validate_story_dir` reports no problems for it, so the validator matches a pack the player accepts.
 - `story_dir_name` reproduces its folder name exactly.
 - `story_dir_name` was diffed against Telmi-Sync's real `generateDirNameStory` running in Node over six inputs, including accented, non-Latin, over-long and punctuation-heavy titles: byte-identical.
+
+Against a real published Lunii pack (`Les Aventures Intergalacbriques.72275E37.plain.pk`, not shipped in this repo):
+
+- `validate_plain_pk` reports no problems for it, so the checks it encodes match a pack the device takes.
+- Our `ni` is byte-identical to the one Lunii.QT's own writer builds from the STUdio archive of the same story, except the byte after the counts: published packs leave it at zero, Lunii.QT writes one, and nothing reads it back.
+- Each of its 15 bitmaps re-encodes through our RLE4 writer to the same palette levels, pixel for pixel.
+- The `.plain.pk` written for `gon-ruby-mp3.zip` passes the same checks, and the browser converter's `ni`, `li.plain`, `ri.plain` and `si.plain` for that pack are byte-identical to the CLI's.
 
 The browser converter (`web/`), run under Node against both packs:
 

@@ -32,7 +32,7 @@ export function storyDirName(title, storyId, age = 0, category = "") {
   ].join("_");
 }
 
-function hexToBytes(hex) {
+export function hexToBytes(hex) {
   const clean = hex.replace(/-/g, "");
   const out = new Uint8Array(16);
   for (let i = 0; i < 16; i++) out[i] = Number.parseInt(clean.slice(i * 2, i * 2 + 2), 16);

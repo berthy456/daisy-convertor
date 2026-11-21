@@ -73,7 +73,7 @@ def test_the_file_dialog_list_is_given_room(app: gui.App) -> None:
 
 def test_the_player_is_chosen_before_the_cover(app: gui.App) -> None:
     """The player decides the size of every picture, so it is asked before the cover."""
-    player_row = int(app._labels["fmt_telmi"].master.grid_info()["row"])
+    player_row = int(app.format_box.master.grid_info()["row"])
     cover_row = int(app._labels["cover_label"].grid_info()["row"])
     assert player_row < cover_row
 
@@ -86,6 +86,43 @@ def test_conversion_log_lines_reach_the_window(app: gui.App) -> None:
     finally:
         logging.getLogger("daisy2telmi").removeHandler(handler)
     assert "INFO: rendering s0" in app.log_view.get("1.0", "end")
+
+
+def test_a_round_ends_with_its_errors_written_again(app: gui.App, tmp_path, monkeypatch) -> None:
+    """The frame closes a round with the errors it made, and starts the next one empty."""
+
+    def convert_with_trouble(*_args, **_kwargs):
+        gui.log.error("could not draw m0.png")
+        return 1
+
+    handler = gui.attach_log_handler(app)
+    monkeypatch.setattr(gui, "convert", convert_with_trouble)
+    (tmp_path / "pack.zip").write_bytes(b"PK")
+    app.pack_var.set(str(tmp_path / "pack.zip"))
+    app.out_var.set(str(tmp_path / "out"))
+    app._append("ERROR: an older round's trouble")
+    try:
+        app._start()
+        for _ in range(100):
+            app._drain()
+            if "REPORT:" in app.log_view.get("1.0", "end"):
+                break
+            time.sleep(0.05)
+    finally:
+        logging.getLogger("daisy2telmi").removeHandler(handler)
+
+    shown = app.log_view.get("1.0", "end")
+    assert "an older round's trouble" not in shown
+    assert shown.count("ERROR: could not draw m0.png") == 2
+    assert "REPORT: failed with exit code 1, 1 error(s)" in shown
+    assert len(app.log_view.tag_ranges("error")) == 4, "both copies are drawn as errors"
+
+
+def test_a_clean_round_says_there_was_nothing_to_report(app: gui.App) -> None:
+    app._append("INFO: rendering s0")
+    app._report(0)
+    assert "REPORT: done" in app.log_view.get("1.0", "end")
+    assert not app.log_view.tag_ranges("error")
 
 
 def test_a_missing_pack_is_refused_before_any_work(app: gui.App) -> None:
@@ -623,12 +660,40 @@ def test_the_chosen_format_reaches_the_conversion(app: gui.App, monkeypatch, tmp
 
 
 def test_the_window_offers_every_player(app: gui.App) -> None:
-    assert [app.t(f"fmt_{player}") for player in gui.FORMATS] == [
-        "Telmi",
-        "Lunii",
-        "Flam",
-        "Merlin (beta)",
-    ]
+    assert app.format_box["values"] == tuple(
+        [
+            "Telmi",
+            "Lunii (B/W)",
+            "Commercial PK",
+            "Flam",
+            "Merlin (beta)",
+        ]
+    )
+
+
+def test_the_negative_is_offered_for_the_grey_screen_only(app: gui.App) -> None:
+    assert app.negative_box.instate(["disabled"]), "a colour player has no negative"
+    app.format_var.set("lunii")
+    app._show_negative()
+    assert app.negative_box.instate(["!disabled"]), "the B/W Lunii can be read the other way round"
+    app.format_var.set("lunii-pk")
+    app._show_negative()
+    assert app.negative_box.instate(["disabled"]), "a Commercial PK keeps its colours"
+
+
+def test_the_negative_reaches_the_conversion(app: gui.App, tmp_path, monkeypatch) -> None:
+    seen: list = []
+    monkeypatch.setattr(gui, "convert", lambda *args, **kwargs: seen.append((args, kwargs)) or 0)
+    monkeypatch.setattr(gui.settings, "save", lambda options: None)
+
+    app.format_var.set("lunii")
+    app.negative_var.set(True)
+    (tmp_path / "pack.zip").write_bytes(b"PK")
+    app.pack_var.set(str(tmp_path / "pack.zip"))
+    app.out_var.set(str(tmp_path / "out"))
+    app._start()
+    app._drain()
+    assert seen[0][1]["negative"] is True
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")

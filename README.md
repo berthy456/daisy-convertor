@@ -33,7 +33,9 @@ The story is written next to the book, so you find it where the book already is.
 
 ### 2. Say which machine the story is for
 
-**Story format**: Telmi, Lunii, Flam, or Merlin (beta). Choose this before the cover: it decides the shape of every screen the pictures have to fit, and the pictures are drawn to match.
+**Story format**: Telmi, Lunii (B/W), Commercial PK, Flam, or Merlin (beta). Choose this before the cover: it decides the shape of every screen the pictures have to fit, and the pictures are drawn to match.
+
+Only the plain Lunii's screen has no colour, so only next to it does a **Negative cards** tick appear: it turns the picture inside out, as an old film's negative reads.
 
 ### 3. Give it a cover
 
@@ -63,14 +65,15 @@ The app can read the cards in a real voice. On the first conversion it offers to
 
 ### 8. Save the zip
 
-**Save the zip**. The log below the buttons shows what is happening and what was found. When it finishes, the zip is next to the book.
+**Save the zip**. The log below the buttons shows what is happening and what was found; each run starts on an empty log and ends with a report that repeats its errors in red. When it finishes, the zip is next to the book.
 
 ### 9. Put it on the machine
 
 | Machine | What to do with the zip |
 | :--- | :--- |
 | Telmi | Telmi Sync → **Import → zip** |
-| Lunii | the zip in Lunii STUdio; its cards are drawn in four greys |
+| Lunii (B/W) | the zip in Lunii STUdio; its cards are drawn in the sixteen greys that screen keeps |
+| Commercial PK | the `.pk` in Lunii.QT or open-story-teller, which writes it onto a story card. The same story in the layout the card keeps, and each picture brings its own sixteen colours |
 | Flam | the same Telmi import; the Flam's own screen sizes are already used |
 | Merlin | the unzipped folder onto the micro-SD card; `IMPORT.txt` inside says which files to copy and which never to delete |
 

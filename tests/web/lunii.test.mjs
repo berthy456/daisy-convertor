@@ -8,19 +8,51 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
-const { readZip } = await import("../../web/zip.js");
+const { crc32, readZip } = await import("../../web/zip.js");
 const { buildStoryFiles } = await import("../../web/convert.js");
-const { buildStudioFiles, buildStudioZip } = await import("../../web/lunii.js");
+const { rle4Bitmap } = await import("../../web/cover.js");
+const { buildPlainPk, buildStudioFiles, buildStudioZip, packName } = await import("../../web/lunii.js");
 const { installCanvasStub } = await import("./canvas-stub.mjs");
 
 installCanvasStub();
 
 const ASSET_NAME = /^[0-9A-F]{8}\.(png|mp3)$/;
 
-async function story(cut = "chapter") {
-  const silent = new Uint8Array(await readFile(join(ROOT, "web/silence.mp3")));
+const view = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+/** `ri`/`si` as their twelve-character `000\XXXXXXXX` names. */
+const records = (block) => new TextDecoder().decode(block).match(/.{12}/g) ?? [];
+
+/** How many pixels an RLE4 bitmap's runs actually draw. */
+function rle4Pixels(bmp) {
+  let at = view(bmp).getUint32(10, true);
+  let drawn = 0;
+  while (at + 1 < bmp.length) {
+    const count = bmp[at];
+    const pair = bmp[at + 1];
+    at += 2;
+    if (count) drawn += count;
+    else if (pair === 2) at += 2;
+    else if (pair === 1) break;
+    else if (pair >= 3) {
+      // Absolute mode: `pair` pixels, stored two to the byte, padded to even.
+      drawn += pair;
+      const span = Math.floor((pair + 1) / 2);
+      at += span + (span % 2);
+    }
+  }
+  return drawn;
+}
+
+async function packEntries(book) {
+  return new Map((await readZip(await buildPlainPk(book, { picture: rle4Bitmap }))).map((entry) => [entry.name, entry.data]));
+}
+
+const SILENCE = new Uint8Array(await readFile(join(ROOT, "web/silence.mp3")));
+
+async function story(cut = "chapter", options = {}) {
   const entries = await readZip(new Uint8Array(await readFile(join(ROOT, "gon-ruby-mp3.zip"))));
-  return buildStoryFiles(entries, silent, () => {}, { cut });
+  return buildStoryFiles(entries, SILENCE, () => {}, { cut, ...options });
 }
 
 test("the archive unfolds the Telmi story into stages and actions", async () => {
@@ -94,4 +126,68 @@ test("a story cut to sentences still folds into stages", async () => {
   // A short part's card points at the part itself, so the archive holds it once.
   const audios = assets.filter((asset) => asset.name.endsWith(".mp3")).length;
   assert.ok(audios < 1 + 2 * parts);
+});
+
+// The `.plain.pk`: the same story in the layout the story card keeps on itself.
+// The cards are spoken here, as the desktop run that wrote the pack below did.
+const spoken = () => story("chapter", { cardAudio: async () => SILENCE });
+
+test("the .pk holds the layout the card reads", async () => {
+  const entries = await readZip(await buildPlainPk(await spoken(), { picture: rle4Bitmap }));
+  const names = entries.map((entry) => entry.name);
+  const table = (name) => records(entries.find((entry) => entry.name === name).data);
+
+  assert.deepEqual(names.slice(0, 5), ["nm", "li.plain", "ni", "ri.plain", "si.plain"]);
+  for (const [record, folder, extension] of [[table("ri.plain"), "rf", "bmp"], [table("si.plain"), "sf", "mp3"]]) {
+    assert.ok(record.every((name) => /^000\\[0-9A-F]{8}$/.test(name)), `${folder} records are 000\\ plus eight hex`);
+    assert.deepEqual(
+      names.filter((name) => name.startsWith(`${folder}/`)),
+      record.map((name) => `${folder}/000/${name.slice(4)}.${extension}`),
+    );
+  }
+});
+
+test("the .pk's tables are the desktop converter's", async () => {
+  const entries = await packEntries(await spoken());
+
+  // Read off the `.plain.pk` the desktop converter writes for this same pack.
+  for (const [name, [length, sum]] of [
+    ["ni", [1084, 0xae8fc608]],
+    ["li.plain", [48, 0x96d6a013]],
+    ["ri.plain", [84, 0xcee966cb]],
+    ["si.plain", [156, 0x5def39b4]],
+  ]) {
+    assert.equal(entries.get(name).length, length, `${name} length`);
+    assert.equal(crc32(entries.get(name)), sum, name);
+  }
+});
+
+test("the .pk's cards are the bitmaps the device draws", async () => {
+  const entries = await readZip(await buildPlainPk(await spoken(), { picture: rle4Bitmap }));
+  const cards = entries.filter((entry) => entry.name.startsWith("rf/"));
+  assert.ok(cards.length >= 7);
+
+  for (const card of cards) {
+    const bmp = card.data;
+    const header = view(bmp);
+    assert.equal(String.fromCharCode(bmp[0], bmp[1]), "BM", card.name);
+    assert.equal(header.getUint32(10, true), 118, `${card.name} starts its pixels after the palette`);
+    assert.equal(header.getInt32(18, true), 320, card.name);
+    assert.equal(header.getInt32(22, true), 240, card.name);
+    assert.equal(header.getUint16(28, true), 4, `${card.name} is four bits a pixel`);
+    assert.equal(header.getUint32(30, true), 2, `${card.name} is run-length encoded`);
+    assert.equal(rle4Pixels(bmp), 320 * 240, `${card.name}'s runs draw the whole screen`);
+  }
+});
+
+test("the .pk is named and listed as the published packs are", async () => {
+  const book = await spoken();
+  assert.equal(packName(book.metadata.title, book.metadata.uuid), "ごんぎつね.143AE318.plain.pk");
+
+  const entries = await packEntries(book);
+  assert.equal(entries.get("uuid.bin").length, 16);
+  const listed = JSON.parse(new TextDecoder().decode(entries.get("_metadata.json")));
+  assert.equal(listed.uuid, "FE3EA2D2-4B0D-55EB-B18A-9A4D143AE318");
+  assert.equal(listed.title, "ごんぎつね");
+  assert.ok(entries.has("_thumbnail.png"));
 });

@@ -328,6 +328,7 @@ def build_story(
     lunii_dir: Path | None = None,
     player: str = "telmi",
     view: dict | None = None,
+    negative: bool = False,
 ) -> StoryReport:
     """Render every chapter to `audios/` and write the story's JSON files and images.
 
@@ -338,8 +339,9 @@ def build_story(
     `player` decides the size every picture is drawn at.
 
     `lunii_dir` gets the same pictures drawn again for a greyscale Lunii screen:
-    a plain player has four grey levels and no colour panel, so its set is drawn
-    light-on-dark the other way round and flattened to those four levels.
+    a plain player has no colour panel, so its set is drawn light-on-dark the
+    other way round and flattened to the sixteen greys the card keeps. `negative`
+    turns that set inside out, as an old film's negative reads.
     """
     if not book.chapters:
         raise StoryError("the pack contains no chapter with audio or text")
@@ -418,20 +420,24 @@ def build_story(
         # A four-grey card is the Lunii's, and carries its number alone.
         cards = [str(k + 1) for k in range(count)] if style == "bw" else labels
         if cover is not None:
-            images.write_cover(cover, target, cards, texts, crop, style, scene, cover_size, view)
+            images.write_cover(cover, target, cards, texts, crop, style, scene, cover_size, view, negative)
             return
         (target / "images").mkdir(parents=True, exist_ok=True)
         for index, text in enumerate(texts):
             (target / "images" / f"m{index}.png").write_bytes(
-                images.card_png(cards[index], text, *scene, style=style)
+                images.card_png(cards[index], text, *scene, style=style, negative=negative)
             )
-        (target / images.TITLE_IMAGE).write_bytes(images.placeholder_png(*scene, style=style))
-        (target / images.COVER_IMAGE).write_bytes(images.placeholder_png(*cover_size, style=style))
+        (target / images.TITLE_IMAGE).write_bytes(
+            images.placeholder_png(*scene, style=style, negative=negative)
+        )
+        (target / images.COVER_IMAGE).write_bytes(
+            images.placeholder_png(*cover_size, style=style, negative=negative)
+        )
 
     log.info("drawing %d card(s)%s", count, "" if cover is None else f" from the cover {cover.name}")
     draw(out_dir, "colour")
     if lunii_dir is not None:
-        log.info("drawing the same %d card(s) in four greys for the Lunii", count)
+        log.info("drawing the same %d card(s) in greys for the Lunii", count)
         draw(lunii_dir, "bw")
 
     metadata = build_metadata(book)

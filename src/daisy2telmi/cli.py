@@ -16,6 +16,7 @@ from .detector import DaisyPackError, open_pack
 from .extractor import CUT_LEVELS, extract
 from .i18n import LANGUAGES
 from .lunii import LuniiError, write_studio_zip
+from .lunii_pk import write_pack
 from .merlin import MerlinError
 from .telmi_builder import (
     ANNOUNCE_MODES,
@@ -29,16 +30,20 @@ from .telmi_builder import (
 
 log = logging.getLogger("daisy-convertor")
 
-# The players, and the archive each one imports. Telmi and the Flam have a colour
-# screen; a plain Lunii shows four grey levels, so its cards are redrawn. The
-# Merlin has no screen and no story graph: it takes a card of flat files.
-FORMATS = ("telmi", "lunii", "flam", "merlin")
+# The players, and the archive each one imports. Telmi, the Flam and a commercial
+# Lunii card carry colour; a plain Lunii screen has sixteen greys, so its cards are
+# redrawn. The Merlin has no screen and no story graph: it takes a card of flat files.
+FORMATS = ("telmi", "lunii", "lunii-pk", "flam", "merlin")
 PLAYER = {
     "telmi": "Telmi Sync",
     "lunii": "the Lunii",
+    "lunii-pk": "a commercial Lunii card",
     "flam": "the Flam launcher",
     "merlin": "the Merlin story-teller",
 }
+# The two Lunii exports hold the same story; the archive and the pictures differ:
+# STUdio's zip with grey cards, or the layout the card keeps with colour ones.
+LUNII = ("lunii", "lunii-pk")
 
 # The Merlin writes itself, with no official SDK and no way to try a card on the
 # machine that made the format, so it is offered but not promised.
@@ -123,6 +128,13 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="draw how many parts there are on each chapter card, as in '4/12' (--no-card-total for the number alone)",
     )
     speech.add_argument(
+        "--card-negative",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="draw the black-and-white Lunii cards as a negative of the cover, light and dark swapped "
+        "(--no-card-negative for the cover as it is)",
+    )
+    speech.add_argument(
         "--language",
         choices=sorted(LANGUAGES),
         help="language of the spoken chapter cards",
@@ -159,7 +171,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--format",
         choices=FORMATS,
         help="which player the story is written for: Telmi (default), a Lunii, whose "
-        "cards are redrawn in four grey levels, a Flam, or a Merlin story-teller "
+        "cards are redrawn in its sixteen greys, a commercial Lunii .pk, the same "
+        "story in the layout the card itself keeps, a Flam, or a Merlin story-teller "
         "(beta), whose card holds flat files and a playlist.bin",
     )
     parser.add_argument(
@@ -201,6 +214,11 @@ def cut_level(args: argparse.Namespace) -> str:
 def cover_crop(args: argparse.Namespace) -> str:
     """Saved crop choice, overridden by --cover-crop."""
     return args.cover_crop or settings.load()["cover_crop"]
+
+
+def card_negative(args: argparse.Namespace) -> bool:
+    """Saved negative choice, overridden by --card-negative."""
+    return settings.load()["card_negative"] if args.card_negative is None else args.card_negative
 
 
 def output_format(args: argparse.Namespace) -> str:
@@ -295,6 +313,7 @@ def convert(
     zoom: float = 1.0,
     focus: tuple[float, float] | None = None,
     merge: Path | None = None,
+    negative: bool = False,
 ) -> int:
     """Convert one pack. Logs through this module's logger so a GUI can follow along."""
     announce = speech(announce)
@@ -334,16 +353,22 @@ def convert(
             # Telmi story, so that one is built at Telmi's sizes first.
             player = "telmi" if fmt == "merlin" else fmt
             if fmt == "lunii":
-                # The four greys cannot be recovered from the colour cards: their
-                # ground is dark and the Lunii wants the other way round. Draw a
-                # second set in a scratch folder and build the archive from those.
+                # The greys cannot be recovered from the colour cards: their ground
+                # is dark and the Lunii wants the other way round. Draw a second
+                # set in a scratch folder and build the archive from those.
                 with tempfile.TemporaryDirectory(prefix="daisy-convertor-lunii-") as scratch:
                     grey = Path(scratch)
-                    report = build_story(book, target, announce, cover, cut, crop, grey, player=fmt, view=view)
+                    report = build_story(
+                        book, target, announce, cover, cut, crop, grey, player=fmt, view=view, negative=negative
+                    )
                     archive = write_studio_zip(target, image_dir=grey)
             else:
+                # The `.pk` is the commercial layout: its pictures keep their own
+                # sixteen colours, so they are drawn from the colour cards as they are.
                 report = build_story(book, target, announce, cover, cut, crop, player=player, view=view)
-                if fmt == "merlin":
+                if fmt == "lunii-pk":
+                    archive = write_pack(target)
+                elif fmt == "merlin":
                     log.warning(
                         "the Merlin export is beta: its card format is undocumented, "
                         "so nothing here has been read back off a real device"
@@ -366,7 +391,7 @@ def convert(
 
     log.info("wrote %d scene(s) to %s", len(report.stages), report.out_dir)
     log.info("zipped for %s import: %s", PLAYER[fmt], archive)
-    if fmt == "lunii":
+    if fmt in LUNII:
         log.info("night mode: offered, as a converted audiobook has nothing to choose")
     log.info(
         "audio: %s",
@@ -408,6 +433,7 @@ def main(argv: list[str] | None = None) -> int:
         args.find_cover,
         args.cover_zoom,
         merge=args.merlin_merge,
+        negative=card_negative(args),
     )
 
 

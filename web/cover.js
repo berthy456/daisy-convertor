@@ -27,6 +27,11 @@ const SCREENS = {
     [320, 240],
     [320, 240],
   ],
+  // The same screen as the Lunii's, in the layout the story card keeps itself.
+  "lunii-pk": [
+    [320, 240],
+    [320, 240],
+  ],
   flam: [
     [320, 212],
     [104, 136],
@@ -48,32 +53,34 @@ function layout(width) {
   };
 }
 
-// A Lunii that is not a Flam has no colour panel: four grey levels, and the light
-// end of them, so its cards are drawn the other way round — white ground, black ink.
+// A Lunii that is not a Flam has no colour panel: sixteen greys, and the light end
+// of them, so its cards are drawn the other way round — white ground, black ink.
+// The published packs keep the same sixteen levels in each picture's own palette.
 export const STYLES = ["colour", "bw"];
+export const GREY_LEVELS = 16;
+const GREY_STEP = Math.floor(255 / (GREY_LEVELS - 1));
 const PALETTE = {
   colour: { background: "#1a1e2a", ink: "#fff", border: "#000" },
   bw: { background: "#fff", ink: "#000", border: "#fff" },
 };
-const GREY_LEVELS = [0, 96, 192, 255];
-const GREY_CUTS = [40, 110, 185];
 
 /**
- * One of the four levels, from a 0-255 luminance. The contrast and the levels
+ * One of the sixteen levels, from a 0-255 luminance. The contrast and the levels
  * match the desktop build's ffmpeg chain, so both draw the same card.
  */
-export function greyLevel(luminance) {
-  const contrast = (luminance - 128) * 1.6 + 128;
-  return GREY_LEVELS[GREY_CUTS.filter((cut) => contrast >= cut).length];
+export function greyLevel(luminance, negative = false) {
+  const light = (luminance - 128) * 1.6 + 128;
+  const value = Math.min(255, Math.max(0, negative ? 255 - light : light));
+  return Math.round((value * (GREY_LEVELS - 1)) / 255) * GREY_STEP;
 }
 
-/** Flatten a finished picture to the four levels a plain Lunii shows. */
-function toGreys(ctx, width, height) {
+/** Flatten a finished picture to the sixteen levels a plain Lunii shows. */
+function toGreys(ctx, width, height, negative = false) {
   const image = ctx.getImageData(0, 0, width, height);
   for (let at = 0; at < image.data.length; at += 4) {
     // The weights are the ones the device's own converter uses, so the card
     // that reaches its screen is the one drawn here.
-    const grey = greyLevel(0.299 * image.data[at] + 0.587 * image.data[at + 1] + 0.114 * image.data[at + 2]);
+    const grey = greyLevel(0.299 * image.data[at] + 0.587 * image.data[at + 1] + 0.114 * image.data[at + 2], negative);
     image.data[at] = image.data[at + 1] = image.data[at + 2] = grey;
   }
   ctx.putImageData(image, 0, 0);
@@ -208,8 +215,12 @@ export function cardWords(ctx, text, width) {
  *
  * A colour card keeps a small thumbnail rather than the whole cover: a book cut to
  * the sentence level has hundreds of cards, and that is what keeps the zip
- * importable. A four-grey card is the Lunii's: the cover across the whole screen,
+ * importable. A sixteen-grey card is the Lunii's: the cover across the whole screen,
  * and the number alone in the middle of it.
+ *
+ * `negative` only means anything for the grey card: the card is drawn as usual and
+ * light and dark are swapped once, when it is flattened, so the number reads as the
+ * other way round too.
  */
 export async function cardPng(
   label,
@@ -219,6 +230,7 @@ export async function cardPng(
   width = IMAGE_SIZE[0],
   height = IMAGE_SIZE[1],
   style = "colour",
+  negative = false,
 ) {
   const canvas = surface(width, height);
   const ctx = canvas.getContext("2d");
@@ -256,8 +268,8 @@ export async function cardPng(
     ctx.strokeText(label, width / 2, middle);
     ctx.fillText(label, width / 2, middle);
     // Flattened last, once the cover and the number are down, so a card cannot
-    // pick up a fifth grey where two layers meet.
-    if (style === "bw") toGreys(ctx, width, height);
+    // pick up a grey the screen lacks where two layers meet.
+    if (style === "bw") toGreys(ctx, width, height, negative);
     return toPng(canvas);
   }
 
@@ -289,11 +301,11 @@ export async function cardPng(
 }
 
 /** The cover, cropped to width x height. */
-export async function coverPng(cover, width, height, view = {}, style = "colour") {
+export async function coverPng(cover, width, height, view = {}, style = "colour", negative = false) {
   const canvas = surface(width, height);
   const ctx = canvas.getContext("2d");
   drawCover(ctx, cover, 0, 0, width, height, view);
-  if (style === "bw") toGreys(ctx, width, height);
+  if (style === "bw") toGreys(ctx, width, height, negative);
   return toPng(canvas);
 }
 
@@ -321,4 +333,159 @@ export async function squareJpeg(bytes, size = MERLIN_PICTURE) {
     size,
   );
   return toBytes(canvas, "image/jpeg", 0.92);
+}
+
+// Every picture of a Lunii card carries its own sixteen colours, which is what a
+// published pack does. The desktop build picks them with ffmpeg's `palettegen`;
+// the canvas has no such filter, so the same median cut is done here.
+const BITMAP_COLORS = 16;
+
+/** How far one channel reaches over `pixels[a..b]`. */
+function span(pixels, a, b, channel) {
+  let low = 255;
+  let high = 0;
+  for (let i = a; i < b; i++) {
+    const value = pixels[i].rgb[channel];
+    if (value < low) low = value;
+    if (value > high) high = value;
+  }
+  return high - low;
+}
+
+/**
+ * `colors` colours covering the picture's own: the box that varies most is split
+ * along the channel it varies along most, where its pixels halve, and each half
+ * keeps the weighted mean of what fell inside it.
+ */
+function medianCut(pixels, colors = BITMAP_COLORS) {
+  const boxes = [[0, pixels.length]];
+  while (boxes.length < colors) {
+    let widest = null;
+    for (const box of boxes) {
+      if (box[1] - box[0] < 2) continue;
+      for (let channel = 0; channel < 3; channel++) {
+        const range = span(pixels, box[0], box[1], channel);
+        if (!widest || range > widest.range) widest = { box, channel, range };
+      }
+    }
+    if (!widest || widest.range === 0) break;
+    const { box, channel } = widest;
+    // Replacing the box with the same number of entries leaves every other
+    // box's indices valid.
+    const sorted = pixels.slice(box[0], box[1]).sort((x, y) => x.rgb[channel] - y.rgb[channel]);
+    pixels.splice(box[0], box[1] - box[0], ...sorted);
+    // Split where the pixels halve, not where the colours do: a handful of rare
+    // colours should not take a slot from the busy part of the picture.
+    let total = 0;
+    for (let i = box[0]; i < box[1]; i++) total += pixels[i].count;
+    let at = box[0];
+    let seen = 0;
+    for (let i = box[0]; i < box[1] - 1; i++) {
+      seen += pixels[i].count;
+      at = i;
+      if (seen * 2 >= total) break;
+    }
+    boxes.splice(boxes.indexOf(box), 1, [box[0], at + 1], [at + 1, box[1]]);
+  }
+  return boxes.map(([a, b]) => {
+    const mean = [0, 0, 0];
+    let total = 0;
+    for (let i = a; i < b; i++) {
+      for (let channel = 0; channel < 3; channel++) mean[channel] += pixels[i].rgb[channel] * pixels[i].count;
+      total += pixels[i].count;
+    }
+    return mean.map((value) => Math.round(value / total));
+  });
+}
+
+/**
+ * A card drawn the way a Lunii story card stores it: a 320x240 bitmap in the
+ * run-length form the device reads, one line at a time, top line first.
+ *
+ * The desktop build hands the scaling and the palette to ffmpeg; here the canvas
+ * does both, and the runs are written by hand. A colour card keeps its colour:
+ * the sixteen entries are the picture's own, not a fixed grey ramp.
+ */
+export async function rle4Bitmap(bytes, size = SCREENS["lunii-pk"][0]) {
+  const image = await createImageBitmap(new Blob([bytes]));
+  const [width, height] = size;
+  const canvas = surface(width, height);
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(image, 0, 0, width, height);
+  const { data } = ctx.getImageData(0, 0, width, height);
+
+  const distinct = new Map();
+  for (let at = 0; at < data.length; at += 4) {
+    const key = (data[at] << 16) | (data[at + 1] << 8) | data[at + 2];
+    const colour = distinct.get(key);
+    if (colour) colour.count++;
+    else distinct.set(key, { rgb: [data[at], data[at + 1], data[at + 2]], count: 1 });
+  }
+  const colours = medianCut([...distinct.values()]);
+  while (colours.length < BITMAP_COLORS) colours.push(colours[colours.length - 1]);
+
+  // ffmpeg's `paletteuse=dither=none`: each pixel takes the nearest of the
+  // sixteen, with no error spread into its neighbours.
+  const slots = new Map();
+  const slotOf = (key) => {
+    const known = slots.get(key);
+    if (known !== undefined) return known;
+    const [red, green, blue] = [(key >> 16) & 0xff, (key >> 8) & 0xff, key & 0xff];
+    let best = 0;
+    let closest = Infinity;
+    for (const [slot, [pr, pg, pb]] of colours.entries()) {
+      const distance = (red - pr) ** 2 + (green - pg) ** 2 + (blue - pb) ** 2;
+      if (distance < closest) {
+        closest = distance;
+        best = slot;
+      }
+    }
+    slots.set(key, best);
+    return best;
+  };
+
+  const runs = [];
+  for (let line = 0; line < height; line++) {
+    let count = 0;
+    let slot = -1;
+    for (let x = 0; x < width; x++) {
+      const at = (line * width + x) * 4;
+      const index = slotOf((data[at] << 16) | (data[at + 1] << 8) | data[at + 2]);
+      if (index === slot && count < 255) {
+        count++;
+        continue;
+      }
+      if (slot >= 0) runs.push(count, (slot << 4) | slot);
+      slot = index;
+      count = 1;
+    }
+    runs.push(count, (slot << 4) | slot);
+    // End of line, but not after the last one: `00 01` closes the bitmap.
+    if (line + 1 < height) runs.push(0, 0);
+  }
+  runs.push(0, 1);
+
+  const head = new Uint8Array(54 + BITMAP_COLORS * 4);
+  const view = new DataView(head.buffer);
+  head[0] = 0x42;
+  head[1] = 0x4d;
+  view.setUint32(2, head.length + runs.length, true);
+  view.setUint32(10, head.length, true);
+  view.setUint32(14, 40, true);
+  view.setInt32(18, width, true);
+  view.setInt32(22, height, true);
+  view.setUint16(26, 1, true);
+  view.setUint16(28, 4, true);
+  view.setUint32(30, 2, true);
+  view.setUint32(34, runs.length, true);
+  view.setUint32(46, BITMAP_COLORS, true);
+  for (const [slot, [red, green, blue]] of colours.entries()) {
+    // A BMP palette is blue, green, red; the canvas reads the other way round.
+    head.set([blue, green, red, 0], 54 + 4 * slot);
+  }
+
+  const bitmap = new Uint8Array(head.length + runs.length);
+  bitmap.set(head);
+  bitmap.set(runs, head.length);
+  return bitmap;
 }

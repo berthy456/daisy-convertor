@@ -3,11 +3,21 @@
 
 import { crc32 } from "./zip.js";
 
-// The Lunii's grey band is one of the four levels the screen shows, on white.
+// The Lunii's grey band is one of the sixteen levels its pictures keep, on white.
+const GREY_STEP = Math.floor(255 / 15);
 const PALETTE = {
   colour: { background: [26, 30, 42], band: [78, 92, 122] },
-  bw: { background: [255, 255, 255], band: [192, 192, 192] },
+  bw: { background: [255, 255, 255], band: [11 * GREY_STEP, 11 * GREY_STEP, 11 * GREY_STEP] },
 };
+
+/** A negative turns the grey card inside out; a colour card has no negative. */
+function palette(style, negative) {
+  const colours = PALETTE[style];
+  if (!negative) return colours;
+  return Object.fromEntries(
+    Object.entries(colours).map(([name, rgb]) => [name, rgb.map((value) => 255 - value)]),
+  );
+}
 
 function fill(rgb, count) {
   const out = new Uint8Array(rgb.length * count);
@@ -57,10 +67,10 @@ async function png(width, height, rows) {
   ]);
 }
 
-export async function placeholderPng(width = 640, height = 480, style = "colour") {
+export async function placeholderPng(width = 640, height = 480, style = "colour", negative = false) {
   const bandTop = Math.floor(height / 2) - 48;
   const bandBottom = Math.floor(height / 2) + 48;
-  const { background, band } = PALETTE[style];
+  const { background, band } = palette(style, negative);
   const rows = [];
   for (let y = 0; y < height; y++) rows.push(fill(y >= bandTop && y < bandBottom ? band : background, width));
   return png(width, height, rows);

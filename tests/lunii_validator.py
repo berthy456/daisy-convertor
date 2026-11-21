@@ -15,6 +15,11 @@ NODE_SIZE = 0x2C
 NI_HEADER_SIZE = 0x200
 ASSET_NAME = re.compile(r"^[0-9A-F]{8}\.(png|mp3|jpg|jpeg|bmp|gif|webp|ogg)$")
 
+# What a `.plain.pk` must hold: the three plain tables, which is how Lunii.QT
+# recognises one, and the uuid, without which it cannot be put on a card.
+PK_ENTRIES = ("ni", "li.plain", "ri.plain", "si.plain", "uuid.bin")
+RECORD_SIZE = 12
+
 
 def index_story(story: dict) -> dict:
     """The tables Lunii.QT builds while loading `story.json`."""
@@ -155,3 +160,152 @@ def validate_studio_zip(path) -> list[str]:
 
 def _option_indexes(anode: dict, snodes: list[dict]) -> list[int]:
     return [next((i for i, n in enumerate(snodes) if n.get("uuid") == option), -1) for option in anode.get("options") or []]
+
+
+def _u16(data: bytes, at: int) -> int:
+    return int.from_bytes(data[at : at + 2], "little")
+
+
+def _u32(data: bytes, at: int) -> int:
+    return int.from_bytes(data[at : at + 4], "little")
+
+
+def _i32(data: bytes, at: int) -> int:
+    return int.from_bytes(data[at : at + 4], "little", signed=True)
+
+
+def records(block: bytes) -> list[str]:
+    """`ri`/`si` as their twelve-character `000\\XXXXXXXX` names."""
+    return [block[at : at + RECORD_SIZE].decode("ascii", "replace") for at in range(0, len(block), RECORD_SIZE)]
+
+
+def rle4(bmp: bytes) -> tuple[int, int, list[int]]:
+    """`(width, height, levels)` of a 4 bpp RLE4 bitmap: what its runs actually draw.
+
+    `levels` is the palette index of every pixel, top line first, which is what the
+    device turns back into a picture.
+    """
+    width, height, levels, at = _u32(bmp, 18), _u32(bmp, 22), [], _u32(bmp, 10)
+    while at + 1 < len(bmp):
+        count, pair = bmp[at], bmp[at + 1]
+        at += 2
+        if count:
+            levels.extend([pair >> 4] * count)
+        elif pair == 2:
+            at += 2
+        elif pair == 1:
+            break
+        elif pair >= 3:
+            span = (pair + 1) // 2
+            for byte in bmp[at : at + span]:
+                levels.extend((byte >> 4, byte & 0xF))
+            at += span + (span % 2)
+    return width, height, levels
+
+
+def palette(bmp: bytes) -> list[tuple[int, int, int]]:
+    """The bitmap's own colours as red green blue, in the order its indices pick.
+
+    Every picture carries its own set, so an index is only a colour together with
+    the entry it points at.
+    """
+    used = _u32(bmp, 46) or 1 << _u16(bmp, 28)
+    return [(bmp[at + 2], bmp[at + 1], bmp[at]) for at in range(54, 54 + 4 * used, 4)]
+
+
+def validate_plain_pk(path, night_mode: bool | None = None) -> list[str]:
+    """Every way a `.plain.pk` can fail to be a story the device will take.
+
+    These are the checks Lunii.QT's `import_lunii_plain` and open-story-teller's
+    `ni_parser` make: the plain tables and the uuid are there, and every index the
+    nodes hold stays inside the table it points at.
+    """
+    try:
+        archive = zipfile.ZipFile(path)
+    except (OSError, zipfile.BadZipFile) as exc:
+        return [f"not a zip archive: {exc}"]
+
+    problems: list[str] = []
+    with archive:
+        names = archive.namelist()
+        missing = [entry for entry in PK_ENTRIES if entry not in names]
+        if missing:
+            return [f"missing from the archive: {', '.join(missing)}"]
+        if len(archive.read("uuid.bin")) != 16:
+            problems.append("uuid.bin is not the 16 bytes a uuid is")
+        if night_mode is not None and ("nm" in names) != night_mode:
+            problems.append(f"night mode was {'offered' if night_mode else 'refused'}, and the archive says otherwise")
+
+        ni = archive.read("ni")
+        if len(ni) < NI_HEADER_SIZE:
+            return problems + [f"ni is {len(ni)} bytes, shorter than its {NI_HEADER_SIZE}-byte header"]
+        _, _, header_size, node_size, nodes, ri_count, si_count = (
+            _u16(ni, 0),
+            _u16(ni, 2),
+            _u32(ni, 4),
+            _u32(ni, 8),
+            _u32(ni, 12),
+            _u32(ni, 16),
+            _u32(ni, 20),
+        )
+        if header_size != NI_HEADER_SIZE:
+            problems.append(f"ni says its header is {header_size} bytes, not {NI_HEADER_SIZE}")
+        if node_size != NODE_SIZE:
+            problems.append(f"ni says a node is {node_size} bytes, not {NODE_SIZE}")
+        if len(ni) != header_size + node_size * nodes:
+            problems.append(f"ni is {len(ni)} bytes, not {header_size} plus {nodes} node(s) of {node_size}")
+
+        ri, si = records(archive.read("ri.plain")), records(archive.read("si.plain"))
+        for table, label, count in ((ri, "ri", ri_count), (si, "si", si_count)):
+            if len(table) != count:
+                problems.append(f"{label} holds {len(table)} record(s), but ni counts {count}")
+        for table, label, folder, extension in ((ri, "ri", "rf", "bmp"), (si, "si", "sf", "mp3")):
+            for record in table:
+                if not record.startswith("000\\") or len(record) != RECORD_SIZE:
+                    problems.append(f"{label} record {record!r} is not a 12-character 000\\ name")
+                    continue
+                media = f"{folder}/000/{record[4:]}.{extension}"
+                if media not in names:
+                    problems.append(f"{label} names {record}, which is not in the archive as {media}")
+
+        block = archive.read("li.plain")
+        li = [_i32(block, at) for at in range(0, len(block) - len(block) % 4, 4)]
+
+        for index in range(nodes):
+            at = header_size + index * node_size
+            for label, value, count in (("ri", _i32(ni, at), ri_count), ("si", _i32(ni, at + 4), si_count)):
+                if value != -1 and not 0 <= value < count:
+                    problems.append(f"node {index} points at {label} {value}, which is not one of {count}")
+            for field, base in (("ok", at + 8), ("home", at + 20)):
+                start, length, pick = _i32(ni, base), _i32(ni, base + 4), _i32(ni, base + 8)
+                if (start, length, pick) == (-1, -1, -1):
+                    continue
+                if start < 0 or length <= 0 or start + length > len(li):
+                    problems.append(f"node {index}.{field} reads li {start}..{start + length}, past its {len(li)}")
+                    continue
+                if not 0 <= pick < length:
+                    problems.append(f"node {index}.{field} picks option {pick} of {length}")
+                for entry in li[start : start + length]:
+                    if not 0 <= entry < nodes:
+                        problems.append(f"node {index}.{field} leads to stage {entry}, which is not one of {nodes}")
+            if _u16(ni, at + 34) and (_i32(ni, at + 8), _i32(ni, at + 12), _i32(ni, at + 16)) == (-1, -1, -1):
+                problems.append(f"node {index} lights OK with no transition behind it")
+
+        for record in ri:
+            media = f"rf/000/{record[4:]}.bmp"
+            if media not in names:
+                continue
+            bmp = archive.read(media)
+            if bmp[:2] != b"BM" or _u16(bmp, 28) != 4 or _u32(bmp, 30) != 2:
+                problems.append(f"{media} is not a 4 bpp RLE4 bitmap")
+                continue
+            width, height, levels = rle4(bmp)
+            if len(levels) != width * height:
+                problems.append(f"{media} draws {len(levels)} pixels, not the {width}x{height} its header says")
+
+        for record in si:
+            media = f"sf/000/{record[4:]}.mp3"
+            if media in names and not archive.read(media)[:3].startswith((b"\xff", b"ID3")):
+                problems.append(f"{media} does not start with an MP3 frame")
+
+    return problems

@@ -30,6 +30,7 @@ test("no language is left in English by accident", () => {
     "card_number_one",
     "fmt_telmi",
     "fmt_lunii",
+    "fmt_lunii_pk",
     "fmt_flam",
     "fmt_merlin",
     "crop_zoom",

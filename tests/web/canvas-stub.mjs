@@ -52,8 +52,12 @@ export class StubCanvas {
           ),
         ),
       }),
-      putImageData: (image) =>
-        FLATTENS.push([card.width, card.height, [...new Set(image.data.filter((_v, at) => at % 4 !== 3))]]),
+      putImageData: (image) => {
+        const levels = [...new Set(image.data.filter((_v, at) => at % 4 !== 3))];
+        // The first row, one value per pixel, so a test can tell which end is dark.
+        const row = Array.from({ length: card.width }, (_, x) => image.data[x * 4]);
+        FLATTENS.push([card.width, card.height, levels, row]);
+      },
     };
     return ctx;
   }

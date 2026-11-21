@@ -32,6 +32,7 @@ COVER_SIZE = (512, 512)
 SCREENS = {
     "telmi": (IMAGE_SIZE, COVER_SIZE),
     "lunii": ((320, 240), (320, 240)),
+    "lunii-pk": ((320, 240), (320, 240)),
     "flam": ((320, 212), (104, 136)),
     "merlin": (IMAGE_SIZE, COVER_SIZE),
 }
@@ -46,17 +47,27 @@ BACKGROUND = (26, 30, 42)
 BAND = (78, 92, 122)
 FOREGROUND = (214, 222, 238)
 
-# A Lunii that is not a Flam has no colour panel: four greys, and the light end of
-# them, so its cards are drawn the other way round — white ground, black ink.
+# A Lunii that is not a Flam has no colour panel: sixteen greys, and the light end
+# of them, so its cards are drawn the other way round — white ground, black ink.
+# The published packs keep the same sixteen levels in each picture's own palette.
 LUNII_STYLES = ("colour", "bw")
 
-_GREY_LEVELS = (0, 96, 192, 255)
-_GREY_CUTS = (40, 110, 185)
+GREY_LEVELS = 16
+_GREY_STEP = 255 // (GREY_LEVELS - 1)
+_GREY_LEVELS = tuple(_GREY_STEP * level for level in range(GREY_LEVELS))
 
 _PALETTE = {
     "colour": {"background": BACKGROUND, "band": BAND, "ink": (255, 255, 255), "border": (0, 0, 0)},
-    "bw": {"background": (255, 255, 255), "band": _GREY_LEVELS[2], "ink": (0, 0, 0), "border": (255, 255, 255)},
+    "bw": {"background": (255, 255, 255), "band": _GREY_LEVELS[11], "ink": (0, 0, 0), "border": (255, 255, 255)},
 }
+
+
+def _palette(style: str, negative: bool = False) -> dict:
+    """The card's own colours; a negative turns the black-and-white one inside out."""
+    palette = _PALETTE[style]
+    if not negative:
+        return palette
+    return {key: tuple(255 - value for value in rgb) for key, rgb in palette.items()}
 
 # 5 columns, 7 rows, "1" is ink. Uppercase only: a card label is a title, and it
 # keeps the table to what eight Latin-script languages need.
@@ -133,9 +144,11 @@ def _png(width: int, height: int, rows: list[bytes], colour_type: int = 2) -> by
     )
 
 
-def placeholder_png(width: int = IMAGE_SIZE[0], height: int = IMAGE_SIZE[1], style: str = "colour") -> bytes:
+def placeholder_png(
+    width: int = IMAGE_SIZE[0], height: int = IMAGE_SIZE[1], style: str = "colour", negative: bool = False
+) -> bytes:
     """A flat placeholder, written by hand so the converter needs no image library."""
-    palette = _PALETTE[style]
+    palette = _palette(style, negative)
     band_top, band_bottom = height // 2 - 48, height // 2 + 48
     rows = []
     for y in range(height):
@@ -264,9 +277,11 @@ def _card_grid(label: str, text: str, width: int, height: int, band: bool = Fals
     return ink
 
 
-def _grid_png(ink: list[bytearray], base: tuple[int, int, int] | None, style: str = "colour") -> bytes:
+def _grid_png(
+    ink: list[bytearray], base: tuple[int, int, int] | None, style: str = "colour", negative: bool = False
+) -> bytes:
     """Colour a card's lettering grid: over `base` for a whole card, transparent for an overlay."""
-    palette = _PALETTE[style]
+    palette = _palette(style, negative)
     letter, border, ground = bytes(palette["ink"]), bytes(palette["border"]), bytes(palette["background"])
     width, height = len(ink[0]), len(ink)
     rows = []
@@ -293,12 +308,14 @@ def card_png(
     width: int = IMAGE_SIZE[0],
     height: int = IMAGE_SIZE[1],
     style: str = "colour",
+    negative: bool = False,
 ) -> bytes:
     """A card on its own: the part number, and the words it opens with when we can draw them."""
     return _grid_png(
         _card_grid(label, text, width, height, band=style == "bw"),
-        _PALETTE[style]["background"],
+        _palette(style, negative)["background"],
         style,
+        negative,
     )
 
 
@@ -308,9 +325,10 @@ def card_layer_png(
     width: int = IMAGE_SIZE[0],
     height: int = IMAGE_SIZE[1],
     style: str = "colour",
+    negative: bool = False,
 ) -> bytes:
     """The same lettering on a transparent canvas, to lay over a cropped cover."""
-    return _grid_png(_card_grid(label, text, width, height, band=style == "bw"), None, style)
+    return _grid_png(_card_grid(label, text, width, height, band=style == "bw"), None, style, negative)
 
 
 def card_label(
@@ -353,16 +371,19 @@ CROP_FOCUS = {"top": (0.5, 0.0), "center": (0.5, 0.5), "bottom": (0.5, 1.0)}
 MAX_ZOOM = 4.0
 
 
-def _grey_chain() -> str:
-    """Flatten a picture to the four Lunii greys.
+def _grey_chain(negative: bool = False) -> str:
+    """Flatten a picture to the sixteen greys the Lunii keeps.
 
-    The cuts sit towards the light end, so only a genuinely dark pixel turns
-    black, and the blur before them keeps large areas flat instead of dithered.
+    The contrast is pushed before the levels, which is how the published packs
+    read: mostly light greys, black where the drawing is, and the blur keeps large
+    areas flat instead of dithered. A negative swaps light and dark first, so the
+    levels still land on the same sixteen.
     """
-    steps = str(_GREY_LEVELS[-1])
-    for cut, level in reversed(list(zip(_GREY_CUTS, _GREY_LEVELS))):
-        steps = f"if(lt(val,{cut}),{level},{steps})"
-    return f"format=gray,eq=contrast=1.6,gblur=sigma=1,lutyuv=y='{steps}',format=rgb24"
+    steps = f"trunc((val*{GREY_LEVELS - 1}+255/2)/255)*{_GREY_STEP}"
+    return (
+        f"format=gray,eq=contrast=1.6,gblur=sigma=1{',negate' if negative else ''}"
+        f",lutyuv=y='{steps}',format=rgb24"
+    )
 
 
 def crop_view(mode: str = "center", zoom: float = 1.0, focus: Sequence[float] | None = None) -> dict:
@@ -411,12 +432,12 @@ def _crop(
     )
 
 
-def _flatten(ffmpeg: str, png: Path) -> None:
+def _flatten(ffmpeg: str, png: Path, negative: bool = False) -> None:
     """Reduce one finished picture in place, so it holds no grey the screen lacks."""
     flat = png.with_suffix(".flat.png")
     _run(
-        [ffmpeg, "-y", "-i", str(png), "-vf", _grey_chain(), "-frames:v", "1", str(flat)],
-        f"could not flatten {png.name} to four greys",
+        [ffmpeg, "-y", "-i", str(png), "-vf", _grey_chain(negative), "-frames:v", "1", str(flat)],
+        f"could not flatten {png.name} to {GREY_LEVELS} greys",
     )
     flat.replace(png)
 
@@ -492,19 +513,20 @@ def write_cover(
     scene: tuple[int, int] = IMAGE_SIZE,
     cover_size: tuple[int, int] = COVER_SIZE,
     view: dict | None = None,
+    negative: bool = False,
 ) -> None:
     """`title.png`, `cover.png` and one card per part, all from `source`.
 
     `style` is the screen the pack is drawn for: `bw` flattens the picture to the
-    four Lunii greys and turns the card inside out, white ground and black ink.
-    `scene` and `cover_size` are that player's own sizes.
+    sixteen Lunii greys and turns the card inside out, white ground and black ink.
+    `negative` swaps light and dark once the card is whole, which reads as the
+    negative of an old film. `scene` and `cover_size` are that player's own sizes.
 
     A colour card is a plain background with a small thumbnail of the cover, not
     the cover blown up behind the words: a book cut to the sentence level has
     hundreds of cards, and the thumbnail keeps one near 11 KB instead of 60 KB. A
-    four-grey card shows the cover across the whole screen instead, which at four
-    levels costs about as much again and is the only version that does not read as
-    an empty page.
+    grey card shows the cover across the whole screen instead, which costs about
+    as much again and is the only version that does not read as an empty page.
     """
     ffmpeg = require_ffmpeg()
     images = out_dir / "images"
@@ -535,11 +557,11 @@ def write_cover(
             _overlay(ffmpeg, card_base, layer, images / f"m{index}.png", 0, 0)
             if style == "bw":
                 # Flattened last, once the compositing is done, so a card cannot
-                # pick up a fifth grey where two layers meet.
-                _flatten(ffmpeg, images / f"m{index}.png")
+                # pick up a grey the screen lacks where two layers meet.
+                _flatten(ffmpeg, images / f"m{index}.png", negative)
         if style == "bw":
-            _flatten(ffmpeg, base)
-            _flatten(ffmpeg, square)
+            _flatten(ffmpeg, base, negative)
+            _flatten(ffmpeg, square, negative)
 
         shutil.copyfile(base, out_dir / TITLE_IMAGE)
         shutil.copyfile(square, out_dir / COVER_IMAGE)

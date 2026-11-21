@@ -36,8 +36,10 @@ function firstSeconds(segments, bytesOf, seconds) {
  * options.crop: "top", "center" or "bottom" — the band of the cover to keep.
  * options.focus: [x, y] in 0..1, where the frame sits over the cover; it replaces
  *   the band once the user has moved it. options.zoom: 1..MAX_ZOOM.
- * options.style: "colour", or "bw" for a plain Lunii's four grey levels.
- * options.player: "telmi", "lunii" or "flam" — whose screen sizes every picture is drawn at.
+ * options.style: "colour", or "bw" for a plain Lunii's sixteen greys.
+ * options.negative: with "bw", swap light and dark, as an old film's negative reads.
+ * options.player: "telmi", "lunii", "lunii-pk", "merlin" or "flam" — whose screen
+ *   sizes every picture is drawn at.
  * options.cardLabel(number, total, worded): the words drawn on a card.
  * options.cardAudio(number, count): bytes for the card to say, or null to leave it silent.
  * options.drop: 1-based part numbers to leave out of the story.
@@ -68,6 +70,7 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
   const cover = options.cover ?? null;
   const view = { crop: options.crop ?? "center", zoom: options.zoom ?? 1, focus: options.focus ?? null };
   const style = options.style ?? "colour";
+  const negative = Boolean(options.negative);
   const [scene, coverSize] = screen(options.player ?? "telmi");
   const cardLabel = options.cardLabel ?? ((number, count) => `Chapter ${number}/${count}`);
   const say = options.t ?? ((key) => key);
@@ -86,13 +89,14 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
     files.push({
       name: `${dirName}/images/m${k}.png`,
       data: await cardPng(
-        // A four-grey card is the Lunii's, and carries its number alone.
+        // A grey card is the Lunii's, and carries its number alone.
         style === "bw" ? String(k + 1) : cardLabel(k + 1, partCount, cut === "chapter"),
         chapter.text,
         cover,
         view,
         ...scene,
         style,
+        negative,
       ),
     });
 
@@ -122,11 +126,15 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
 
   files.push({
     name: `${dirName}/title.png`,
-    data: cover ? await coverPng(cover, ...scene, view, style) : await placeholderPng(...scene, style),
+    data: cover
+      ? await coverPng(cover, ...scene, view, style, negative)
+      : await placeholderPng(...scene, style, negative),
   });
   files.push({
     name: `${dirName}/cover.png`,
-    data: cover ? await coverPng(cover, ...coverSize, view, style) : await placeholderPng(...coverSize, style),
+    data: cover
+      ? await coverPng(cover, ...coverSize, view, style, negative)
+      : await placeholderPng(...coverSize, style, negative),
   });
   step(say("prog_title_images"));
 

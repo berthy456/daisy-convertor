@@ -32,5 +32,6 @@ test("the image sizes are the ones Telmi uses", () => {
 test("each player draws at its own screen", () => {
   assert.deepEqual(screen("telmi"), [[640, 480], [512, 512]]);
   assert.deepEqual(screen("lunii"), [[320, 240], [320, 240]]);
+  assert.deepEqual(screen("lunii-pk"), [[320, 240], [320, 240]]);
   assert.deepEqual(screen("flam"), [[320, 212], [104, 136]]);
 });

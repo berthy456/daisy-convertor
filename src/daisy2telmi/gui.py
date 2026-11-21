@@ -20,7 +20,7 @@ import tkinter as tk
 import webbrowser
 from dataclasses import replace
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 from urllib.parse import quote_plus
 
 from . import audio, chapters, covers, images, settings, tts
@@ -44,6 +44,65 @@ ANNOUNCE_KEYS = {mode: f"announce_{mode}" for mode in ANNOUNCE_MODES}
 # move the cover in on every machine, and the web page draws it at the same size.
 CROP_WIDTH = 360
 
+# Tk has no theme of its own that looks the same on the three platforms, so the
+# window brings its own: one flat set of colours, drawn by `clam` everywhere.
+PAPER = "#ffffff"
+INK = "#1b1f27"
+FIELD = "#f1f3f7"
+LINE = "#c9ced8"
+ACCENT = "#2f6feb"
+MUTED = "#6c7480"
+ALERT = "#c0392b"
+
+
+def theme(root: tk.Misc) -> None:
+    """Recolour Tk's widgets once, so the window looks the same on Mac and Linux.
+
+    `clam` is the only built-in theme whose widgets can all be recoloured; the
+    plain `Text` and `Canvas` widgets sit outside the style system and are painted
+    by hand. Tk draws the window's own frame, so its corners are the desktop's.
+    """
+    style = ttk.Style(root)
+    if "clam" not in style.theme_names():
+        return
+    style.theme_use("clam")
+    root.configure(background=PAPER)
+
+    style.configure(".", background=PAPER, foreground=INK)
+    for name in ("TFrame", "TLabel", "TCheckbutton", "TRadiobutton", "TLabelframe", "TNotebook"):
+        style.configure(name, background=PAPER)
+    style.configure("TLabelframe", bordercolor=LINE)
+    style.configure("TLabelframe.Label", background=PAPER, foreground=MUTED)
+    style.configure("TButton", padding=(10, 5), relief="flat", background=FIELD, bordercolor=LINE)
+    style.map(
+        "TButton",
+        background=[("active", "#e4e8ef"), ("disabled", PAPER)],
+        foreground=[("disabled", MUTED)],
+        bordercolor=[("disabled", PAPER)],
+    )
+    for name in ("TEntry", "TCombobox", "TSpinbox"):
+        style.configure(name, fieldbackground=FIELD, background=FIELD, bordercolor=LINE, padding=4, arrowcolor=INK)
+        style.map(
+            name,
+            bordercolor=[("focus", ACCENT)],
+            fieldbackground=[("readonly", FIELD)],
+            foreground=[("disabled", MUTED)],
+        )
+    # A readonly combo selects its text in the accent colour, which reads as a
+    # button rather than a field; keep it the field's own colours.
+    style.map(
+        "TCombobox",
+        selectbackground=[("readonly", FIELD)],
+        selectforeground=[("readonly", INK)],
+    )
+    style.configure("Treeview", background=PAPER, fieldbackground=PAPER, bordercolor=LINE, rowheight=22)
+    style.map("Treeview", background=[("selected", ACCENT)], foreground=[("selected", PAPER)])
+    style.configure("Treeview.Heading", background=FIELD, foreground=MUTED, relief="flat")
+    style.configure("TScrollbar", background=FIELD, troughcolor=PAPER, bordercolor=LINE, arrowsize=12, relief="flat")
+    style.configure("TProgressbar", background=ACCENT, troughcolor=FIELD, bordercolor=LINE)
+    style.configure("TSeparator", background=LINE)
+    style.configure("TSizegrip", background=PAPER)
+
 
 class _QueueHandler(logging.Handler):
     """Ship log records to the Tk thread; widgets are only touched from the main thread."""
@@ -54,6 +113,14 @@ class _QueueHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         self.sink.put_nowait(self.format(record))
+
+
+def _tag(line: str) -> tuple[str, ...]:
+    """Which of the log's two emphases a line gets, however the report indents it."""
+    head = line.strip().split(":", 1)[0]
+    if head in ("ERROR", "CRITICAL"):
+        return ("error",)
+    return ("report",) if head == "REPORT" else ()
 
 
 class App:
@@ -70,6 +137,7 @@ class App:
         # without touching any other canvas in the app.
         root.option_add("*icons.canvas.width", "460p", "widgetDefault")
         root.option_add("*icons.canvas.height", "300p", "widgetDefault")
+        theme(root)
         self.pack_var.trace_add("write", self._follow_pack)
         self.cover_var = tk.StringVar()
         # A looked-up cover has to stay on disk while the cards are drawn, so the
@@ -129,19 +197,23 @@ class App:
         self._button(grid, "browse_output", self._pick_out_dir).grid(row=3, column=2, sticky="e", padx=(6, 0))
 
         # The player comes first: its screen decides the size every picture is drawn at.
+        # Five names do not fit on one line in every language, so they share a box.
         format_row = ttk.Frame(grid)
         format_row.grid(row=4, column=0, columnspan=3, sticky="w", pady=(0, 8))
         self._label(format_row, "format_label").pack(side="left", padx=(0, 10))
-        for player in FORMATS:
-            box = ttk.Radiobutton(
-                format_row,
-                text=self.t(f"fmt_{player}"),
-                variable=self.format_var,
-                value=player,
-                command=self._pick_format,
-            )
-            self._labels[f"fmt_{player}"] = box
-            box.pack(side="left", padx=(0, 12))
+        self.format_box = ttk.Combobox(format_row, values=self.format_names(), state="readonly", width=20)
+        self.format_box.pack(side="left")
+        self.format_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_format())
+        # Turning the picture inside out is a thing a grey screen does, so the box
+        # is only live next to the format that has one.
+        self.negative_var = tk.BooleanVar(value=bool(self.options["card_negative"]))
+        self.negative_box = ttk.Checkbutton(
+            format_row, text=self.t("card_negative"), variable=self.negative_var, command=self._pick_negative
+        )
+        self.negative_box.pack(side="left", padx=(12, 0))
+        self._labels["card_negative"] = self.negative_box
+        self._show_formats()
+        self._show_negative()
 
         self._label(grid, "cover_label").grid(row=5, column=0, sticky="w", pady=(0, 2))
         ttk.Entry(grid, textvariable=self.cover_var).grid(row=5, column=1, sticky="ew", padx=(6, 0))
@@ -181,7 +253,9 @@ class App:
         # The frame the chosen player shows, drawn from the cover: drag it to move,
         # the wheel or the arrows to enlarge. What is inside here is what the story
         # carries, so the choice is made on the picture instead of described to it.
-        self.crop_frame = tk.Canvas(crop_row, highlightthickness=0, cursor="fleur", takefocus=1)
+        self.crop_frame = tk.Canvas(
+            crop_row, highlightthickness=0, cursor="fleur", takefocus=1, background=PAPER
+        )
         self.crop_frame.pack(anchor="w", pady=(6, 0))
         self._crop_item = self.crop_frame.create_image(0, 0, anchor="nw")
         self.crop_frame.bind("<ButtonPress-1>", self._grab_crop)
@@ -217,11 +291,32 @@ class App:
         self.progress = ttk.Progressbar(controls, mode="indeterminate", length=140)
         self.progress.pack(side="right")
 
-        self.log_view = tk.Text(grid, height=18, width=72, state="disabled", wrap="word")
+        self.log_view = tk.Text(
+            grid,
+            height=18,
+            width=72,
+            state="disabled",
+            wrap="word",
+            background=PAPER,
+            foreground=INK,
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=LINE,
+            highlightcolor=ACCENT,
+            padx=8,
+            pady=6,
+        )
         self.log_view.grid(row=8, column=0, columnspan=3, sticky="nsew")
         scroll = ttk.Scrollbar(grid, command=self.log_view.yview)
         scroll.grid(row=8, column=3, sticky="ns")
         self.log_view.configure(yscrollcommand=scroll.set)
+        # An error has to be picked out of a page of progress lines, in the frame
+        # itself and again in the report that closes each round.
+        bold = tkfont.Font(font=self.log_view.cget("font") or "TkFixedFont")
+        bold.configure(weight="bold")
+        self.log_view.tag_configure("error", foreground=ALERT, font=bold)
+        self.log_view.tag_configure("report", foreground=INK, font=bold)
+        self._errors: list[str] = []
 
         hint = self.t("drop_hint") if DND_FILES else self.t("drop_unavailable")
         self._append(hint)
@@ -234,6 +329,7 @@ class App:
         self.root.title(self.t("app_title"))
         for key, widget in self._labels.items():
             widget.configure(text=self.t(key))
+        self._show_formats()
         if not DND_FILES:
             self._append(self.t("drop_unavailable"))
 
@@ -377,6 +473,30 @@ class App:
         self._crop_focus = None
         self._draw_crop()
 
+    def format_names(self) -> list[str]:
+        """The five players, by the name this window's language gives them."""
+        return [self.t(f"fmt_{player.replace('-', '_')}") for player in FORMATS]
+
+    def _show_formats(self) -> None:
+        """Refill the box in this language, and put it back on the chosen player."""
+        names = self.format_names()
+        self.format_box.configure(values=names)
+        chosen = FORMATS.index(self.format_var.get()) if self.format_var.get() in FORMATS else 0
+        self.format_box.set(names[chosen])
+
+    def _choose_format(self) -> None:
+        self.format_var.set(FORMATS[self.format_names().index(self.format_box.get())])
+        self._show_negative()
+        self._pick_format()
+
+    def _show_negative(self) -> None:
+        """Only a grey screen can be turned inside out; the colour ones ignore it."""
+        self.negative_box.configure(state="normal" if self.format_var.get() == "lunii" else "disabled")
+
+    def _pick_negative(self) -> None:
+        self.options["card_negative"] = self.negative_var.get()
+        settings.save(self.options)
+
     def _pick_format(self) -> None:
         self.options["format"] = self.format_var.get()
         settings.save(self.options)
@@ -511,11 +631,30 @@ class App:
             self.pack_var.set(dropped[0])
             self._find_cover()
 
-    def _append(self, line: str) -> None:
+    def _append(self, line: str, counted: bool = True) -> None:
+        tags = _tag(line)
+        if counted and tags == ("error",):
+            self._errors.append(line)
         self.log_view.configure(state="normal")
-        self.log_view.insert("end", line + "\n")
+        self.log_view.insert("end", line + "\n", *tags)
         self.log_view.see("end")
         self.log_view.configure(state="disabled")
+
+    def _clear_log(self) -> None:
+        """Start a round on an empty frame, so its report closes something readable."""
+        self.log_view.configure(state="normal")
+        self.log_view.delete("1.0", "end")
+        self.log_view.configure(state="disabled")
+        self._errors = []
+
+    def _report(self, code: int) -> None:
+        """Close a round with the errors it produced, repeated where they can be read."""
+        errors = self._errors
+        head = "done" if code == 0 else f"failed with exit code {code}"
+        self._append("")
+        self._append(f"REPORT: {head}, {len(errors)} error(s)" if errors else f"REPORT: {head}")
+        for line in errors:
+            self._append(line, counted=False)
 
     def _typed_path(self, var: tk.StringVar) -> Path | None:
         """The folder or file the box holds, or None when it is empty.
@@ -544,6 +683,7 @@ class App:
             return
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        self._clear_log()
         self.save_button.state(["disabled"])
         self.progress.start(12)
         engine, install = self._speech()
@@ -564,6 +704,7 @@ class App:
                 self.crop_var.get() or "center",
                 self._crop_zoom_value,
                 self._crop_focus,
+                self.negative_var.get(),
             ),
             daemon=True,
         ).start()
@@ -598,6 +739,7 @@ class App:
         crop: str,
         zoom: float = 1.0,
         focus: tuple[float, float] | None = None,
+        negative: bool = False,
     ) -> None:
         if install:
             try:
@@ -608,7 +750,20 @@ class App:
         self.events.put(
             (
                 "code",
-                convert(source, out_dir, force, announce, cover, drop, cut, fmt, crop, zoom=zoom, focus=focus),
+                convert(
+                    source,
+                    out_dir,
+                    force,
+                    announce,
+                    cover,
+                    drop,
+                    cut,
+                    fmt,
+                    crop,
+                    zoom=zoom,
+                    focus=focus,
+                    negative=negative,
+                ),
             )
         )
 
@@ -621,7 +776,7 @@ class App:
             if item[0] == "code":
                 self.progress.stop()
                 self.save_button.state(["!disabled"])
-                self._append("done" if item[1] == 0 else f"failed with exit code {item[1]}")
+                self._report(item[1])
             elif item[0] == "cover":
                 self._took_cover(*item[1:])
             else:

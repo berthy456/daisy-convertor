@@ -1,9 +1,19 @@
 import { CUT_LEVELS, cutChoices, extractBook } from "./daisy.js";
-import { CROP_FOCUS, MAX_ZOOM, cropRect, loadCoverFile, loadCoverUrl, screen, searchUrl, squareJpeg } from "./cover.js";
+import {
+  CROP_FOCUS,
+  MAX_ZOOM,
+  cropRect,
+  loadCoverFile,
+  loadCoverUrl,
+  rle4Bitmap,
+  screen,
+  searchUrl,
+  squareJpeg,
+} from "./cover.js";
 import { findCover } from "./covers.js";
 import { buildStoryZip } from "./convert.js";
 import { LANGUAGES, NAMES, apply, pickLanguage, text } from "./i18n.js";
-import { buildStudioZip } from "./lunii.js";
+import { buildPlainPk, buildStudioZip, packName } from "./lunii.js";
 import { buildMerlinFiles } from "./merlin.js";
 import { cardAudio } from "./voices.js";
 import { readZip, writeZip } from "./zip.js";
@@ -35,6 +45,8 @@ const cardBoxes = {
   count: document.getElementById("card-count"),
 };
 const formatInputs = [...document.querySelectorAll('input[name="format"]')];
+const negativeRow = document.getElementById("card-negative-row");
+const negativeBox = document.getElementById("card-negative");
 const partsBox = document.getElementById("parts");
 const partsList = document.getElementById("parts-list");
 const partsNote = document.getElementById("parts-note");
@@ -46,6 +58,7 @@ const STORED_CUT = "daisy2telmi.cut";
 const STORED_FORMAT = "daisy2telmi.format";
 const STORED_CROP = "daisy2telmi.crop";
 const STORED_CARDS = "daisy2telmi.cards";
+const STORED_NEGATIVE = "daisy2telmi.negative";
 // The summary lists the parts it starts; a book cut to the sentence level has hundreds.
 const LISTED_PARTS = 30;
 // A sentence-level book can run to thousands of parts: past this the page says
@@ -70,6 +83,8 @@ let zoom = 1;
 // What the card between two parts shows and says: the total on the picture, the
 // word chapter in the phrase, and the total in it too.
 let cards = { total: true, word: true, count: false };
+// Whether the black-and-white Lunii cards are drawn as a negative of the cover.
+let negative = false;
 // Part numbers left out of the story, in the numbering of the chosen cut level.
 let dropped = new Set();
 // Counts the lookups in flight, so an answer about a pack that has been replaced
@@ -139,6 +154,12 @@ function startCards() {
   }
 }
 
+function showNegative() {
+  // Only the plain Lunii screen has no colour, so only its cards can be read the
+  // other way round; the choice stays put while another player is chosen.
+  negativeRow.hidden = format !== "lunii";
+}
+
 function startFormat() {
   const stored = saved(STORED_FORMAT);
   format = formatInputs.some((input) => input.value === stored) ? stored : "telmi";
@@ -147,9 +168,20 @@ function startFormat() {
     input.addEventListener("change", () => {
       format = input.value;
       remember(STORED_FORMAT, format);
+      showNegative();
       drawCrop();
     });
   }
+  showNegative();
+}
+
+function startNegative() {
+  negative = saved(STORED_NEGATIVE) === "1";
+  negativeBox.checked = negative;
+  negativeBox.addEventListener("change", () => {
+    negative = negativeBox.checked;
+    remember(STORED_NEGATIVE, negative ? "1" : "0");
+  });
 }
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
@@ -418,7 +450,10 @@ async function saveStory() {
         cut,
         drop: [...dropped],
         player: format,
+        // The plain Lunii screen has no colour: its cards go to its own sixteen
+        // greys. A commercial `.pk` keeps each picture's own sixteen colours.
         style: format === "lunii" ? "bw" : "colour",
+        negative,
         t: (key) => t(key),
         cardLabel: (number, total, worded) =>
           t(cards.total ? (worded ? "card_label" : "card_number") : (worded ? "card_label_one" : "card_number_one"), {
@@ -437,13 +472,17 @@ async function saveStory() {
     );
 
     // One archive, for the player chosen: a Lunii takes the STUdio form of the same
-    // story, the Flam launcher imports the Telmi one, and a Merlin card holds no
-    // story graph at all — only the files and the playlist that names them.
+    // story, or the layout its card keeps itself; the Flam launcher imports the Telmi
+    // one; and a Merlin card holds no story graph at all — only the files and the
+    // playlist that names them.
     let name = `${story.dirName}.zip`;
     let bytes = story.zip;
     if (format === "lunii") {
       name = `${story.dirName}-lunii.zip`;
       bytes = await buildStudioZip(story);
+    } else if (format === "lunii-pk") {
+      name = packName(story.metadata.title, story.metadata.uuid);
+      bytes = await buildPlainPk(story, { picture: rle4Bitmap });
     } else if (format === "merlin") {
       name = `${story.dirName}_merlin.zip`;
       bytes = await writeZip(await buildMerlinFiles(story, { picture: squareJpeg }));
@@ -573,6 +612,7 @@ saveButton.addEventListener("click", saveStory);
 
 startLanguage();
 startFormat();
+startNegative();
 startCut();
 startCards();
 startCrop();

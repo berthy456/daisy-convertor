@@ -50,12 +50,21 @@
             <span data-i18n="fmt_lunii"></span>
           </label>
           <label>
+            <input type="radio" name="format" value="lunii-pk" />
+            <span data-i18n="fmt_lunii_pk"></span>
+          </label>
+          <label>
             <input type="radio" name="format" value="flam" />
             <span data-i18n="fmt_flam"></span>
           </label>
           <label>
             <input type="radio" name="format" value="merlin" />
             <span data-i18n="fmt_merlin"></span>
+          </label>
+          <!-- Only the plain Lunii screen is black and white, so only its cards can be read the other way round. -->
+          <label id="card-negative-row" hidden>
+            <input id="card-negative" type="checkbox" />
+            <span data-i18n="card_negative"></span>
           </label>
         </div>
 

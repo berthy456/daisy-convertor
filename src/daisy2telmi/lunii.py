@@ -5,9 +5,9 @@ node into `metadata.json` + `title.mp3` + `startAction` and renames the stages t
 `s0`, `a0`, `0.mp3`. This walks that back: the cover node is rebuilt, the stages
 get UUIDs again, and the media is renamed to the eight hex characters STUdio uses.
 
-The device layout (`ri`, `si`, `li`, `ni` and `rf/`, `sf/` on the SD card) is what
-Lunii.QT writes from this archive; it needs the device's own key for the `bt`
-authorisation file, so it is not something a converter can produce on its own.
+The device layout (`ri`, `si`, `li`, `ni` and `rf/`, `sf/` on the SD card) is
+lunii_pk.py's job. Only the `bt` authorisation file needs the device's own key,
+which is why that one is written by Lunii.QT as it copies a `.plain.pk` onto a card.
 """
 
 from __future__ import annotations

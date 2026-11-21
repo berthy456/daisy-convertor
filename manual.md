@@ -232,6 +232,8 @@ The Linux and macOS builds also bundle espeak-ng, the libraries it links and its
 | `daisy-convertor-<version>-x86_64.AppImage` | `ubuntu-latest` | the same binary, packaged by `tools/make_appimage.py`; `appimagetool` is unpacked with `--appimage-extract` because runners have no FUSE |
 | `daisy-convertor-<version>-macos-<arch>.dmg` | `macos-latest` (arm64) and `macos-15-intel` (x86_64) | **unsigned and un-notarised**: Gatekeeper blocks the first run, so open it with right-click → Open or `xattr -d com.apple.quarantine daisy-convertor` |
 
+The release notes are the tag's own message, so the tag has to be annotated: `git tag -a -F notes.md v1.2`. A lightweight tag gives the release the commit's message instead.
+
 ## What the test pack contains
 
 `gon-ruby-mp3.zip` — ATDO, *ごんぎつね* (Gon, the Fox), 2009, 86 files. It is **not** a textbook DAISY 2.02 pack, and the parser follows the pack rather than the spec.

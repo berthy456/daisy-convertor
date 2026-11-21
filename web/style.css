@@ -6,6 +6,7 @@
   --line: #d8dee7;
   --accent: #2f6feb;
   --danger: #b3261e;
+  --mark: #ba36b2;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -39,9 +40,30 @@ main {
 }
 
 header h1 {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
   margin: 0 0 0.25rem;
   font-size: 1.75rem;
   letter-spacing: -0.01em;
+}
+
+/* The machine from the project's own icon, drawn in its own magenta. */
+header .mark {
+  width: 1.6em;
+  height: 1.6em;
+  flex: none;
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: 1rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.back:hover {
+  text-decoration: underline;
 }
 
 .tagline {
@@ -388,8 +410,156 @@ footer {
   font-size: 0.85rem;
 }
 
+/* The emulator's machine, laid out like the icon: the screen on the left, the
+   wheel's ring to its right, and along the bottom the arrows, the play
+   triangle, the pause bars and the card slot. */
+.story-title {
+  margin: 1rem 0 0.5rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  gap: 1rem;
+  align-items: center;
+  justify-items: center;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--mark) 7%, var(--card));
+}
+
+.screen {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: stretch;
+  padding: 0.5rem;
+  border-radius: 10px;
+  background: #10131a;
+}
+
+/* The card's own pictures are 320x240 at four bits per pixel; keeping the pixels
+   square is what the machine's screen shows, so the emulator does not blur them. */
+.screen canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #fff;
+  image-rendering: pixelated;
+}
+
+.ring {
+  grid-column: 2;
+  grid-row: 1;
+  width: 5.5rem;
+  height: 5.5rem;
+  border-radius: 50%;
+  border: 0.5rem solid color-mix(in srgb, var(--mark) 55%, var(--card));
+  background: radial-gradient(circle at 38% 32%, color-mix(in srgb, var(--mark) 35%, var(--card)), var(--card));
+}
+
+.keys {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 0.4rem;
+  justify-items: center;
+}
+
+.key-caption {
+  grid-column: 1 / -1;
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.key {
+  display: grid;
+  gap: 0.25rem;
+  justify-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-size: 0.75rem;
+}
+
+.dial {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--mark) 22%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--mark) 45%, var(--card));
+  color: var(--mark);
+}
+
+.dial svg {
+  width: 1.4rem;
+  height: 1.4rem;
+  fill: currentColor;
+}
+
+/* Home is the card slot on the machine's face: dark, and rectangular. */
+.dial.slot {
+  border-radius: 6px;
+  background: #2a2f3a;
+  color: #f2f4f8;
+}
+
+.key:disabled .dial {
+  background: var(--card);
+  border-color: var(--line);
+  color: var(--muted);
+  opacity: 0.4;
+}
+
+.key.on .dial {
+  background: var(--mark);
+  color: #fff;
+}
+
+/* The Telmi has no wheel: its two side buttons seek inside the clip instead, so
+   the same keys draw as arrows on a Lunii story and as seek chevrons on a Telmi
+   one. */
+.seek-icon,
+.seek-text {
+  display: none;
+}
+
+.machine.telmi .wheel-icon,
+.machine.telmi .wheel-text {
+  display: none;
+}
+
+.machine.telmi .seek-icon {
+  display: block;
+}
+
+.machine.telmi .seek-text {
+  display: inline;
+}
+
 @media (max-width: 30rem) {
   main {
     padding: 1.25rem 1rem 2rem;
+  }
+
+  .ring {
+    width: 3.5rem;
+    height: 3.5rem;
   }
 }

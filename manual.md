@@ -190,6 +190,8 @@ Once a pack has been read, the page lists the parts with their lengths, each wit
 
 The page concatenates MP3 frame data instead of re-encoding. That is safe because the player resamples, but it means no clip trimming and no bitrate normalisation.
 
+`web/emulator.html` plays a pack back before it is printed: drop in the Telmi zip, the STUdio zip or the `.plain.pk`, and the page draws the machine, its screen and its five keys, a key lit only where the pack switched it on. `web/emulator.js` reads the three archives into one model — a stage, its media, and where OK, home and the wheel lead — and walks it the way the firmware does, including the card's run-length bitmaps; `web/emulator-app.js` is the player on top of it. The keyboard follows the machine: arrows for the wheel, Enter or Space for OK, Backspace or `h` for home. A Telmi story has no wheel, so there the two side buttons seek ten seconds back and forward inside the clip.
+
 ## Tests
 
 ```bash
@@ -198,7 +200,7 @@ pytest
 node --test tests/web/*.test.mjs
 ```
 
-382 Python tests, 100 for the browser modules. The integration tests skip themselves if `gon-ruby-mp3.zip` or `ffprobe` is absent. `tests/test_published_pack.py` checks a real published Telmi story against the same validator; it skips unless `TELMI_SAMPLE` points at one. `tests/test_lunii_pk.py` re-encodes the pictures of a real `.plain.pk`; it skips unless `LUNII_SAMPLE` points at one. `tests/test_gui.py` skips where there is no Tk or no display.
+383 Python tests, 110 for the browser modules. The integration tests skip themselves if `gon-ruby-mp3.zip` or `ffprobe` is absent. `tests/test_published_pack.py` checks a real published Telmi story against the same validator; it skips unless `TELMI_SAMPLE` points at one. `tests/test_lunii_pk.py` re-encodes the pictures of a real `.plain.pk`; it skips unless `LUNII_SAMPLE` points at one. `tests/test_gui.py` skips where there is no Tk or no display.
 
 ## Build a binary
 

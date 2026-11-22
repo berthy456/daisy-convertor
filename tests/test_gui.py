@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
+import os
 import shutil
 import time
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -812,3 +815,155 @@ def test_a_pack_the_window_cannot_open_is_reported(app: gui.App, monkeypatch) ->
 def test_the_chapters_button_needs_a_pack_first(app: gui.App) -> None:
     app._open_chapters()
     assert "choose a DAISY pack first" in app.log_view.get("1.0", "end")
+
+
+def _story_folder(root: Path) -> Path:
+    """A story folder as a run leaves one, with a picture Tk can actually decode."""
+    (root / "images").mkdir(parents=True)
+    (root / "audios").mkdir()
+    (root / "images" / "m0.png").write_bytes(images.placeholder_png(320, 240, style="colour"))
+    (root / "audios" / "c0.mp3").write_bytes(b"ID3")
+    (root / "nodes.json").write_text(
+        json.dumps(
+            {
+                "startAction": {"action": "m", "index": 0},
+                "stages": {
+                    "m0": {
+                        "image": "m0.png",
+                        "audio": None,
+                        "ok": {"action": "s0", "index": 0},
+                        "home": None,
+                        "control": {"ok": True, "home": True, "autoplay": False},
+                    },
+                    "s0": {
+                        "image": None,
+                        "audio": "c0.mp3",
+                        "ok": None,
+                        "home": {"action": "m", "index": 0},
+                        "control": {"ok": False, "home": True, "autoplay": True},
+                    },
+                },
+                "actions": {"m": [{"stage": "m0"}], "s0": [{"stage": "s0"}]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "metadata.json").write_text(json.dumps({"title": "The book"}), encoding="utf-8")
+    return root
+
+
+def test_the_emulator_window_walks_the_story_it_is_shown(
+    app: gui.App, tmp_path: Path, monkeypatch
+) -> None:
+    """The window reads the folder the last run left and answers with the machine's
+    own buttons: OK moves on, Home goes back, and a stage with no picture of its own
+    shows nothing."""
+    started: list = []
+    monkeypatch.setattr(gui.chapters, "open_preview", lambda path: started.append(path))
+    window = gui.Emulator(app, _story_folder(tmp_path / "the book"))
+    try:
+        assert window.current == "m0"
+        assert window.canvas.find_all(), "the chapter card is drawn"
+        assert window.keys["ok"].instate(["!disabled"])
+
+        window._press("ok")
+        assert window.current == "s0"
+        assert not window.canvas.find_all(), "the chapter itself has no picture"
+        assert [clip.name for clip in started] == ["c0.mp3"]
+
+        window._press("home")
+        assert window.current == "m0"
+    finally:
+        window._close()
+
+
+def test_the_emulator_buttons_are_words_not_keys(app: gui.App, tmp_path: Path) -> None:
+    """The buttons are the machine's, so they carry the machine's words: a window
+    that reads `emu_ok` is a label that never went through the translation."""
+    window = gui.Emulator(app, _story_folder(tmp_path / "the book"))
+    try:
+        assert [window.keys[key].cget("text") for key in ("up", "ok", "home", "stop")] == [
+            "▲",
+            "OK",
+            "Home",
+            "Stop",
+        ]
+    finally:
+        window._close()
+
+
+def test_the_emulator_button_opens_the_newest_story(app: gui.App, tmp_path: Path) -> None:
+    """The output folder keeps every story written to it; the one just written is
+    the one the button plays, without asking."""
+    out = tmp_path / "out"
+    older, newer = _story_folder(out / "older"), _story_folder(out / "newer")
+    stamp = time.time()
+    os.utime(older, (stamp - 60, stamp - 60))
+    os.utime(newer, (stamp, stamp))
+
+    app.out_var.set(str(out))
+    app._open_emulator()
+    assert app.emulator.story.folder == newer
+    app.emulator._close()
+
+
+def test_the_emulator_asks_for_a_folder_when_none_was_written(
+    app: gui.App, tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        gui.filedialog, "askdirectory", lambda **_kwargs: str(_story_folder(tmp_path / "picked"))
+    )
+    app.out_var.set(str(tmp_path / "nothing written here"))
+    app._open_emulator()
+    assert app.emulator.story.title == "The book"
+    app.emulator._close()
+
+
+def test_a_folder_that_holds_no_story_is_reported(app: gui.App, tmp_path: Path) -> None:
+    """A wrong folder has to be named in the log: a window that opens empty looks
+    like a story with nothing in it."""
+    (tmp_path / "not a story").mkdir()
+    gui.Emulator(app, tmp_path / "not a story")
+    assert "no story graph" in app.log_view.get("1.0", "end")
+
+
+def test_the_emulator_opens_the_lunii_archive_not_the_colour_folder(
+    app: gui.App, tmp_path: Path
+) -> None:
+    """A Lunii run leaves two stories in the output folder: the colour one in a
+    folder, and the archive holding the sixteen greys that machine's screen shows.
+    The archive is written last, so it is the one the button plays."""
+    out = tmp_path / "out"
+    _story_folder(out / "the book")
+    archive = out / "the book-lunii.zip"
+    with zipfile.ZipFile(archive, "w") as packed:
+        packed.writestr(
+            "story.json",
+            json.dumps(
+                {
+                    "title": "The book",
+                    "stageNodes": [
+                        {
+                            "uuid": "cover",
+                            "image": "a1.png",
+                            "okTransition": None,
+                            "homeTransition": None,
+                            "controlSettings": {"ok": True, "home": False, "wheel": True},
+                            "squareOne": True,
+                        }
+                    ],
+                    "actionNodes": [],
+                }
+            ),
+        )
+        packed.writestr("assets/a1.png", images.placeholder_png(320, 240, style="bw"))
+
+    app.out_var.set(str(out))
+    app._open_emulator()
+    try:
+        assert app.emulator.story.machine == "lunii"
+        card = app.emulator.story.stages[app.emulator.story.start]
+        assert card.image.parts[-2:] == ("assets", "a1.png")
+        assert card.image.is_file(), "the archive was let out so its cards can be drawn"
+    finally:
+        app.emulator._close()

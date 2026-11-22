@@ -23,7 +23,7 @@ from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 from urllib.parse import quote_plus
 
-from . import audio, chapters, covers, images, settings, tts
+from . import audio, chapters, covers, emulator, images, settings, tts
 from .cli import FORMATS, convert
 from .detector import DaisyPackError, open_pack
 from .extractor import CUT_LEVELS, extract
@@ -329,6 +329,7 @@ class App:
         self.save_button.pack(side="left")
         self._button(controls, "options", self._open_options).pack(side="left", padx=12)
         self._button(controls, "chapters", self._open_chapters).pack(side="left")
+        self._button(controls, "emulator", self._open_emulator).pack(side="left", padx=12)
         self.force_box = ttk.Checkbutton(
             controls, text=self.t("overwrite"), variable=self.force_var
         )
@@ -397,6 +398,20 @@ class App:
             self._append("ERROR: choose a DAISY pack first")
             return
         ChapterList(self, source)
+
+    def _open_emulator(self) -> None:
+        """Play the story the last run wrote. When the output folder holds none,
+        ask for a folder and read the story out of that."""
+        out = Path(self.out_var.get()).expanduser() if self.out_var.get().strip() else None
+        folder = emulator.find_story(out) if out is not None and out.is_dir() else None
+        if folder is None:
+            chosen = filedialog.askdirectory(
+                title=self.t("emulator"), initialdir=self._start_dir(), mustexist=True
+            )
+            if not chosen:
+                return
+            folder = Path(chosen)
+        self.emulator = Emulator(self, folder)
 
     def announce(self) -> Announce:
         return Announce(
@@ -1372,6 +1387,158 @@ class Options:
             settings.save(self.app.options)
         except OSError as exc:
             self.app._append(f"ERROR: could not save options: {exc}")
+        self.top.destroy()
+
+
+class Emulator:
+    """The story a run just wrote, played with the machine's own buttons.
+
+    The story folder is already the machine's: `nodes.json` says where each button
+    leads, `images/` and `audios/` hold what a stage shows and plays. A Lunii run
+    writes a second copy of the story as a STUdio archive, and that one holds the
+    greys its screen shows, so the window opens the archive when it finds one.
+    Reading either back answers "what will the teller do" without a teller, at the
+    sizes that machine's screen has.
+
+    Two of the web emulator's buttons are missing here on purpose. The Telmi's side
+    buttons seek inside the clip, and the pause button holds it: both need a player
+    the app can steer, and the app hands the sound to `afplay` or `ffplay`. So the
+    side buttons stay shut unless the stage has a wheel, and Stop silences the clip.
+    """
+
+    # The screen is drawn at the width every player's card can be blown up to by
+    # whole pixels, which keeps the sixteen greys of a Lunii card grey.
+    SCREEN_WIDTH = 640
+
+    # The wheel's two buttons are arrows on every machine; the rest carry words.
+    ARROWS = {"up": "▲", "down": "▼"}
+    BUTTONS = {"ok": "emu_ok", "home": "emu_home", "stop": "chapters_stop"}
+
+    def __init__(self, app: App, folder: Path) -> None:
+        self.app = app
+        try:
+            self.story = emulator.read_story(folder)
+        except emulator.EmulatorError as exc:
+            app._append(f"ERROR: {self.t('emu_failed').format(error=exc)}")
+            return
+
+        self.top = tk.Toplevel(app.root)
+        self.top.title(f"{app.t('emulator')}: {self.story.title}")
+        self.top.configure(background=PAPER)
+        self.top.resizable(False, False)
+        self.photo: tk.PhotoImage | None = None
+        self.player: subprocess.Popen | None = None
+        self.current: str | None = None
+        # The screen keeps the size of the cards once seen, so a stage with no
+        # picture of its own does not shrink the window mid-story.
+        self.size = (self.SCREEN_WIDTH, self.SCREEN_WIDTH * 3 // 4)
+
+        grid = ttk.Frame(self.top, padding=12)
+        grid.grid(sticky="nsew")
+        self.canvas = tk.Canvas(
+            grid,
+            background=SUNK,
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=LINE,
+            highlightcolor=ACCENT,
+        )
+        self.canvas.grid(row=0, column=0, columnspan=5)
+
+        self.status = ttk.Label(grid, text=self.t("emu_hint"), foreground=MUTED, wraplength=420)
+        self.status.grid(row=1, column=0, columnspan=5, sticky="w", pady=(8, 8))
+
+        self.keys: dict[str, ttk.Button] = {}
+        for column, button in enumerate(("up", "down", "ok", "home", "stop")):
+            box = ttk.Button(
+                grid,
+                text=self.ARROWS.get(button) or self.t(self.BUTTONS[button]),
+                command=lambda which=button: self._press(which),
+            )
+            box.grid(row=2, column=column, padx=(0, 6))
+            self.keys[button] = box
+
+        self.top.bind("<Up>", lambda _event: self._press("up"))
+        self.top.bind("<Down>", lambda _event: self._press("down"))
+        self.top.bind("<Return>", lambda _event: self._press("ok"))
+        self.top.bind("<space>", lambda _event: self._press("ok"))
+        self.top.bind("<BackSpace>", lambda _event: self._press("home"))
+        self.top.bind("<h>", lambda _event: self._press("home"))
+        self.top.protocol("WM_DELETE_WINDOW", self._close)
+
+        self._show(self.story.start)
+        self.top.after(200, self._poll)
+
+    def t(self, key: str) -> str:
+        return self.app.t(key)
+
+    def _show(self, stage_id: str) -> None:
+        stage = self.story.stages.get(stage_id)
+        if stage is None:
+            return
+        self.current = stage_id
+        self._stop()
+        self._draw(stage.image)
+        if stage.audio is not None and stage.audio.is_file():
+            try:
+                self.player = chapters.open_preview(stage.audio)
+            except chapters.ChapterError as exc:
+                self.status.configure(text=str(exc))
+        self._light(stage)
+
+    def _draw(self, image: Path | None) -> None:
+        """The stage's own picture, blown up by whole pixels. A stage with no image
+        of its own leaves the screen empty, at the size the story's cards have."""
+        self.canvas.delete("all")
+        self.photo = None
+        if image is not None and image.is_file():
+            photo = tk.PhotoImage(data=image.read_bytes())
+            step = self.SCREEN_WIDTH // photo.width()
+            self.photo = photo.zoom(step, step) if step > 1 else photo
+            self.size = (self.photo.width(), self.photo.height())
+        self.canvas.configure(width=self.size[0], height=self.size[1])
+        if self.photo is not None:
+            self.canvas.create_image(self.size[0] // 2, self.size[1] // 2, image=self.photo)
+
+    def _light(self, stage: emulator.Stage) -> None:
+        """A button is lit when the stage left it on; the machine ignores the rest."""
+        self.keys["ok"].state(["!disabled"] if stage.controls.ok else ["disabled"])
+        self.keys["home"].state(["!disabled"] if stage.controls.home else ["disabled"])
+        wheel = ["!disabled"] if stage.controls.wheel else ["disabled"]
+        self.keys["up"].state(wheel)
+        self.keys["down"].state(wheel)
+        self.keys["stop"].state(["!disabled"] if self.player is not None else ["disabled"])
+
+    def _press(self, button: str) -> None:
+        if self.current is None:
+            return
+        if button == "stop":
+            self._stop()
+            return
+        nxt = emulator.walk(self.story, self.current, button)
+        if nxt and nxt != self.current:
+            self._show(nxt)
+
+    def _stop(self) -> None:
+        chapters.stop_preview(self.player)
+        self.player = None
+
+    def _poll(self) -> None:
+        """The clip ends on its own, and an autoplayed one forces the next stage."""
+        if not self.top.winfo_exists():
+            return
+        if self.player is not None and self.player.poll() is not None:
+            self.player = None
+            stage = self.story.stages.get(self.current or "")
+            if stage is not None:
+                self._light(stage)
+                if stage.controls.autoplay:
+                    self._press("next")
+        self.top.after(200, self._poll)
+
+    def _close(self) -> None:
+        chapters.stop_preview(self.player)
+        self.player = None
         self.top.destroy()
 
 

@@ -150,6 +150,13 @@ jobs:
           mkdir -p /tmp/appimage-check && cd /tmp/appimage-check
           "$appimage" --appimage-extract
           ./squashfs-root/AppRun --version
+          # The desktop reads the icon from usr/share, not from the AppDir root:
+          # an AppImage that carries neither shows up with no picture.
+          for one in .DirIcon usr/share/applications/daisy-convertor.desktop \
+                     usr/share/icons/hicolor/128x128/apps/daisy-convertor.png \
+                     usr/share/icons/hicolor/16x16/apps/daisy-convertor.png; do
+            test -f "squashfs-root/$one" || { echo "the AppImage carries no $one"; exit 1; }
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: daisy-convertor-appimage

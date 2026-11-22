@@ -47,16 +47,31 @@ def test_the_desktop_file_points_at_the_binary(tmp_path: Path) -> None:
     assert "Exec=daisy-convertor" in (appdir / "daisy-convertor.desktop").read_text(encoding="utf-8")
 
 
+def make_icons(tmp_path: Path) -> Path:
+    icons = tmp_path / "icons"
+    icons.mkdir()
+    for _, file_name in make_appimage.ICONS:
+        (icons / file_name).write_bytes(b"\x89PNG")
+    return icons
+
+
 def test_the_icon_the_desktop_file_names_is_in_the_appdir(tmp_path: Path) -> None:
-    icon = tmp_path / "book.svg"
-    icon.write_text("<svg/>", encoding="utf-8")
-    appdir = build_appdir(make_binary(tmp_path), tmp_path / "AppDir", icon)
+    appdir = build_appdir(make_binary(tmp_path), tmp_path / "AppDir", make_icons(tmp_path))
 
     desktop = (appdir / "daisy-convertor.desktop").read_text(encoding="utf-8")
     assert "Icon=daisy-convertor" in desktop
     # appimagetool looks for the Icon= value next to the desktop file and stops
     # the build when it is missing.
-    assert (appdir / "daisy-convertor.svg").is_file()
+    assert (appdir / "daisy-convertor.png").is_file()
+
+
+def test_the_appdir_carries_the_files_the_desktop_looks_for(tmp_path: Path) -> None:
+    appdir = build_appdir(make_binary(tmp_path), tmp_path / "AppDir", make_icons(tmp_path))
+
+    assert (appdir / "usr" / "share" / "applications" / "daisy-convertor.desktop").is_file()
+    for size, _ in make_appimage.ICONS:
+        icon = appdir / "usr" / "share" / "icons" / "hicolor" / size / "apps" / "daisy-convertor.png"
+        assert icon.is_file(), f"no icon at {icon}"
 
 
 def test_rebuilding_replaces_the_previous_appdir(tmp_path: Path) -> None:

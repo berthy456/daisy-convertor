@@ -135,6 +135,34 @@ def test_a_round_ends_with_its_errors_written_again(app: gui.App, tmp_path, monk
     assert len(app.log_view.tag_ranges("error")) == 4, "both copies are drawn as errors"
 
 
+def test_a_converter_that_crashes_still_closes_its_round(app: gui.App, tmp_path, monkeypatch) -> None:
+    """A failure the converter does not name used to die in its thread: the bar kept
+    turning and the frame stayed silent. It is written in red like any other error."""
+
+    def crash(*_args, **_kwargs):
+        raise TypeError("'int' object is not iterable")
+
+    handler = gui.attach_log_handler(app)
+    monkeypatch.setattr(gui, "convert", crash)
+    (tmp_path / "pack.zip").write_bytes(b"PK")
+    app.pack_var.set(str(tmp_path / "pack.zip"))
+    app.out_var.set(str(tmp_path / "out"))
+    try:
+        app._start()
+        for _ in range(100):
+            app._drain()
+            if "REPORT:" in app.log_view.get("1.0", "end"):
+                break
+            time.sleep(0.05)
+    finally:
+        logging.getLogger("daisy2telmi").removeHandler(handler)
+
+    shown = app.log_view.get("1.0", "end")
+    assert "ERROR: TypeError: 'int' object is not iterable" in shown
+    assert "REPORT: failed with exit code 1, 1 error(s)" in shown
+    assert app.save_button.instate(["!disabled"]), "the bar stopped turning"
+
+
 def test_a_clean_round_says_there_was_nothing_to_report(app: gui.App) -> None:
     app._append("INFO: rendering s0")
     app._report(0)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import struct
 import subprocess
@@ -11,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from daisy2telmi import audio, images, merlin
+from daisy2telmi import audio, cli, images, merlin
 from daisy2telmi.cli import FORMATS, main
 from daisy2telmi.detector import open_pack
 from daisy2telmi.extractor import extract
@@ -179,6 +180,21 @@ def test_a_corrupt_table_of_contents_fails_cleanly(tmp_path: Path) -> None:
     root.mkdir()
     (root / "ncc.html").write_text("", encoding="utf-8")
     assert main([str(root), str(tmp_path / "out")]) == 1
+
+
+@requires_pack
+def test_a_failure_no_handler_names_still_reaches_the_log(tmp_path: Path, monkeypatch, caplog) -> None:
+    """A converter bug used to die in the caller's thread: the log frame stayed
+    silent and the run never ended. It is logged, and the folder it left is named."""
+
+    def broken(*args, **kwargs):
+        raise TypeError("'int' object is not iterable")
+
+    monkeypatch.setattr(cli, "build_story", broken)
+    with caplog.at_level(logging.ERROR):
+        assert main([str(PACK), str(tmp_path / "out")]) == 1
+    assert "TypeError: 'int' object is not iterable" in caplog.text
+    assert "unfinished story" in caplog.text
 
 
 @requires_pack

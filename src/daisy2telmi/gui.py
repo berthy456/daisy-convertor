@@ -805,31 +805,37 @@ class App:
         focus: tuple[float, float] | None = None,
         negative: bool = False,
     ) -> None:
-        if install:
-            try:
-                tts.install_chatterbox(announce.python)
-            except tts.TtsError as exc:
-                log.error("%s: the machine's own voice will read the cards instead", exc)
-                announce = replace(announce, engine=tts.AUTO)
-        self.events.put(
-            (
-                "code",
-                convert(
-                    source,
-                    out_dir,
-                    force,
-                    announce,
-                    cover,
-                    drop,
-                    cut,
-                    fmt,
-                    crop,
-                    zoom=zoom,
-                    focus=focus,
-                    negative=negative,
-                ),
+        try:
+            if install:
+                try:
+                    tts.install_chatterbox(announce.python)
+                except tts.TtsError as exc:
+                    log.error("%s: the machine's own voice will read the cards instead", exc)
+                    announce = replace(announce, engine=tts.AUTO)
+            self.events.put(
+                (
+                    "code",
+                    convert(
+                        source,
+                        out_dir,
+                        force,
+                        announce,
+                        cover,
+                        drop,
+                        cut,
+                        fmt,
+                        crop,
+                        zoom=zoom,
+                        focus=focus,
+                        negative=negative,
+                    ),
+                )
             )
-        )
+        except Exception as exc:
+            # A round has to close whatever this thread hits. Without the code the
+            # bar keeps turning and the log frame says nothing about the failure.
+            log.error("%s: %s", type(exc).__name__, exc)
+            self.events.put(("code", 1))
 
     def _drain(self) -> None:
         while True:

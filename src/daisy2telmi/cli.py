@@ -300,6 +300,12 @@ def speech(announce: Announce | None) -> Announce | None:
     return replace(announce, engine=tts.AUTO)
 
 
+def _unfinished(target: Path | None) -> None:
+    """What a failed run left in the output folder, before the next run refuses it."""
+    if target is not None and target.is_dir():
+        log.error("%s holds an unfinished story: overwrite it to write the story again", target)
+
+
 def convert(
     input_path: Path,
     output_dir: Path,
@@ -318,6 +324,7 @@ def convert(
 ) -> int:
     """Convert one pack. Logs through this module's logger so a GUI can follow along."""
     announce = speech(announce)
+    target: Path | None = None
     try:
         audio.require_ffmpeg()
         if cover is not None and not cover.is_file():
@@ -346,7 +353,11 @@ def convert(
             name = story_dir_name(book.title, story_uuid(book))
             target = output_dir if output_dir.name == name else output_dir / name
             if target.exists() and any(target.iterdir()) and not force:
-                log.error("%s is not empty; pass --force to overwrite", target)
+                log.error(
+                    "%s already holds a story: nothing was written. Tick the overwrite box, "
+                    "or pass --force, to replace it.",
+                    target,
+                )
                 return 2
             target.mkdir(parents=True, exist_ok=True)
             view = images.crop_view(crop, zoom, focus)
@@ -385,9 +396,16 @@ def convert(
         return 2
     except (DaisyPackError, StoryError, images.ImageError, audio.AudioError, MerlinError) as exc:
         log.error("%s", exc)
+        _unfinished(target)
         return 1
     except LuniiError as exc:
         log.error("the Telmi story is written, but the Lunii one is not: %s", exc)
+        return 1
+    except Exception as exc:
+        # A converter bug has to reach the log frame like any other failure: a
+        # worker thread that dies quietly leaves the progress bar turning forever.
+        log.error("%s: %s", type(exc).__name__, exc)
+        _unfinished(target)
         return 1
 
     log.info("wrote %d scene(s) to %s", len(report.stages), report.out_dir)

@@ -36,7 +36,6 @@ const coverClear = document.getElementById("cover-clear");
 const coverSearch = document.getElementById("cover-search");
 const coverSpinner = document.getElementById("cover-spinner");
 const cutInputs = [...document.querySelectorAll('input[name="cut"]')];
-const cropBox = document.getElementById("crop-box");
 const cropCanvas = document.getElementById("crop-canvas");
 const cropInputs = [...document.querySelectorAll('input[name="crop"]')];
 const cropZoom = document.getElementById("crop-zoom");
@@ -67,9 +66,9 @@ const LISTED_PARTS = 30;
 // how many there are instead of drawing a thousand checkboxes.
 const LISTED_BOXES = 400;
 
-// The crop box is drawn this wide, whatever the player's ratio: a 360 px frame
-// shows a cover's lettering well enough to place it by eye.
-const CROP_WIDTH = 360;
+// The crop box is drawn this wide, whatever the player's ratio. It is wider than
+// any screen it previews, so a cover's own lettering can be read while it is placed.
+const CROP_WIDTH = 720;
 
 let source = null;
 let cover = null;
@@ -201,9 +200,11 @@ function cropView() {
  * The crop box drawn at the chosen player's ratio: what is inside this frame is
  * what the story will carry, so the choice is made on the picture rather than
  * described to it.
+ *
+ * The frame is drawn with no cover too: the shape a cover has to be fitted into is
+ * worth seeing before one exists.
  */
 function drawCrop() {
-  if (!cover) return;
   const [scene] = screen(format);
   const width = CROP_WIDTH;
   const height = Math.round((width * scene[1]) / scene[0]);
@@ -217,6 +218,7 @@ function drawCrop() {
   // band colour, so the preview shows what the card will show.
   ctx.fillStyle = bandColour(format === "lunii" ? "bw" : "colour");
   ctx.fillRect(0, 0, width, height);
+  if (!cover) return;
   const [x, y, drawnWidth, drawnHeight] = cropRect(cover, width, height, cropView());
   ctx.drawImage(cover, x, y, drawnWidth, drawnHeight);
 }
@@ -280,6 +282,7 @@ function startCrop() {
       drawCrop();
     });
   }
+  drawCrop();
   cropZoom.min = String(MIN_ZOOM);
   cropZoom.max = String(MAX_ZOOM);
   cropZoom.addEventListener("input", () => setZoom(Number(cropZoom.value)));
@@ -323,7 +326,6 @@ function setCover(bitmap) {
   if (cover) cover.close();
   cover = bitmap;
   coverClear.hidden = false;
-  cropBox.hidden = false;
   log(t("log_cover_set", { w: bitmap.width, h: bitmap.height }));
   drawCrop();
 }
@@ -331,14 +333,13 @@ function setCover(bitmap) {
 function clearCover() {
   if (cover) cover.close();
   cover = null;
-  cropBox.hidden = true;
-  cropCanvas.getContext("2d").clearRect(0, 0, cropCanvas.width, cropCanvas.height);
   coverClear.hidden = true;
   coverUrl.value = "";
-  // The frame belongs to the cover that went away; the chosen band does not.
+  // The picture belongs to the cover that went away; the frame and the chosen band do not.
   focus = null;
   zoom = 1;
   cropZoom.value = "1";
+  drawCrop();
 }
 
 /**

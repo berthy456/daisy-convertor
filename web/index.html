@@ -87,8 +87,9 @@
             <span id="cover-spinner" class="spinner" aria-hidden="true" hidden></span>
           </div>
           <!-- The frame the chosen player shows, drawn from the cover: drag it to move,
-               zoom it to enlarge. What is on screen here is what the story will carry. -->
-          <div id="crop-box" class="crop-box" hidden>
+               zoom it to enlarge. What is on screen here is what the story will carry.
+               It is drawn before a cover exists: its shape is what a cover is fitted to. -->
+          <div id="crop-box" class="crop-box">
             <canvas id="crop-canvas" tabindex="0"></canvas>
             <div class="crop-tools">
               <span class="muted" data-i18n="cover_crop_label"></span>

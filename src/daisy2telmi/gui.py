@@ -42,7 +42,9 @@ ANNOUNCE_KEYS = {mode: f"announce_{mode}" for mode in ANNOUNCE_MODES}
 
 # The crop frame is drawn this wide, whatever the player's ratio: the same room to
 # move the cover in on every machine, and the web page draws it at the same size.
-CROP_WIDTH = 360
+# It is wider than any screen it previews, so the cover's own lettering can be read
+# in it while it is being placed.
+CROP_WIDTH = 720
 
 # Tk has no theme of its own that looks the same on the three platforms, so the
 # window brings its own: one flat set of colours, drawn by `clam` everywhere. The
@@ -229,7 +231,7 @@ class App:
         grid = ttk.Frame(self.root, padding=(12, 0))
         grid.grid(row=1, column=0, sticky="nsew")
         grid.columnconfigure(1, weight=1)
-        grid.rowconfigure(8, weight=1)
+        grid.rowconfigure(6, weight=1)
 
         self._label(grid, "pack_label").grid(row=0, column=0, sticky="w")
         ttk.Entry(grid, textvariable=self.pack_var).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 8))
@@ -272,8 +274,10 @@ class App:
         # is waiting. An indeterminate bar is the closest Tk comes to a spinner.
         self.cover_spin = ttk.Progressbar(cover_row, mode="indeterminate", length=44)
 
+        # The frame and the log share a row: a frame this wide would push the log
+        # below the bottom of a laptop screen.
         crop_row = ttk.Frame(grid)
-        crop_row.grid(row=6, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        crop_row.grid(row=6, column=0, sticky="nw", pady=(6, 0))
         tools = ttk.Frame(crop_row)
         tools.pack(anchor="w")
         self._label(tools, "cover_crop_label").pack(side="left", padx=(0, 10))
@@ -322,6 +326,7 @@ class App:
         self.crop_frame.bind("<KeyPress-minus>", lambda _e: self._zoom_crop(1 / 1.2))
         self._label(crop_row, "crop_hint").pack(anchor="w", pady=(2, 0))
         self.cover_var.trace_add("write", lambda *_: self._show_crop())
+        self._show_crop()
 
         controls = ttk.Frame(grid)
         controls.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(8, 8))
@@ -338,12 +343,16 @@ class App:
         self.progress = ttk.Progressbar(controls, mode="indeterminate", length=140)
         self.progress.pack(side="right")
 
+        log_frame = ttk.Frame(grid)
+        log_frame.grid(row=6, column=1, columnspan=2, sticky="nsew", padx=(12, 0))
+        log_frame.columnconfigure(0, weight=1)
+        log_frame.rowconfigure(0, weight=1)
         self.log_view = tk.Text(
-            grid,
-            # Twelve lines: with the mark and the headline above it, eighteen would
-            # make the window taller than a laptop screen.
+            log_frame,
+            # Twelve lines: the frame beside it is the tall part of the window, and
+            # eighteen of these would put the log past the bottom of a laptop screen.
             height=12,
-            width=72,
+            width=48,
             state="disabled",
             wrap="word",
             background=SUNK,
@@ -355,9 +364,9 @@ class App:
             padx=8,
             pady=6,
         )
-        self.log_view.grid(row=8, column=0, columnspan=3, sticky="nsew")
-        scroll = ttk.Scrollbar(grid, command=self.log_view.yview)
-        scroll.grid(row=8, column=3, sticky="ns")
+        self.log_view.grid(row=0, column=0, sticky="nsew")
+        scroll = ttk.Scrollbar(log_frame, command=self.log_view.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
         self.log_view.configure(yscrollcommand=scroll.set)
         # An error has to be picked out of a page of progress lines, in the frame
         # itself and again in the report that closes each round.
@@ -578,18 +587,21 @@ class App:
         """Draw the crop frame over the cover: which part of a tall cover the frame
         keeps is not something a word can tell you.
 
+        The frame is the chosen player's screen, so it is drawn with no cover too:
+        the shape a cover has to be fitted into is worth seeing before one exists.
+
         The cover is scaled once per zoom, so dragging stays instant: a move only
         shifts the picture already on the canvas.
         """
-        source = self._typed_path(self.cover_var)
-        if source is None or not source.is_file():
-            self._clear_crop()
-            return
         size = images.preview_size(self.format_var.get(), CROP_WIDTH)
         # A cover smaller than the frame leaves its room empty on the canvas, which
         # is the card's band colour and not the window's.
         style = "bw" if self.format_var.get() == "lunii" else "colour"
         self.crop_frame.configure(width=size[0], height=size[1], background=images.band_colour(style))
+        source = self._typed_path(self.cover_var)
+        if source is None or not source.is_file():
+            self._clear_crop()
+            return
         key = (str(source), self.format_var.get(), self._crop_zoom_value)
         if self._crop_cover is None or self._crop_cover[:3] != key:
             try:
@@ -616,14 +628,13 @@ class App:
         )
 
     def _clear_crop(self) -> None:
-        """The frame belongs to the cover that went away; the chosen band does not."""
+        """The picture belongs to the cover that went away; the frame and the chosen band do not."""
         self._crop_cover = None
         self._crop_photo = None
         self._crop_focus = None
         self._crop_zoom_value = 1.0
         self.crop_zoom.set(1.0)
         self.crop_frame.itemconfigure(self._crop_item, image="")
-        self.crop_frame.configure(background=SUNK)
 
     def _grab_crop(self, event: tk.Event) -> None:
         if self._crop_cover is None:

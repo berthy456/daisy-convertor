@@ -755,9 +755,9 @@ def test_a_cover_is_drawn_under_the_crop_frame(app: gui.App, tmp_path) -> None:
     cover.write_bytes(images.placeholder_png(300, 900))
     app.cover_var.set(str(cover))
     assert app.crop_frame.itemcget(app._crop_item, "image"), "the frame carries the cover"
-    # A 300x900 cover under a 360x270 frame is drawn 360x1080 to fill it, so the
-    # frame shows 270 of its 1080 lines; centred, it starts 405 lines in.
-    assert tuple(app.crop_frame.coords(app._crop_item)) == (0, -405), "the frame sits in the middle of the cover"
+    # A 300x900 cover under a 720x540 frame is drawn 720x2160 to fill it, so the
+    # frame shows 540 of its 2160 lines; centred, it starts 810 lines in.
+    assert tuple(app.crop_frame.coords(app._crop_item)) == (0, -810), "the frame sits in the middle of the cover"
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
@@ -784,7 +784,24 @@ def test_a_moved_frame_goes_back_to_the_band_it_is_clicked_onto(app: gui.App, tm
     app.crop_var.set("bottom")
     app._pick_crop()
 
-    assert app.crop_frame.coords(app._crop_item)[1] == -810, "the frame sits on the band's edge"
+    assert app.crop_frame.coords(app._crop_item)[1] == -1620, "the frame sits on the band's edge"
+
+
+def test_the_frame_is_drawn_before_a_cover_exists(app: gui.App) -> None:
+    """The frame is the chosen player's screen: its shape is what a cover gets
+    fitted to, so it is on screen from the start and not only once a cover is picked."""
+    width = int(app.crop_frame.cget("width"))
+    height = int(app.crop_frame.cget("height"))
+    assert (width, height) == images.preview_size(app.format_var.get(), gui.CROP_WIDTH)
+    assert app.crop_frame.cget("background") == images.band_colour("colour")
+    assert not app.crop_frame.itemcget(app._crop_item, "image"), "no cover, so no picture"
+
+    app.format_var.set("lunii")
+    app._pick_format()
+    assert (int(app.crop_frame.cget("width")), int(app.crop_frame.cget("height"))) == images.preview_size(
+        "lunii", gui.CROP_WIDTH
+    )
+    assert app.crop_frame.cget("background") == images.band_colour("bw")
 
 
 def test_the_zoom_and_a_moved_frame_reach_the_conversion(app: gui.App, monkeypatch, tmp_path) -> None:

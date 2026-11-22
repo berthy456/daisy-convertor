@@ -67,7 +67,11 @@ The app can read the cards in a real voice. On the first conversion it offers to
 
 **Save the zip**. The log below the buttons shows what is happening and what was found; each run starts on an empty log and ends with a report that repeats its errors in red. When it finishes, the zip is next to the book.
 
-### 9. Put it on the machine
+### 9. Play it first
+
+**Emulator** opens the story the last run wrote and plays it with the machine's own buttons: the wheel, OK, Home, and Stop to silence the card that is playing. A Lunii story is opened from its archive, so its cards show the greys that screen keeps. The same emulator runs in a browser tab at <https://berthy456.github.io/daisy-convertor/emulator.html>, where it also reads a `.pk` card.
+
+### 10. Put it on the machine
 
 | Machine | What to do with the zip |
 | :--- | :--- |
@@ -89,7 +93,7 @@ The app can read the cards in a real voice. On the first conversion it offers to
 
 **Nothing happens when a chapter is clicked.** The chapters window plays through the machine's own audio player; if the machine has none, the line still shows the chapter's length.
 
-**"is not empty".** A story with that name was made before. Tick **Overwrite an existing story folder** to replace it.
+**"already holds a story: nothing was written".** A story with that name was made before, and the log says so in red. Tick **Overwrite an existing story folder** to replace it.
 
 ## For developers
 

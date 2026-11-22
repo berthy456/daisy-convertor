@@ -192,6 +192,8 @@ The page concatenates MP3 frame data instead of re-encoding. That is safe becaus
 
 `web/emulator.html` plays a pack back before it is printed: drop in the Telmi zip, the STUdio zip or the `.plain.pk`, and the page draws the machine, its screen and its five keys, a key lit only where the pack switched it on. `web/emulator.js` reads the three archives into one model — a stage, its media, and where OK, home and the wheel lead — and walks it the way the firmware does, including the card's run-length bitmaps; `web/emulator-app.js` is the player on top of it. The keyboard follows the machine: arrows for the wheel, Enter or Space for OK, Backspace or `h` for home. A Telmi story has no wheel, so there the two side buttons seek ten seconds back and forward inside the clip.
 
+`src/daisy2telmi/emulator.py` is the same reader for the app. `find_story` returns the newest story in the output folder — a folder holding `nodes.json` or `story.json`, or a zip holding either — `read_story` reads either graph into the same model (a stage, its media, and where OK, home and the wheel lead), letting an archive out into a temporary folder so a clip has a path to play from, and `walk` answers where a button leads. `gui.Emulator` draws the stage on a canvas at whole-pixel zoom and lights a button only where the stage switched it on. The app hands the sound to `afplay` or `ffplay` and cannot steer them, so the window has Stop where the page has pause and seek, and its two wheel buttons stay shut unless the stage has a wheel. The `.pk` records are read on the web page only: Tk cannot decode the card's BMP.
+
 ## Tests
 
 ```bash

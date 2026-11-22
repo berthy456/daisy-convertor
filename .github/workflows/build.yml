@@ -139,6 +139,15 @@ jobs:
           python tools/make_appimage.py dist/daisy-convertor \
             "dist/daisy-convertor-${version}-x86_64.AppImage" \
             --appimagetool squashfs-root/AppRun
+      # The binary was smoke tested before packaging; this asks the packaged file the
+      # same question, unpacked because runners have no FUSE. A binary that starts on
+      # its own and not inside the AppImage is the bug this catches.
+      - name: Smoke test the AppImage
+        run: |
+          appimage="$PWD/dist/daisy-convertor-${GITHUB_REF_NAME#v}-x86_64.AppImage"
+          mkdir -p /tmp/appimage-check && cd /tmp/appimage-check
+          "$appimage" --appimage-extract
+          ./squashfs-root/AppRun --version
       - uses: actions/upload-artifact@v4
         with:
           name: daisy-convertor-appimage

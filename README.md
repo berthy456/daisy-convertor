@@ -10,7 +10,7 @@ Nothing is uploaded anywhere. The web page converts the book inside your browser
 
 | Your machine | File to download |
 | :--- | :--- |
-| Windows | `daisy-convertor.exe` |
+| Windows | `daisy-convertor-<version>-windows-x86_64.exe` |
 | Linux | `daisy-convertor-<version>-x86_64.AppImage`, or the `.deb` |
 | Mac, Apple silicon | `daisy-convertor-<version>-macos-arm64.dmg` |
 | Mac, Intel | `daisy-convertor-<version>-macos-x86_64.dmg` |

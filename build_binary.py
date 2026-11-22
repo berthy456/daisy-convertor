@@ -9,19 +9,26 @@ a binary for the machine it runs on. On Windows:
     pip install -e .[dev]
     python build_binary.py
 
-The result is dist/daisy-convertor.exe (dist/daisy-convertor on macOS and Linux).
+The result is dist/daisy-convertor-<version>-<os>-<arch>.exe on Windows, and
+dist/daisy-convertor on macOS and Linux, where the packaging steps name the file
+the user downloads.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import os
+import platform
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+
+_OS_NAMES = {"darwin": "macos", "linux": "linux", "win32": "windows"}
+_ARCH_NAMES = {"AMD64": "x86_64", "x86_64": "x86_64", "ARM64": "aarch64", "aarch64": "aarch64"}
 
 
 def _locate_ffmpeg() -> str | None:
@@ -241,6 +248,22 @@ def _icon_options() -> list[str]:
     ]
 
 
+def _artifact_name() -> str:
+    """The name a download should carry: the version the binary itself reports, the OS and the machine."""
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    return f"daisy-convertor-{version}-{_OS_NAMES[sys.platform]}-{_ARCH_NAMES.get(platform.machine(), platform.machine())}"
+
+
+def _name_windows_exe(dist: Path, name: str) -> Path:
+    """Move the built exe to `dist/<name>.exe`, dropping the ones an earlier build left."""
+    for stale in dist.glob("daisy-convertor-*.exe"):
+        stale.unlink()
+    built = dist / "daisy-convertor.exe"
+    named = built.with_name(f"{name}.exe")
+    built.replace(named)
+    return named
+
+
 def main() -> int:
     ffmpeg = _locate_ffmpeg()
     if ffmpeg is None:
@@ -280,7 +303,15 @@ def main() -> int:
         str(ROOT / "launcher.py"),
     ]
     print(" ".join(command))
-    return subprocess.run(command, cwd=ROOT).returncode
+    code = subprocess.run(command, cwd=ROOT).returncode
+    if code != 0:
+        return code
+
+    # On Windows the exe is the file a user downloads, so it names itself. On Linux
+    # and macOS it is an input to the packaging steps, which name the download.
+    if sys.platform == "win32":
+        print(f"built {_name_windows_exe(ROOT / 'dist', _artifact_name())}")
+    return 0
 
 
 if __name__ == "__main__":

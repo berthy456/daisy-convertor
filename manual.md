@@ -215,7 +215,7 @@ pip install -e .[dev]
 python build_binary.py
 ```
 
-Produces `dist\daisy-convertor.exe` (`dist/daisy-convertor` on macOS and Linux). `lxml.etree` and `lxml._elementpath` are passed as hidden imports; PyInstaller's own lxml hook does the rest.
+Produces `dist\daisy-convertor-<version>-windows-<arch>.exe` (`dist/daisy-convertor` on macOS and Linux, where the packaging steps name the file the user downloads). `lxml.etree` and `lxml._elementpath` are passed as hidden imports; PyInstaller's own lxml hook does the rest.
 
 `assets/icon.svg` is the one drawing; `tools/make_icons.py` redraws `assets/icon.ico`, `assets/icon.icns` and the three PNGs in `src/daisy2telmi/assets` from it, and those are committed because no build runner has an SVG rasteriser. `build_binary.py` passes the `.icns` on macOS and the `.ico` on Windows, and unpacks `icon.png` next to `gui.py`, which is where the window looks for it; `tools/make_appimage.py` uses it for the desktop file. Tk cannot scale a photo image, so the header's 64-pixel mark and the status bar's 16-pixel one are separate files.
 
@@ -229,7 +229,7 @@ The Linux and macOS builds also bundle espeak-ng, the libraries it links and its
 
 | Artifact | Built on | Notes |
 | :--- | :--- | :--- |
-| `daisy-convertor.exe` | `windows-latest` | ffmpeg bundled; speech uses the Windows engine |
+| `daisy-convertor-<version>-windows-<arch>.exe` | `windows-latest` | named by `build_binary.py`; ffmpeg bundled, speech uses the Windows engine |
 | `daisy-convertor_<version>_<arch>.deb` | `ubuntu-latest` | installs to `/usr/local/bin/daisy-convertor`, declares `ffmpeg` as a dependency rather than duplicating it. Written by `tools/make_deb.py` using only the standard library, so it can be produced and checked on any OS without `dpkg` or `fakeroot`. The job removes the `espeak-ng` package before its smoke test so the run has to use the bundled copy |
 | `daisy-convertor-<version>-x86_64.AppImage` | `ubuntu-latest` | the same binary, packaged by `tools/make_appimage.py`; `appimagetool` is unpacked with `--appimage-extract` because runners have no FUSE |
 | `daisy-convertor-<version>-macos-<arch>.dmg` | `macos-latest` (arm64) and `macos-15-intel` (x86_64) | **unsigned and un-notarised**: Gatekeeper blocks the first run, so open it with right-click → Open or `xattr -d com.apple.quarantine daisy-convertor` |
@@ -320,7 +320,7 @@ The browser converter (`web/`), run under Node against both packs:
 Builds:
 
 - A `--onefile` PyInstaller build runs the whole conversion end to end with lxml bundled, and again with `PATH=/usr/bin:/bin` using the ffmpeg embedded in the bundle. That stripped-`PATH` run also spoke 6 French chapter cards through the bundled espeak-ng, whose load commands point at `@loader_path` and whose data comes from the copied `espeak-ng-data`.
-- GitHub Actions builds and smoke-tests `daisy-convertor.exe` on a Windows runner, the `.deb` on Ubuntu and the `.dmg` on macOS.
+- GitHub Actions builds and smoke-tests the Windows `.exe` on a Windows runner, the `.deb` on Ubuntu and the `.dmg` on macOS.
 
 ## Known limitations
 

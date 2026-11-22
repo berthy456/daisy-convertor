@@ -52,11 +52,13 @@ jobs:
           python build_binary.py
           exit $LASTEXITCODE
       - name: Smoke test the exe
-        run: dist\daisy-convertor.exe --version
+        run: |
+          $exe = (Get-ChildItem dist\daisy-convertor-*-windows-*.exe).FullName
+          & $exe --version
       - uses: actions/upload-artifact@v4
         with:
           name: daisy-convertor-windows
-          path: dist/daisy-convertor.exe
+          path: dist/*.exe
 
   # Pinned: the bundled libraries inherit the runner's glibc, and 22.04 is the
   # oldest Ubuntu image still published (glibc 2.35).

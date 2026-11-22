@@ -193,7 +193,7 @@ def test_an_install_with_no_python_named_makes_an_environment_of_its_own(
     exe = tts.install_chatterbox()
 
     assert started[0] == ["/usr/bin/python3", "-m", "venv", str(env)]
-    assert started[1] == [exe, "-m", "pip", "install", "--upgrade", tts.CHATTERBOX_PACKAGE]
+    assert [exe, "-m", "pip", "install", "--upgrade", tts.CHATTERBOX_PACKAGE] in started
     assert exe == str(env / "bin/python")
 
 
@@ -313,9 +313,50 @@ def test_a_second_install_reuses_the_environment(tmp_path, monkeypatch) -> None:
     exe = tts.chatterbox_python(env)
     Path(exe).parent.mkdir(parents=True)
     Path(exe).write_text("")
+
+    def fake_run(argv, **kwargs):
+        assert argv[1:3] == ["-m", "pip"], "the environment is looked at, never rebuilt"
+        return subprocess.CompletedProcess(argv, 0, "pip 25.1.1 from site-packages", "")
+
     monkeypatch.setattr(tts.settings, "chatterbox_env", lambda: env)
-    monkeypatch.setattr(tts.subprocess, "run", lambda argv, **kwargs: pytest.fail("no second venv"))
+    monkeypatch.setattr(tts.subprocess, "run", fake_run)
     assert tts.make_chatterbox_env() == exe
+
+
+def test_an_environment_left_without_pip_is_given_its_pip(tmp_path, monkeypatch) -> None:
+    """A run that could not fetch pip leaves an environment with an interpreter and
+    nothing to install with. Reusing it fails on the first pip line, so the pip is
+    fetched into the environment that is already there."""
+    started: list[list[str]] = []
+    env = tmp_path / "chatterbox"
+    exe = tts.chatterbox_python(env)
+    Path(exe).parent.mkdir(parents=True)
+    Path(exe).write_text("")
+
+    def fake_run(argv, **kwargs):
+        started.append(argv)
+        if argv[1].endswith(".py"):
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        return subprocess.CompletedProcess(argv, 1, "", "No module named pip")
+
+    class FakeDownload:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def read(self) -> bytes:
+            return b"#!/usr/bin/env python\n"
+
+    monkeypatch.setattr(tts.subprocess, "run", fake_run)
+    monkeypatch.setattr(tts.urllib.request, "urlopen", lambda *a, **k: FakeDownload())
+    monkeypatch.setattr(tts.settings, "chatterbox_env", lambda: env)
+    monkeypatch.setattr(tts, "_python", lambda python=None: pytest.fail("no new environment"))
+
+    assert tts.make_chatterbox_env() == exe
+    assert started[0] == [exe, "-m", "pip", "--version"]
+    assert started[1][0] == exe and started[1][1].endswith(".py"), "pip goes into the environment left behind"
 
 
 def test_a_failed_chatterbox_install_says_so(monkeypatch) -> None:

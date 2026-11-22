@@ -175,7 +175,17 @@ def make_chatterbox_env() -> str:
     env = settings.chatterbox_env()
     exe = chatterbox_python(env)
     if os.path.exists(exe):
-        return exe
+        if _has_pip(exe):
+            return exe
+        # An environment left behind by a run that could not fetch pip has an
+        # interpreter and nothing to install with: it has to be fixed, not reused.
+        log.info("%s has no pip", env)
+        try:
+            _bootstrap_pip(exe)
+            return exe
+        except TtsError as exc:
+            log.info("%s: making a new environment", exc)
+            shutil.rmtree(env, ignore_errors=True)
     base = _python(None)
     if not base:
         raise TtsError(
@@ -185,11 +195,15 @@ def make_chatterbox_env() -> str:
     env.parent.mkdir(parents=True, exist_ok=True)
     log.info("making a Chatterbox environment in %s", env)
     result = subprocess.run([base, "-m", "venv", str(env)], capture_output=True, text=True)
-    if result.returncode == 0:
+    if result.returncode == 0 and _has_pip(exe):
         return exe
-    # Half an environment is worse than none: the retry has to start clean.
+    # Half an environment is worse than none: the retry has to start clean. A
+    # venv that came back without pip is half an environment too.
     shutil.rmtree(env, ignore_errors=True)
-    log.info("this Python cannot make an environment with pip: %s", _reason(result))
+    log.info(
+        "this Python cannot make an environment with pip: %s",
+        _reason(result) if result.returncode else "the environment it made has no pip",
+    )
     result = subprocess.run(
         [base, "-m", "venv", "--without-pip", str(env)], capture_output=True, text=True
     )
@@ -226,13 +240,16 @@ def _shared_pip(base: str, env: Path) -> bool:
     )
     if result.returncode:
         return False
-    probe = subprocess.run(
-        [chatterbox_python(env), "-m", "pip", "--version"], capture_output=True, text=True
-    )
-    if probe.returncode:
+    exe = chatterbox_python(env)
+    if not _has_pip(exe):
         return False
-    log.info("pip comes from the machine's Python: %s", _reason(probe))
+    log.info("pip comes from the machine's Python")
     return True
+
+
+def _has_pip(exe: str) -> bool:
+    """Whether that interpreter can run pip as a module."""
+    return subprocess.run([exe, "-m", "pip", "--version"], capture_output=True).returncode == 0
 
 
 def _bootstrap_pip(exe: str) -> None:

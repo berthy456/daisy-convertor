@@ -430,3 +430,27 @@ def test_a_colour_card_still_numbers_itself_in_the_corner() -> None:
     assert abs(right - (640 - margin)) <= 1
     assert left > 640 // 2, "the number stays in the corner"
     assert 3 not in ink[0], "a colour card draws no strip behind its lettering"
+
+
+def test_the_negative_palette_lands_on_the_greys_the_lunii_keeps() -> None:
+    """The grey palette holds one number per colour, not three: flipping it has to
+    stay a grey of the same sixteen levels the plain card used."""
+    for style in images.LUNII_STYLES:
+        base, flipped = dict(images._palette(style)), images._palette(style, negative=True)
+        for key, value in base.items():
+            assert images._rgb(flipped[key]) == tuple(255 - channel for channel in images._rgb(value)), (style, key)
+    assert images._palette("bw", negative=True)["band"] in images._GREY_LEVELS
+
+
+@NO_FFMPEG
+def test_a_negative_placeholder_is_a_picture_a_player_can_read(tmp_path: Path) -> None:
+    """These pictures are written byte by byte: a wrong row length only shows up
+    when something outside the converter decodes them."""
+    for style in images.LUNII_STYLES:
+        for negative in (False, True):
+            card = tmp_path / f"{style}-{int(negative)}.png"
+            card.write_bytes(images.placeholder_png(320, 240, style=style, negative=negative))
+            ground, band = _pixel(card, 0, 0), _pixel(card, 0, 240 // 2)
+            assert ground != band, card.name
+            if style == "bw":
+                assert set(ground + band) <= set(images._GREY_LEVELS), card.name

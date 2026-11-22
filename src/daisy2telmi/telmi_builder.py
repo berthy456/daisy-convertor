@@ -419,19 +419,22 @@ def build_story(
         scene, cover_size = images.screen(player)
         # A four-grey card is the Lunii's, and carries its number alone.
         cards = [str(k + 1) for k in range(count)] if style == "bw" else labels
+        # The negative is asked for where the screen is hard to read: the greys of
+        # a Lunii behind its plastic window. A colour card has nothing to invert.
+        grey = negative and style == "bw"
         if cover is not None:
-            images.write_cover(cover, target, cards, texts, crop, style, scene, cover_size, view, negative)
+            images.write_cover(cover, target, cards, texts, crop, style, scene, cover_size, view, grey)
             return
         (target / "images").mkdir(parents=True, exist_ok=True)
         for index, text in enumerate(texts):
             (target / "images" / f"m{index}.png").write_bytes(
-                images.card_png(cards[index], text, *scene, style=style, negative=negative)
+                images.card_png(cards[index], text, *scene, style=style, negative=grey)
             )
         (target / images.TITLE_IMAGE).write_bytes(
-            images.placeholder_png(*scene, style=style, negative=negative)
+            images.placeholder_png(*scene, style=style, negative=grey)
         )
         (target / images.COVER_IMAGE).write_bytes(
-            images.placeholder_png(*cover_size, style=style, negative=negative)
+            images.placeholder_png(*cover_size, style=style, negative=grey)
         )
 
     log.info("drawing %d card(s)%s", count, "" if cover is None else f" from the cover {cover.name}")

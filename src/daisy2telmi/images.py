@@ -67,7 +67,10 @@ def _palette(style: str, negative: bool = False) -> dict:
     palette = _PALETTE[style]
     if not negative:
         return palette
-    return {key: tuple(255 - value for value in rgb) for key, rgb in palette.items()}
+    # A grey of the black-and-white palette is one number, and 255 is the top of
+    # its sixteen levels, so flipping it lands on a level too.
+    return {key: (255 - value if isinstance(value, int) else tuple(255 - channel for channel in value))
+            for key, value in palette.items()}
 
 # 5 columns, 7 rows, "1" is ink. Uppercase only: a card label is a title, and it
 # keeps the table to what eight Latin-script languages need.
@@ -153,7 +156,7 @@ def placeholder_png(
     rows = []
     for y in range(height):
         rgb = palette["band"] if band_top <= y < band_bottom else palette["background"]
-        rows.append(bytes(rgb) * width)
+        rows.append(bytes(_rgb(rgb)) * width)
     return _png(width, height, rows)
 
 

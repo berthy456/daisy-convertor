@@ -349,6 +349,26 @@ def test_the_lunii_format_draws_every_picture_in_four_greys(tmp_path, monkeypatc
     )
 
 
+@requires_pack
+def test_the_negative_lunii_cards_leave_the_colour_ones_alone(tmp_path, monkeypatch) -> None:
+    """The negative answers the Lunii screen behind its plastic window. The Telmi
+    folder the same run writes keeps its own colours, and its own card numbers."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    colour: dict[str, bytes] = {}
+    grey: dict[str, bytes] = {}
+    for flag in ([], ["--card-negative"]):
+        out = tmp_path / f"out-{'negative' if flag else 'plain'}"
+        assert main([str(PACK), str(out), "--format", "lunii", *flag]) == 0
+        story = _story(out)
+        key = "negative" if flag else "plain"
+        colour[key] = (story / "title.png").read_bytes()
+        with zipfile.ZipFile(out / f"{story.name}-lunii.zip") as packed:
+            grey[key] = packed.read("thumbnail.png")
+
+    assert colour["plain"] == colour["negative"], "the colour cards do not turn inside out"
+    assert grey["plain"] != grey["negative"], "the Lunii's own pictures do"
+
+
 def _png_size(path: Path) -> tuple[int, int]:
     return struct.unpack(">II", path.read_bytes()[16:24])
 

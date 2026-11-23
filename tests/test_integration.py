@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from daisy2telmi import audio, cli, images, merlin
-from daisy2telmi.cli import FORMATS, main
+from daisy2telmi.cli import CARD_FORMATS, main
 from daisy2telmi.detector import open_pack
 from daisy2telmi.extractor import extract
 from daisy2telmi.telmi_builder import story_dir_name
@@ -419,7 +419,7 @@ def _card(out: Path) -> Path:
 @requires_pack
 def test_each_format_draws_at_its_own_screen(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    for player in FORMATS:
+    for player in CARD_FORMATS:
         out = tmp_path / f"out-{player}"
         assert main([str(PACK), str(out), "--format", player]) == 0
         story = _story(out)

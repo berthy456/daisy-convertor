@@ -27,7 +27,7 @@ from tkinter import font as tkfont, messagebox, ttk
 from urllib.parse import quote_plus
 
 from . import audio, chapters, covers, emulator, images, settings, tts
-from .cli import FORMATS, convert
+from .cli import CARD_FORMATS, FORMATS, convert
 from .detector import DaisyPackError, open_pack
 from .extractor import CUT_LEVELS, extract
 from .i18n import LANGUAGES, Language, text
@@ -727,6 +727,7 @@ class App:
         # the player's own grey screen reads the ink.
         side = ttk.Frame(grid)
         side.grid(row=8, column=1, sticky="n", padx=(12, 0))
+        self.crop_side = side
         self._label(side, "cover_crop_label").pack(anchor="w")
         self.crop_boxes: dict[str, ttk.Radiobutton] = {}
         for mode in images.CROP_MODES:
@@ -758,8 +759,6 @@ class App:
         self.negative_box.pack(anchor="w", pady=(10, 0))
         self._label(side, "crop_hint", wraplength=240).pack(anchor="w", pady=(10, 0))
         self.cover_var.trace_add("write", lambda *_: self._show_crop())
-        self._show_crop()
-        self._show_negative()
 
         controls = ttk.Frame(grid)
         controls.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(8, 8))
@@ -767,7 +766,8 @@ class App:
         self.save_button.pack(side="left")
         self._button(controls, "options", self._open_options).pack(side="left", padx=12)
         self._button(controls, "chapters", self._open_chapters).pack(side="left")
-        self._button(controls, "test_story", self._test_story).pack(side="left", padx=12)
+        self.test_button = self._button(controls, "test_story", self._test_story)
+        self.test_button.pack(side="left", padx=12)
         self.force_box = ttk.Checkbutton(
             controls, text=self.t("overwrite"), variable=self.force_var
         )
@@ -775,6 +775,11 @@ class App:
         self.force_box.pack(side="left", padx=12)
         self.progress = ttk.Progressbar(controls, mode="indeterminate", length=140)
         self.progress.pack(side="right")
+
+        # Every control the format decides between now exists.
+        self._show_cover()
+        self._show_crop()
+        self._show_negative()
 
         log_frame = ttk.Frame(grid)
         log_frame.grid(row=8, column=2, sticky="nsew", padx=(12, 0))
@@ -1159,7 +1164,7 @@ class App:
         self._draw_crop()
 
     def format_names(self) -> list[str]:
-        """The five players, by the name this window's language gives them."""
+        """Every output, by the name this window's language gives it."""
         return [self.t(f"fmt_{player.replace('-', '_')}") for player in FORMATS]
 
     def _show_formats(self) -> None:
@@ -1171,8 +1176,20 @@ class App:
 
     def _choose_format(self) -> None:
         self.format_var.set(FORMATS[self.format_names().index(self.format_box.get())])
+        self._show_cover()
         self._show_negative()
         self._pick_format()
+
+    def _show_cover(self) -> None:
+        """An mp3 pack carries no pictures, so the frame and its knobs have nothing
+        to show for it, and there is no story graph for the emulator to play."""
+        cards = self.format_var.get() in CARD_FORMATS
+        for widget in (self.crop_frame, self.crop_side):
+            if cards:
+                widget.grid()
+            else:
+                widget.grid_remove()
+        self.test_button.configure(state="normal" if cards else "disabled")
 
     def _show_negative(self) -> None:
         """Only a grey screen can be turned inside out; the colour ones ignore it."""
@@ -1230,6 +1247,8 @@ class App:
         The cover is scaled once per zoom, so dragging stays instant: a move only
         shifts the picture already on the canvas.
         """
+        if self.format_var.get() not in CARD_FORMATS:
+            return
         size = images.preview_size(self.format_var.get(), CROP_WIDTH)
         # A cover smaller than the frame leaves its room empty on the canvas, which
         # is the card's band colour and not the window's.

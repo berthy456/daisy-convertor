@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from daisy2telmi import audio, images
-from daisy2telmi.cli import FORMATS
+from daisy2telmi.cli import CARD_FORMATS
 from daisy2telmi.i18n import LANGUAGES
 
 NO_FFMPEG = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
@@ -83,7 +83,7 @@ def test_each_player_draws_at_its_own_screen() -> None:
     assert images.screen("telmi") == ((640, 480), (512, 512))
     assert images.screen("lunii") == ((320, 240), (320, 240))
     assert images.screen("flam") == ((320, 212), (104, 136))
-    assert set(images.SCREENS) == set(FORMATS)
+    assert set(images.SCREENS) == set(CARD_FORMATS)
 
 
 def test_a_smaller_card_shrinks_everything_around_it() -> None:

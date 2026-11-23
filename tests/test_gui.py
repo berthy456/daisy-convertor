@@ -1087,8 +1087,22 @@ def test_the_window_offers_every_player(app: gui.App) -> None:
             "Commercial PK",
             "Flam",
             "Merlin (beta)",
+            "MP3 playlist",
         ]
     )
+
+
+def test_an_mp3_pack_hides_the_picture_and_the_emulator(app: gui.App) -> None:
+    """A plain player is given no cards, so the window has nothing to draw or preview."""
+    app.format_var.set("mp3")
+    app._show_cover()
+    assert not app.crop_frame.grid_info(), "the picture frame has nothing to show"
+    assert not app.crop_side.grid_info(), "nor its knobs"
+    assert app.test_button.instate(["disabled"]), "there is no story to test"
+    app.format_var.set("telmi")
+    app._show_cover()
+    assert app.crop_frame.grid_info(), "and the frame comes back for a story-teller"
+    assert app.test_button.instate(["!disabled"])
 
 
 def test_the_negative_is_offered_for_the_grey_screen_only(app: gui.App) -> None:

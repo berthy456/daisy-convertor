@@ -1,6 +1,6 @@
 # daisy-convertor
 
-Turn an audiobook into a story for a **Telmi**, a **Lunii**, a **Flam** or a **Merlin** story-teller.
+Turn an audiobook into a story for a **Telmi**, a **Lunii**, a **Flam** or a **Merlin** story-teller, or into a folder of MP3s for an ordinary player.
 
 Give it a book — a DAISY audiobook, an EPUB, or a folder holding either — and it gives back a zip the machine understands: one part per chapter, the book's own audio, and a picture for each part.
 
@@ -33,7 +33,7 @@ The story is written next to the book, so you find it where the book already is.
 
 ### 2. Say which machine the story is for
 
-**Story format**: Telmi, Lunii (B/W), Commercial PK, Flam, or Merlin (beta). Choose this before the cover: it decides the shape of every screen the pictures have to fit, and the pictures are drawn to match.
+**Story format**: Telmi, Lunii (B/W), Commercial PK, Flam, Merlin (beta), or MP3 playlist. Choose this before the cover: it decides the shape of every screen the pictures have to fit, and the pictures are drawn to match. The MP3 playlist draws no pictures at all: it is a folder of chapters for an ordinary player.
 
 Only the plain Lunii's screen has no colour, so only next to it does a **Negative cards** tick appear: it turns the picture inside out, as an old film's negative reads.
 
@@ -80,6 +80,7 @@ The app can read the cards in a real voice. On the first conversion it offers to
 | Commercial PK | the `.pk` in Lunii.QT or open-story-teller, which writes it onto a story card. The same story in the layout the card keeps, and each picture brings its own sixteen colours |
 | Flam | the same Telmi import; the Flam's own screen sizes are already used |
 | Merlin | the unzipped folder onto the micro-SD card; `IMPORT.txt` inside says which files to copy and which never to delete |
+| MP3 playlist | the unzipped folder onto any player's disk; it opens the folder and reads its playlist |
 
 ## Small things that come up
 

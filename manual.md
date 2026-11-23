@@ -37,7 +37,7 @@ No arguments opens the GUI. The output folder is a parent: inside it the story g
 | :--- | :--- | :--- |
 | `-v`, `--verbose` | | logs every ffmpeg call |
 | `-f`, `--force` | | writes into a non-empty output folder |
-| `--format` | `telmi` `lunii` `lunii-pk` `flam` `merlin` | `telmi` |
+| `--format` | `telmi` `lunii` `lunii-pk` `flam` `merlin` `mp3` | `telmi` |
 | `--merlin-merge` | a `playlist.bin` copied off a Merlin card | |
 | `--version` | | |
 
@@ -87,6 +87,7 @@ Cards get a spoken number only when the cut is by chapter. At paragraph or sente
 | `lunii-pk` | `<Title>.<8 hex>.plain.pk` | the layout a Lunii story card keeps itself; Lunii.QT or open-story-teller writes it onto a card |
 | `flam` | `<story folder>.zip` | the Telmi archive, at the Flam's own screen sizes (320×212 scene, 104×136 thumbnail) |
 | `merlin` | `<story>_merlin.zip` | beta |
+| `mp3` | `<Book title>.zip` | one folder of MP3s and playlists, for a player that is not a story-teller |
 
 The Telmi story folder is always written as well; the archive is made from it.
 
@@ -144,6 +145,26 @@ No screen, no story graph: the micro-SD card holds one flat folder of `.mp3` and
 `--merlin-merge PLAYLIST.bin` writes a file holding the card's own records plus this story under its root; without it the file lists only this story, and the card's own content stops showing until its original file is put back. `IMPORT.txt` in the archive says which files to copy and which ones (`sleep.cfg`, `wifi.cfg`, the `default` folder) never to delete.
 
 The format is undocumented and nothing here has been read back off a real Merlin. Telmi, Lunii and Flam are the stable outputs.
+
+### mp3 playlist pack
+
+No cards and no story graph: the archive holds one folder named after the book, which a player opens directly.
+
+```
+L'aigui creuse/
+  001 - Chap 1 - L'aigui creuse.mp3        one per part; the number leads so a sorted player keeps the order
+  001 - Chap 1 - L'aigui creuse-intro.mp3  the part's number and name spoken, sorted in front of it
+  001 - Chap 1 - L'aigui creuse.lrc        the part's synced text, one `[mm:ss.xx]` line each
+  001 - Chap 1 - L'aigui creuse.srt        the same lines as subtitles
+  L'aigui creuse.m3u8  .m3u  .pls  .xspf   the same files in the same order, in four playlist formats
+  L'aigui creuse.txt                       what the pack declared, then one line per part
+  L'aigui creuse - text.txt                the book as plain text
+  source/                                  the pack's own XML and SMIL, when it is a text-only DAISY
+```
+
+Every player reads an M3U; `.m3u8` is the same file in UTF-8, which is what a title with accents needs, and `.pls` and `.xspf` are for players that want the lengths and titles as fields instead of comments.
+
+`--announce` chooses what the interludes say; `off` writes none. The `.lrc` and the `.srt` are written only where the pack synced its text to the audio, and a player picks them up beside the MP3 of the same name: VLC and mpv read the `.srt`, lyric screens the `.lrc`. A pack that synced only its headings gets one line per part.
 
 ### Contract, taken from the reference implementations
 

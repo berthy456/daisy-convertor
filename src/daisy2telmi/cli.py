@@ -10,7 +10,7 @@ import tempfile
 from dataclasses import replace
 from pathlib import Path
 
-from . import __version__, audio, chapters, covers, images, merlin, settings, tts
+from . import __version__, audio, chapters, covers, images, merlin, playlist, settings, tts
 from .chapters import ChapterError
 from .detector import DaisyPackError, open_pack
 from .extractor import CUT_LEVELS, extract
@@ -33,13 +33,17 @@ log = logging.getLogger("daisy-convertor")
 # The players, and the archive each one imports. Telmi, the Flam and a commercial
 # Lunii card carry colour; a plain Lunii screen has sixteen greys, so its cards are
 # redrawn. The Merlin has no screen and no story graph: it takes a card of flat files.
-FORMATS = ("telmi", "lunii", "lunii-pk", "flam", "merlin")
+# The mp3 pack has no story graph and no pictures either: it is for an ordinary
+# audio player, which is why it is the one format written without a card.
+FORMATS = ("telmi", "lunii", "lunii-pk", "flam", "merlin", "mp3")
+CARD_FORMATS = tuple(fmt for fmt in FORMATS if fmt != "mp3")
 PLAYER = {
     "telmi": "Telmi Sync",
     "lunii": "the Lunii",
     "lunii-pk": "a commercial Lunii card",
     "flam": "the Flam launcher",
     "merlin": "the Merlin story-teller",
+    "mp3": "an ordinary audio player",
 }
 # The two Lunii exports hold the same story; the archive and the pictures differ:
 # STUdio's zip with grey cards, or the layout the card keeps with colour ones.
@@ -185,8 +189,10 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         choices=FORMATS,
         help="which player the story is written for: Telmi (default), a Lunii, whose "
         "cards are redrawn in its sixteen greys, a commercial Lunii .pk, the same "
-        "story in the layout the card itself keeps, a Flam, or a Merlin story-teller "
-        "(beta), whose card holds flat files and a playlist.bin",
+        "story in the layout the card itself keeps, a Flam, a Merlin story-teller "
+        "(beta), whose card holds flat files and a playlist.bin, or an mp3 playlist "
+        "pack: one mp3 per chapter, a spoken chapter name before each, the book's "
+        "text and four playlists, for any player that is not a story-teller",
     )
     parser.add_argument(
         "--merlin-merge",
@@ -363,7 +369,9 @@ def convert(
                 log.info("dropped %s: converting %d chapter(s)", drop, len(book.chapters))
             for chapter in book.chapters:
                 log.debug("  %s -> %s", chapter.title, [str(s.src.name) for s in chapter.segments])
-            name = story_dir_name(book.title, story_uuid(book))
+            # A player shows the folder's name, so the playlist pack is named after
+            # the book; the story formats keep Telmi's `<category>_<age>_<title>_<uuid>`.
+            name = playlist.safe_name(book.title) if fmt == "mp3" else story_dir_name(book.title, story_uuid(book))
             target = output_dir if output_dir.name == name else output_dir / name
             if target.exists() and any(target.iterdir()) and not force:
                 log.error(
@@ -374,36 +382,43 @@ def convert(
                 return 2
             target.mkdir(parents=True, exist_ok=True)
             view = images.crop_view(crop, zoom, focus)
-            # The Merlin has no story graph to write: its card is made from the
-            # Telmi story, so that one is built at Telmi's sizes first.
-            player = "telmi" if fmt == "merlin" else fmt
-            if fmt == "lunii":
-                # The greys cannot be recovered from the colour cards: their ground
-                # is dark and the Lunii wants the other way round. Draw a second
-                # set in a scratch folder and build the archive from those.
-                with tempfile.TemporaryDirectory(prefix="daisy-convertor-lunii-") as scratch:
-                    grey = Path(scratch)
-                    report = build_story(
-                        book, target, announce, cover, cut, crop, grey, player=fmt, view=view, negative=negative
-                    )
-                    archive = write_studio_zip(target, image_dir=grey)
+            report = None
+            if fmt == "mp3":
+                # No cards, no story graph: the pack is the chapters themselves.
+                written = playlist.export(book, announce, target, input_path, pack.root)
+                archive = shutil.make_archive(str(target), "zip", target.parent, base_dir=target.name)
+                log.info("wrote %d file(s) to %s", len(written), target)
             else:
-                # The `.pk` is the commercial layout: its pictures keep their own
-                # sixteen colours, so they are drawn from the colour cards as they are.
-                report = build_story(book, target, announce, cover, cut, crop, player=player, view=view)
-                if fmt == "lunii-pk":
-                    archive = write_pack(target)
-                elif fmt == "merlin":
-                    log.warning(
-                        "the Merlin export is beta: its card format is undocumented, "
-                        "so nothing here has been read back off a real device"
-                    )
-                    card = target.parent / f"{target.name}_merlin"
-                    names = merlin.export(target, card, [c.title for c in book.chapters], merge)
-                    archive = shutil.make_archive(str(card), "zip", card)
-                    log.info("wrote %d card file(s) and a %s to %s", len(names), merlin.PLAYLIST, card)
+                # The Merlin has no story graph to write: its card is made from the
+                # Telmi story, so that one is built at Telmi's sizes first.
+                player = "telmi" if fmt == "merlin" else fmt
+                if fmt == "lunii":
+                    # The greys cannot be recovered from the colour cards: their ground
+                    # is dark and the Lunii wants the other way round. Draw a second
+                    # set in a scratch folder and build the archive from those.
+                    with tempfile.TemporaryDirectory(prefix="daisy-convertor-lunii-") as scratch:
+                        grey = Path(scratch)
+                        report = build_story(
+                            book, target, announce, cover, cut, crop, grey, player=fmt, view=view, negative=negative
+                        )
+                        archive = write_studio_zip(target, image_dir=grey)
                 else:
-                    archive = write_story_zip(target, target.parent)
+                    # The `.pk` is the commercial layout: its pictures keep their own
+                    # sixteen colours, so they are drawn from the colour cards as they are.
+                    report = build_story(book, target, announce, cover, cut, crop, player=player, view=view)
+                    if fmt == "lunii-pk":
+                        archive = write_pack(target)
+                    elif fmt == "merlin":
+                        log.warning(
+                            "the Merlin export is beta: its card format is undocumented, "
+                            "so nothing here has been read back off a real device"
+                        )
+                        card = target.parent / f"{target.name}_merlin"
+                        names = merlin.export(target, card, [c.title for c in book.chapters], merge)
+                        archive = shutil.make_archive(str(card), "zip", card)
+                        log.info("wrote %d card file(s) and a %s to %s", len(names), merlin.PLAYLIST, card)
+                    else:
+                        archive = write_story_zip(target, target.parent)
     except ChapterError as exc:
         log.error("%s", exc)
         return 2
@@ -421,8 +436,10 @@ def convert(
         _unfinished(target)
         return 1
 
-    log.info("wrote %d scene(s) to %s", len(report.stages), report.out_dir)
     log.info("zipped for %s import: %s", PLAYER[fmt], archive)
+    if report is None:
+        return 0
+    log.info("wrote %d scene(s) to %s", len(report.stages), report.out_dir)
     if fmt in LUNII:
         log.info("night mode: offered, as a converted audiobook has nothing to choose")
     log.info(

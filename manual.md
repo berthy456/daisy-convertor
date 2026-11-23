@@ -166,6 +166,10 @@ Every player reads an M3U; `.m3u8` is the same file in UTF-8, which is what a ti
 
 `--announce` chooses what the interludes say; `off` writes none. The `.lrc` and the `.srt` are written only where the pack synced its text to the audio, and a player picks them up beside the MP3 of the same name: VLC and mpv read the `.srt`, lyric screens the `.lrc`. A pack that synced only its headings gets one line per part.
 
+Each line's start comes from the clips its text was read over: a part's spans are laid end to end in order, then scaled to the length of the MP3 that was actually written, because a SMIL rounds the `npt` values it declares. A span with no declared range is timed by probing its own audio file.
+
+The web page writes the same folder, with the same four playlists and the same lyric files; its interludes are the page's recorded announcements. It writes no `source/` copy: the page refuses a pack that has no audio to write.
+
 ### Contract, taken from the reference implementations
 
 `DantSu/Telmi-Sync` (`ConvertFolder.js`, `Stories.js`, `Strings.js`, `FFmpegCommand.js`) and `DantSu/Telmi-story-teller` (`stories_reader.h`):
@@ -216,6 +220,8 @@ Drag-and-drop needs the optional `tkinterdnd2`; without it the browse buttons wo
 
 Once a pack has been read, the page lists the parts with their lengths, each with a box: untick one to leave it out. The numbers belong to the chosen cut level, so changing level redraws the list; past 400 parts the page only says how many there are. **The chapter cards** holds three boxes: show how many parts there are on the drawn card, say the word chapter, say how many parts there are. The choices are kept in `localStorage` and travel to the drawn card text and to the card audio.
 
+**MP3 playlist** is written on its own: the cover frame, the crop controls and **Test the story** are hidden, because a plain player is handed no pictures at all and there is no story graph to play back.
+
 `web/voices/<language>/01.mp3` … `50.mp3` are the pre-recorded announcements ("Chapter 4"), `n-01.mp3` … `n-50.mp3` the numbers alone, and `of-pre.mp3`, `of-mid.mp3` and `of-post.mp3` the words the language puts around the total, split out of its own `{n} of {total}` pattern so a language that names the part before the number, or after both, is recorded as it speaks. `tools/make_web_voices.py` generates them all, from Chatterbox (`--engine chatterbox --python <interpreter with chatterbox-tts>`) or from espeak-ng, which is the default and needs no download, and levels every clip to the loudness the app levels its cards to. The chapter clips committed are the Chatterbox ones; the bare numbers and the fragments are espeak-ng, because Chatterbox 0.1.7 loses its place on a one-word phrase and answers "of" with 23 seconds of noise. A browser tab can play speech but cannot capture it into a file, so the clips are committed rather than synthesised during conversion; past chapter 50 the cards stay silent.
 
 The page concatenates MP3 frame data instead of re-encoding. That is safe because the player resamples, but it means no clip trimming and no bitrate normalisation.
@@ -232,7 +238,7 @@ pytest
 node --test tests/web/*.test.mjs
 ```
 
-385 Python tests, 110 for the browser modules. The integration tests skip themselves if `gon-ruby-mp3.zip` or `ffprobe` is absent. `tests/test_published_pack.py` checks a real published Telmi story against the same validator; it skips unless `TELMI_SAMPLE` points at one. `tests/test_lunii_pk.py` re-encodes the pictures of a real `.plain.pk`; it skips unless `LUNII_SAMPLE` points at one. `tests/test_gui.py` skips where there is no Tk or no display.
+416 Python tests, 124 for the browser modules. The integration tests skip themselves if `gon-ruby-mp3.zip` or `ffprobe` is absent. `tests/test_published_pack.py` checks a real published Telmi story against the same validator; it skips unless `TELMI_SAMPLE` points at one. `tests/test_lunii_pk.py` re-encodes the pictures of a real `.plain.pk`; it skips unless `LUNII_SAMPLE` points at one. `tests/test_gui.py` skips where there is no Tk or no display.
 
 ## Build a binary
 

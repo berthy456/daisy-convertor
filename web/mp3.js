@@ -87,6 +87,20 @@ export function concatSegments(segments) {
   return join(parts);
 }
 
+/** How long a stream is, by adding up its frames; null when its headers do not decode. */
+export function mp3Duration(bytes) {
+  const data = mp3Frames(bytes);
+  let at = 0;
+  let seconds = 0;
+  while (at < data.length) {
+    const frame = frameAt(data, at);
+    if (!frame) return null;
+    seconds += frame.duration;
+    at += frame.length;
+  }
+  return seconds;
+}
+
 /** Whole files joined into one MP3 stream, in playback order. */
 export function concatMp3(files) {
   return join(files.map(mp3Frames).filter((part) => part.length > 0));

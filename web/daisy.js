@@ -222,6 +222,19 @@ const sentences = (text) => text.split(SENTENCES).map((s) => s.trim()).filter(Bo
 const firstWords = (body) => sentences(body).find((s) => s.length >= 5) ?? "";
 
 /**
+ * Join the pack's synced texts, dropping a text repeated by the clips after it.
+ *
+ * A pack that synced only its headings writes the heading once in the `<par>` that
+ * holds the whole level, and every clip of that level inherits it: joining them as
+ * they come would read the heading once per sentence.
+ */
+function joinTexts(texts) {
+  const joined = [];
+  for (const text of texts) if (!joined.length || text !== joined[joined.length - 1]) joined.push(text);
+  return joined.join(" ");
+}
+
+/**
  * The outline level that holds the book's chapters. The shallowest is usually it,
  * but a DAISY 3 outline often has one `h1` wrapping everything, which would give
  * a single part as long as the book; the level below it holds the real chapters.
@@ -339,8 +352,10 @@ export function extractBook(entries, level = "chapter") {
     const hash = raw.indexOf("#");
     const filePart = hash < 0 ? raw : raw.slice(0, hash);
     const anchor = hash < 0 ? "" : raw.slice(hash + 1);
-    if (!filePart || !anchor) return "";
-    const name = normalizePath(`${base}/${filePart}`);
+    // A producer that synced only its headings writes `<text src="#h51"/>` with no
+    // file named: the words live in the pack's own text document, which is the NCC.
+    const name = filePart ? normalizePath(`${base}/${filePart}`) : pack.isNcc ? pack.toc.name : "";
+    if (!name || !anchor) return "";
     if (!textCache.has(name)) textCache.set(name, parse(name));
     const root = textCache.get(name);
     if (!root) return "";
@@ -367,9 +382,12 @@ export function extractBook(entries, level = "chapter") {
         const target = audio ? audioOf(audio, smilName) : null;
         if (!target) continue;
         const words = par.find("text")[0];
+        const text = textAt(words ? words.get("src") ?? "" : "", dirName(smilName));
+        const clip = { src: target, ...clipOf(audio) };
         found.push({
-          segments: [{ src: target, ...clipOf(audio) }],
-          text: textAt(words ? words.get("src") ?? "" : "", dirName(smilName)),
+          segments: [clip],
+          text,
+          spans: text ? [{ text, ...clip }] : [],
         });
       }
     }
@@ -378,12 +396,12 @@ export function extractBook(entries, level = "chapter") {
       // are kept so the part's audio can be made from them elsewhere.
       for (const element of named(root, "text")) {
         const words = textAt(element.get("src") ?? "", dirName(smilName));
-        if (words) found.push({ segments: [], text: words });
+        if (words) found.push({ segments: [], text: words, spans: [] });
       }
     }
     const result = found.length
       ? found
-      : smilSegments(smilName).map((segment) => ({ segments: [segment], text: "" }));
+      : smilSegments(smilName).map((segment) => ({ segments: [segment], text: "", spans: [] }));
     marksCache.set(smilName, result);
     return result;
   };
@@ -402,7 +420,8 @@ export function extractBook(entries, level = "chapter") {
     if (level === "chapter" && draft.level > chapterLevel && chapters.length) {
       const previous = chapters[chapters.length - 1];
       previous.segments.push(...draft.segments);
-      previous.body = [previous.body, draft.body].filter(Boolean).join(" ");
+      previous.spans.push(...draft.spans);
+      previous.body = joinTexts([previous.body, draft.body].filter(Boolean));
     } else {
       chapters.push(draft);
     }
@@ -422,7 +441,14 @@ export function extractBook(entries, level = "chapter") {
       const marks = smilMarks(smilName);
       if (level === "sentence") {
         for (const mark of marks) {
-          chapters.push({ title: "", segments: [...mark.segments], text: mark.text, body: mark.text, level: entry.level });
+          chapters.push({
+            title: "",
+            segments: [...mark.segments],
+            text: mark.text,
+            body: mark.text,
+            spans: [...mark.spans],
+            level: entry.level,
+          });
         }
         continue;
       }
@@ -430,7 +456,8 @@ export function extractBook(entries, level = "chapter") {
         title: entry.title || `Part ${chapters.length + 1}`,
         segments: [...segments],
         text: openingText(marks),
-        body: marks.map((mark) => mark.text).filter(Boolean).join(" "),
+        body: joinTexts(marks.map((mark) => mark.text).filter(Boolean)),
+        spans: marks.flatMap((mark) => mark.spans),
         level: entry.level,
       });
       continue;
@@ -447,7 +474,7 @@ export function extractBook(entries, level = "chapter") {
     const body = pageCache.get(name).get(document.anchor) ?? "";
     if (level === "sentence") {
       for (const sentence of sentences(body)) {
-        chapters.push({ title: "", segments: [], text: sentence, body: sentence, level: entry.level });
+        chapters.push({ title: "", segments: [], text: sentence, body: sentence, spans: [], level: entry.level });
       }
       continue;
     }
@@ -456,6 +483,7 @@ export function extractBook(entries, level = "chapter") {
       segments: [],
       text: firstWords(body),
       body,
+      spans: [],
       level: entry.level,
     });
   }
@@ -480,6 +508,8 @@ export function extractBook(entries, level = "chapter") {
         // What a part says, whether or not the pack also recorded it: a pack with
         // no audio has only this, which this page cannot turn into sound.
         body: c.body ?? "",
+        // That same text one piece per synced clip, in the order the clips play.
+        spans: c.spans ?? [],
         segments: merge(c.segments),
       })),
     frontMatter: merge(frontMatter),

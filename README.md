@@ -82,6 +82,8 @@ The app can read the cards in a real voice. On the first conversion it offers to
 | Merlin | the unzipped folder onto the micro-SD card; `IMPORT.txt` inside says which files to copy and which never to delete |
 | MP3 playlist | the unzipped folder onto any player's disk; it opens the folder and reads its playlist |
 
+**The chapters show their text.** Where the DAISY pack synced its text to the audio, each chapter's MP3 gets a `.lrc` and a `.srt` beside it: VLC and mpv read the subtitles, a lyric screen reads the lyrics.
+
 ## Small things that come up
 
 **The Mac says the app cannot be opened.** It is not signed by Apple. Right-click it and choose **Open** once; after that it opens normally.

@@ -17,6 +17,7 @@ import { buildStoryZip } from "./convert.js";
 import { LANGUAGES, NAMES, apply, pickLanguage, text } from "./i18n.js";
 import { buildPlainPk, buildStudioZip, packName } from "./lunii.js";
 import { buildMerlinFiles } from "./merlin.js";
+import { buildPlaylistZip } from "./playlist.js";
 import { cardAudio } from "./voices.js";
 import { readZip, writeZip } from "./zip.js";
 
@@ -50,6 +51,7 @@ const cardBoxes = {
   count: document.getElementById("card-count"),
 };
 const formatInputs = [...document.querySelectorAll('input[name="format"]')];
+const coverSection = document.getElementById("cover-section");
 const negativeRow = document.getElementById("card-negative-row");
 const negativeBox = document.getElementById("card-negative");
 const partsBox = document.getElementById("parts");
@@ -167,10 +169,14 @@ function startCards() {
   }
 }
 
-function showNegative() {
+function showFormat() {
   // Only the plain Lunii screen has no colour, so only its cards can be read the
   // other way round; the choice stays put while another player is chosen.
   negativeRow.hidden = format !== "lunii";
+  // A plain player is handed no pictures at all, so there is no cover to frame and
+  // no story for the drawn machine to play.
+  coverSection.hidden = format === "mp3";
+  testButton.hidden = format === "mp3";
 }
 
 function startFormat() {
@@ -181,11 +187,11 @@ function startFormat() {
     input.addEventListener("change", () => {
       format = input.value;
       remember(STORED_FORMAT, format);
-      showNegative();
+      showFormat();
       drawCrop();
     });
   }
-  showNegative();
+  showFormat();
 }
 
 function startNegative() {
@@ -218,6 +224,7 @@ function cropView() {
  * worth seeing before one exists.
  */
 function drawCrop() {
+  if (format === "mp3") return;
   const [scene] = screen(format);
   const width = CROP_WIDTH;
   const height = Math.round((width * scene[1]) / scene[0]);
@@ -492,41 +499,47 @@ async function buildPack() {
 
   const entries = await packEntries();
   log(t("log_files", { n: entries.length }));
-  const story = await buildStoryZip(
-    entries,
-    silentMp3,
-    (label, done, total) => {
-      bar.value = done / total;
-      log(label);
-    },
-    {
-      cover,
-      crop,
-      zoom,
-      focus,
-      cut,
-      drop: [...dropped],
-      player: format,
-      // The plain Lunii screen has no colour: its cards go to its own sixteen
-      // greys. A commercial `.pk` keeps each picture's own sixteen colours.
-      style: format === "lunii" ? "bw" : "colour",
-      negative,
-      t: (key) => t(key),
-      cardLabel: (number, total, worded) =>
-        t(cards.total ? (worded ? "card_label" : "card_number") : (worded ? "card_label_one" : "card_number_one"), {
-          n: number,
-          total,
-        }),
-      cardAudio: async (number, count) => {
-        const voice = await cardAudio(lang, number, {
-          word: cards.word,
-          count: cards.count ? count : null,
+  const progress = (label, done, total) => {
+    bar.value = done / total;
+    log(label);
+  };
+  const spoken = async (number, count) => {
+    const voice = await cardAudio(lang, number, {
+      word: cards.word,
+      count: cards.count ? count : null,
+    });
+    if (voice === null) log(t("log_card_silent", { n: number }));
+    return voice;
+  };
+  // An mp3 pack has no cards and no story graph, so it is written on its own.
+  const story =
+    format === "mp3"
+      ? await buildPlaylistZip(entries, progress, {
+          cut,
+          drop: [...dropped],
+          t: (key) => t(key),
+          cardAudio: spoken,
+        })
+      : await buildStoryZip(entries, silentMp3, progress, {
+          cover,
+          crop,
+          zoom,
+          focus,
+          cut,
+          drop: [...dropped],
+          player: format,
+          // The plain Lunii screen has no colour: its cards go to its own sixteen
+          // greys. A commercial `.pk` keeps each picture's own sixteen colours.
+          style: format === "lunii" ? "bw" : "colour",
+          negative,
+          t: (key) => t(key),
+          cardLabel: (number, total, worded) =>
+            t(cards.total ? (worded ? "card_label" : "card_number") : (worded ? "card_label_one" : "card_number_one"), {
+              n: number,
+              total,
+            }),
+          cardAudio: spoken,
         });
-        if (voice === null) log(t("log_card_silent", { n: number }));
-        return voice;
-      },
-    },
-  );
 
   // One archive, for the player chosen: a Lunii takes the STUdio form of the same
   // story, or the layout its card keeps itself; the Flam launcher imports the Telmi

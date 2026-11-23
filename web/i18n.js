@@ -39,6 +39,7 @@ export const UI = {
     card_negative: "B&W inversion (negative)",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (beta)",
+    fmt_mp3: "MP3 playlist",
     language: "Language",
     cover_title: "Cover image",
     cover_hint: "Optional. Without one the cards keep a plain background.",
@@ -130,6 +131,8 @@ export const UI = {
     prog_title_audio: "title audio",
     prog_title_images: "title images",
     prog_metadata: "story metadata",
+    prog_interludes: "chapter names",
+    prog_playlists: "playlists and text",
   },
   fr: {
     tagline:
@@ -147,6 +150,7 @@ export const UI = {
     card_negative: "Inversion N&B (négatif)",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (bêta)",
+    fmt_mp3: "Liste MP3",
     language: "Langue",
     cover_title: "Image de couverture",
     cover_hint: "Facultatif. Sans couverture, les cartes gardent un fond uni.",
@@ -238,6 +242,8 @@ export const UI = {
     prog_title_audio: "audio du titre",
     prog_title_images: "images du titre",
     prog_metadata: "métadonnées de l'histoire",
+    prog_interludes: "noms des chapitres",
+    prog_playlists: "listes de lecture et texte",
   },
   zh: {
     tagline: "放入 DAISY 有声书包，得到 Telmi、Lunii 或 Flam 故事。不上传任何内容：转换在本页完成。",
@@ -254,6 +260,7 @@ export const UI = {
     card_negative: "黑白反相（负片）",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (测试版)",
+    fmt_mp3: "MP3 播放列表",
     language: "语言",
     cover_title: "封面图片",
     cover_hint: "可选。没有封面时，卡片只用纯色背景。",
@@ -339,6 +346,8 @@ export const UI = {
     prog_title_audio: "标题音频",
     prog_title_images: "标题图片",
     prog_metadata: "故事元数据",
+    prog_interludes: "章节名称",
+    prog_playlists: "播放列表和文本",
   },
   ar: {
     tagline: "ضع حزمة كتاب صوتي DAISY لتحصل على قصة لـ Telmi أو Lunii أو Flam. لا يُرفع شيء: التحويل يجري في هذه الصفحة.",
@@ -355,6 +364,7 @@ export const UI = {
     card_negative: "عكس الأبيض والأسود (سالبي)",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (تجريبي)",
+    fmt_mp3: "قائمة MP3",
     language: "اللغة",
     cover_title: "صورة الغلاف",
     cover_hint: "اختياري. بدون غلاف تحتفظ البطاقات بخلفية سادة.",
@@ -440,6 +450,8 @@ export const UI = {
     prog_title_audio: "صوت العنوان",
     prog_title_images: "صور العنوان",
     prog_metadata: "بيانات القصة",
+    prog_interludes: "أسماء الفصول",
+    prog_playlists: "قوائم التشغيل والنص",
   },
   tr: {
     tagline:
@@ -457,6 +469,7 @@ export const UI = {
     card_negative: "Siyah-beyaz tersleme (negatif)",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (beta)",
+    fmt_mp3: "MP3 çalma listesi",
     language: "Dil",
     cover_title: "Kapak resmi",
     cover_hint: "Zorunlu değil. Kapak yoksa kartlar düz zemin kullanır.",
@@ -548,6 +561,8 @@ export const UI = {
     prog_title_audio: "başlık sesi",
     prog_title_images: "başlık resimleri",
     prog_metadata: "hikâye üst verisi",
+    prog_interludes: "bölüm adları",
+    prog_playlists: "çalma listeleri ve metin",
   },
   de: {
     tagline:
@@ -565,6 +580,7 @@ export const UI = {
     card_negative: "S/W-Umkehr (Negativ)",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (Beta)",
+    fmt_mp3: "MP3-Playlist",
     language: "Sprache",
     cover_title: "Coverbild",
     cover_hint: "Optional. Ohne Cover behalten die Karten einfarbigen Grund.",
@@ -656,6 +672,8 @@ export const UI = {
     prog_title_audio: "Titel-Audio",
     prog_title_images: "Titelbilder",
     prog_metadata: "Geschichten-Metadaten",
+    prog_interludes: "Kapitelnamen",
+    prog_playlists: "Wiedergabelisten und Text",
   },
   it: {
     tagline:
@@ -673,6 +691,7 @@ export const UI = {
     card_negative: "Inversione B/N (negativo)",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (beta)",
+    fmt_mp3: "Playlist MP3",
     language: "Lingua",
     cover_title: "Immagine di copertina",
     cover_hint: "Facoltativa. Senza copertina le carte restano su sfondo uniforme.",
@@ -764,6 +783,8 @@ export const UI = {
     prog_title_audio: "audio del titolo",
     prog_title_images: "immagini del titolo",
     prog_metadata: "metadati della storia",
+    prog_interludes: "nomi dei capitoli",
+    prog_playlists: "playlist e testo",
   },
   es: {
     tagline:
@@ -781,6 +802,7 @@ export const UI = {
     card_negative: "Inversión B/N (negativo)",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (beta)",
+    fmt_mp3: "Lista MP3",
     language: "Idioma",
     cover_title: "Imagen de portada",
     cover_hint: "Opcional. Sin portada, las tarjetas mantienen un fondo liso.",
@@ -872,6 +894,8 @@ export const UI = {
     prog_title_audio: "audio del título",
     prog_title_images: "imágenes del título",
     prog_metadata: "metadatos del cuento",
+    prog_interludes: "nombres de los capítulos",
+    prog_playlists: "listas de reproducción y texto",
   },
   pt: {
     tagline:
@@ -889,6 +913,7 @@ export const UI = {
     card_negative: "Inversão P&B (negativo)",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (beta)",
+    fmt_mp3: "Lista MP3",
     language: "Idioma",
     cover_title: "Imagem de capa",
     cover_hint: "Opcional. Sem capa, os cartões mantêm fundo liso.",
@@ -980,6 +1005,8 @@ export const UI = {
     prog_title_audio: "áudio do título",
     prog_title_images: "imagens do título",
     prog_metadata: "metadados da história",
+    prog_interludes: "nomes dos capítulos",
+    prog_playlists: "listas de reprodução e texto",
   },
   nl: {
     tagline:
@@ -997,6 +1024,7 @@ export const UI = {
     card_negative: "Z/W-omkering (negatief)",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (bèta)",
+    fmt_mp3: "MP3-afspeellijst",
     language: "Taal",
     cover_title: "Omslagafbeelding",
     cover_hint: "Optioneel. Zonder omslag houden de kaarten een effen achtergrond.",
@@ -1088,6 +1116,8 @@ export const UI = {
     prog_title_audio: "titelaudio",
     prog_title_images: "titelafbeeldingen",
     prog_metadata: "verhaalmetadata",
+    prog_interludes: "hoofdstuknamen",
+    prog_playlists: "afspeellijsten en tekst",
   },
 };
 

@@ -190,7 +190,7 @@ def test_the_folder_button_hands_back_the_folder_being_shown(app: gui.App, tmp_p
 def test_the_player_is_chosen_before_the_cover(app: gui.App) -> None:
     """The player decides the size of every picture, so it is asked before the cover."""
     player_row = int(app.format_box.master.grid_info()["row"])
-    cover_row = int(app._labels["cover_label"].grid_info()["row"])
+    cover_row = int(app._labels["cover_label"].master.grid_info()["row"])
     assert player_row < cover_row
 
 
@@ -828,6 +828,18 @@ def test_the_negative_is_offered_for_the_grey_screen_only(app: gui.App) -> None:
     app.format_var.set("lunii-pk")
     app._show_negative()
     assert app.negative_box.instate(["disabled"]), "a Commercial PK keeps its colours"
+
+
+def test_the_crop_knobs_stand_beside_the_frame(app: gui.App) -> None:
+    """The choice is made on the picture, so what changes it sits next to it."""
+    frame = app.crop_frame.grid_info()
+    side = app.negative_box.master
+    beside = side.grid_info()
+    assert int(frame["column"]) == 0 and int(beside["column"]) == 1, "the knobs are to the right of the frame"
+    assert beside["row"] == frame["row"], "the same row as the frame"
+    assert all(box.master is side for box in app.crop_boxes.values()), "the three bands too"
+    assert app.crop_zoom.master.master is side, "and the zoom"
+    assert side is not app.format_box.master, "the negative belongs to the picture, not to the format"
 
 
 def test_the_negative_reaches_the_conversion(app: gui.App, tmp_path, monkeypatch) -> None:

@@ -295,6 +295,31 @@ input[type="file"] {
   margin-top: 0.5rem;
 }
 
+/* On a wide screen the knobs that change what the frame shows stand beside it, the
+   way they do in the app; on a narrow one they keep their place underneath. */
+@media (min-width: 62rem) {
+  .crop-box {
+    display: grid;
+    grid-template-columns: minmax(0, 45rem) minmax(14rem, 17rem);
+    gap: 0.5rem 1rem;
+    align-items: start;
+  }
+
+  .crop-box .crop-tools {
+    grid-column: 2;
+    grid-row: 1;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+    margin-top: 0;
+  }
+
+  .crop-box .crop-note {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}
+
 .crop,
 .crop-zoom {
   display: inline-flex;

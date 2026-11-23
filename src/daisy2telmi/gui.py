@@ -422,7 +422,11 @@ class App:
 
         grid = ttk.Frame(self.root, padding=(12, 0))
         grid.grid(row=1, column=0, sticky="nsew")
+        # Three columns: the picture on the left, the knobs that change it in the
+        # middle, the log on the right. Both stretchy columns share the spare width
+        # when the window is widened.
         grid.columnconfigure(1, weight=1)
+        grid.columnconfigure(2, weight=1)
         grid.rowconfigure(7, weight=1)
 
         self._label(grid, "pack_label").grid(row=0, column=0, sticky="w")
@@ -444,21 +448,12 @@ class App:
         self.format_box = ttk.Combobox(format_row, values=self.format_names(), state="readonly", width=20)
         self.format_box.pack(side="left")
         self.format_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_format())
-        # Turning the picture inside out is a thing a grey screen does, so the box
-        # is only live next to the format that has one.
-        self.negative_var = tk.BooleanVar(value=bool(self.options["card_negative"]))
-        self.negative_box = ttk.Checkbutton(
-            format_row, text=self.t("card_negative"), variable=self.negative_var, command=self._pick_negative
-        )
-        self.negative_box.pack(side="left", padx=(12, 0))
-        self._labels["card_negative"] = self.negative_box
         self._show_formats()
-        self._show_negative()
 
-        self._label(grid, "cover_label").grid(row=5, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(grid, textvariable=self.cover_var).grid(row=5, column=1, sticky="ew", padx=(6, 0))
         cover_row = ttk.Frame(grid)
-        cover_row.grid(row=5, column=2, sticky="e", padx=(6, 0))
+        cover_row.grid(row=5, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        self._label(cover_row, "cover_label").pack(side="left")
+        ttk.Entry(cover_row, textvariable=self.cover_var, width=40).pack(side="left", padx=(6, 8))
         self._button(cover_row, "browse_cover", self._pick_cover).pack(side="left")
         # A lookup takes a second or two on its own thread, and three services are
         # asked before the answer says there is nothing: the window has to show it
@@ -480,39 +475,16 @@ class App:
             side="left", padx=(4, 0)
         )
 
-        # The frame and the log share a row: a frame this wide would push the log
-        # below the bottom of a laptop screen.
-        crop_row = ttk.Frame(grid)
-        crop_row.grid(row=7, column=0, sticky="nw", pady=(6, 0))
-        tools = ttk.Frame(crop_row)
-        tools.pack(anchor="w")
-        self._label(tools, "cover_crop_label").pack(side="left", padx=(0, 10))
-        self.crop_boxes: dict[str, ttk.Radiobutton] = {}
-        for mode in images.CROP_MODES:
-            box = ttk.Radiobutton(
-                tools,
-                text=self.t(f"crop_{mode}"),
-                variable=self.crop_var,
-                value=mode,
-                command=self._pick_crop,
-            )
-            self._labels[f"crop_{mode}"] = box
-            box.pack(side="left", padx=(0, 10))
-            self.crop_boxes[mode] = box
-        self._label(tools, "crop_zoom").pack(side="left", padx=(10, 4))
-        self.crop_zoom = ttk.Scale(
-            tools, from_=images.MIN_ZOOM, to=images.MAX_ZOOM, length=110, command=self._slide_crop
-        )
-        self.crop_zoom.pack(side="left")
-        self._button(tools, "crop_reset", self._reset_crop).pack(side="left", padx=10)
-
+        # The frame, its knobs and the log share the last row: a frame this wide
+        # would push the log below the bottom of a laptop screen.
+        #
         # The frame the chosen player shows, drawn from the cover: drag it to move,
         # the wheel or the arrows to enlarge. What is inside here is what the story
         # carries, so the choice is made on the picture instead of described to it.
         self.crop_frame = tk.Canvas(
-            crop_row, highlightthickness=0, cursor="fleur", takefocus=1, background=SUNK
+            grid, highlightthickness=0, cursor="fleur", takefocus=1, background=SUNK
         )
-        self.crop_frame.pack(anchor="w", pady=(6, 0))
+        self.crop_frame.grid(row=7, column=0, sticky="n", pady=(6, 0))
         self._crop_item = self.crop_frame.create_image(0, 0, anchor="nw")
         self.crop_frame.bind("<ButtonPress-1>", self._grab_crop)
         self.crop_frame.bind("<B1-Motion>", self._drag_crop)
@@ -530,9 +502,45 @@ class App:
         self.crop_frame.bind("<KeyPress-plus>", lambda _e: self._zoom_crop(1.2))
         self.crop_frame.bind("<KeyPress-equal>", lambda _e: self._zoom_crop(1.2))
         self.crop_frame.bind("<KeyPress-minus>", lambda _e: self._zoom_crop(1 / 1.2))
-        self._label(crop_row, "crop_hint").pack(anchor="w", pady=(2, 0))
+
+        # Everything that changes what the frame shows stands beside it, in the order
+        # the eye goes over a picture: which band to keep, how far in, then the way
+        # the player's own grey screen reads the ink.
+        side = ttk.Frame(grid)
+        side.grid(row=7, column=1, sticky="n", padx=(12, 0))
+        self._label(side, "cover_crop_label").pack(anchor="w")
+        self.crop_boxes: dict[str, ttk.Radiobutton] = {}
+        for mode in images.CROP_MODES:
+            box = ttk.Radiobutton(
+                side,
+                text=self.t(f"crop_{mode}"),
+                variable=self.crop_var,
+                value=mode,
+                command=self._pick_crop,
+            )
+            self._labels[f"crop_{mode}"] = box
+            box.pack(anchor="w", pady=(2, 0))
+            self.crop_boxes[mode] = box
+        zoom = ttk.Frame(side)
+        zoom.pack(anchor="w", pady=(8, 0))
+        self._label(zoom, "crop_zoom").pack(side="left", padx=(0, 6))
+        self.crop_zoom = ttk.Scale(
+            zoom, from_=images.MIN_ZOOM, to=images.MAX_ZOOM, length=110, command=self._slide_crop
+        )
+        self.crop_zoom.pack(side="left")
+        self._button(side, "crop_reset", self._reset_crop).pack(anchor="w", pady=(8, 0))
+        # Turning the picture inside out is a thing a grey screen does, so the box is
+        # only live next to the format that has one.
+        self.negative_var = tk.BooleanVar(value=bool(self.options["card_negative"]))
+        self.negative_box = ttk.Checkbutton(
+            side, text=self.t("card_negative"), variable=self.negative_var, command=self._pick_negative
+        )
+        self._labels["card_negative"] = self.negative_box
+        self.negative_box.pack(anchor="w", pady=(10, 0))
+        self._label(side, "crop_hint", wraplength=240).pack(anchor="w", pady=(10, 0))
         self.cover_var.trace_add("write", lambda *_: self._show_crop())
         self._show_crop()
+        self._show_negative()
 
         controls = ttk.Frame(grid)
         controls.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(8, 8))
@@ -550,15 +558,16 @@ class App:
         self.progress.pack(side="right")
 
         log_frame = ttk.Frame(grid)
-        log_frame.grid(row=7, column=1, columnspan=2, sticky="nsew", padx=(12, 0))
+        log_frame.grid(row=7, column=2, sticky="nsew", padx=(12, 0))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
         self.log_view = tk.Text(
             log_frame,
-            # Twelve lines: the frame beside it is the tall part of the window, and
-            # eighteen of these would put the log past the bottom of a laptop screen.
+            # Twelve lines and thirty characters: the frame and its knobs take the
+            # width of the row, and a log that asks for more would push the window
+            # past the edge of a laptop screen. It stretches with the window.
             height=12,
-            width=48,
+            width=30,
             state="disabled",
             wrap="word",
             background=SUNK,

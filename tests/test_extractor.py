@@ -213,6 +213,57 @@ def test_an_unknown_cut_level_is_refused(marked) -> None:
         extract(marked, "verse")
 
 
+# The other way a producer writes a synced pack: one `<par>` per chapter holding the
+# chapter's own heading, with the clips it was read over in a `<seq>` under it.
+HEADING_NCC = """<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head><meta name="dc:title" content="Heading only"/></head>
+  <body>
+    <h1 id="heading_1"><a href="h.smil#bookid_1">Chap 1</a></h1>
+    <h1 id="heading_2"><a href="i.smil#bookid_2">Chap 2</a></h1>
+  </body>
+</html>
+"""
+
+def heading_smil(anchor: str, last: str) -> str:
+    return f"""<?xml version="1.0" encoding="utf-8"?>
+<smil><body><seq dur="{last}s">
+  <par endsync="last">
+    <text src="ncc.html#{anchor}" id="bookid_{anchor.rsplit('_', 1)[1]}"/>
+    <seq>
+      <audio src="one.mp3" clip-begin="npt=0.000s" clip-end="npt=2.000s" id="phrase_1"/>
+      <audio src="one.mp3" clip-begin="npt=2.000s" clip-end="npt=4.000s" id="phrase_2"/>
+      <audio src="one.mp3" clip-begin="npt=4.000s" clip-end="npt={last}s" id="phrase_3"/>
+    </seq>
+  </par>
+</seq></body></smil>
+"""
+
+
+@pytest.fixture()
+def headings_only(tmp_path: Path):
+    """A pack that timed every clip but wrote no words for them."""
+    root = tmp_path / "pack"
+    root.mkdir()
+    (root / "ncc.html").write_text(HEADING_NCC, encoding="utf-8")
+    (root / "h.smil").write_text(heading_smil("heading_1", "6.000"), encoding="utf-8")
+    (root / "i.smil").write_text(heading_smil("heading_2", "3.000"), encoding="utf-8")
+    (root / "one.mp3").write_bytes(b"\xff\xfb")
+    pack = detect(tmp_path)
+    assert pack is not None
+    return pack
+
+
+def test_a_chapter_heading_is_not_read_once_per_clip(headings_only) -> None:
+    book = extract(headings_only, "chapter")
+    assert [c.body for c in book.chapters] == ["Chap 1", "Chap 2"]
+
+
+def test_the_clips_under_a_heading_keep_their_own_times(headings_only) -> None:
+    book = extract(headings_only, "chapter")
+    assert [(s.begin, s.end) for s in book.chapters[0].spans] == [(0.0, 2.0), (2.0, 4.0), (4.0, 6.0)]
+
+
 # A DAISY 3 (ANSI/NISO Z39.86-2005) pack: no ncc.html, an outline in an NCX whose
 # package document is named after the book, and SMIL that trims with `clipBegin`.
 DAISY3_OPF = """<?xml version="1.0" encoding="UTF-8"?>

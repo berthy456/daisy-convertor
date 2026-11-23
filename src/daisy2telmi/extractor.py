@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import unquote
@@ -28,19 +29,36 @@ class AudioSegment:
 
 
 @dataclass(frozen=True)
+class Span:
+    """One piece of the pack's synced text and the clip it was read over.
+
+    `begin` and `end` are the SMIL's own trim points, in seconds inside `src`, so
+    the words can be put back on that clip's timeline: this is what a `.lrc` or a
+    `.srt` beside a chapter's mp3 needs.
+    """
+
+    text: str
+    src: Path
+    begin: float | None = None
+    end: float | None = None
+
+
+@dataclass(frozen=True)
 class Chapter:
     """One part of the book at the chosen cut level.
 
     `text` is what the pack's own synced text says at the start of the part, which
     is what a card can show when the part has no title of its own. `body` is all of
     that text: a text-only pack has no `segments`, so its audio has to be made from
-    the body instead.
+    the body instead. `spans` is that same text one piece per synced clip, in the
+    order the clips play.
     """
 
     title: str
     segments: tuple[AudioSegment, ...]
     text: str = ""
     body: str = ""
+    spans: tuple[Span, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -70,6 +88,7 @@ class _Draft:
     segments: list[AudioSegment] = field(default_factory=list)
     text: str = ""
     body: str = ""
+    spans: list[Span] = field(default_factory=list)
     level: int = 1
 
 
@@ -261,11 +280,13 @@ def _smil_parts(smil: Path, marks: _Marks) -> tuple[Chapter, ...]:
                 text_el = next((c for c in par.iter() if _localname(c) == "text"), None)
                 if text_el is not None:
                     words = _text_at(text_el.get("src") or "", smil.parent, marks)
+            begin, end = _clip(element)
             found.append(
                 Chapter(
                     title="",
-                    segments=(AudioSegment(target, *_clip(element)),),
+                    segments=(AudioSegment(target, begin, end),),
                     text=words,
+                    spans=(Span(words, target, begin, end),) if words else (),
                 )
             )
     if not found and root is not None:
@@ -457,6 +478,20 @@ def _opening_text(parts: tuple[Chapter, ...]) -> str:
     return next((t for t in texts if len(t) >= 5), texts[0] if texts else "")
 
 
+def _join_texts(texts: Iterable[str]) -> str:
+    """Join the pack's synced texts, dropping a text repeated by the clips after it.
+
+    A pack that synced only its headings writes the heading once in the `<par>` that
+    holds the whole level, and every clip of that level inherits it: joining them as
+    they come would read the heading once per sentence.
+    """
+    joined: list[str] = []
+    for text in texts:
+        if not joined or text != joined[-1]:
+            joined.append(text)
+    return " ".join(joined)
+
+
 def _chapter_level(entries: list[_TocEntry]) -> int:
     """The outline level that holds the book's chapters.
 
@@ -484,7 +519,8 @@ def _group(
         """Open a part, or add it to the one before at a level below the chapters."""
         if level == "chapter" and draft.level > chapter_level and chapters:
             chapters[-1].segments.extend(draft.segments)
-            chapters[-1].body = " ".join(t for t in (chapters[-1].body, draft.body) if t)
+            chapters[-1].spans.extend(draft.spans)
+            chapters[-1].body = _join_texts(t for t in (chapters[-1].body, draft.body) if t)
         else:
             chapters.append(draft)
 
@@ -501,7 +537,8 @@ def _group(
             parts = _smil_parts(resolved, marks)
             if level == "sentence":
                 chapters.extend(
-                    _Draft(title="", segments=list(p.segments), text=p.text, body=p.text) for p in parts
+                    _Draft(title="", segments=list(p.segments), text=p.text, body=p.text, spans=list(p.spans))
+                    for p in parts
                 )
                 continue
             place(
@@ -509,7 +546,8 @@ def _group(
                     title=entry.title or f"Part {len(chapters) + 1}",
                     segments=list(_smil_segments(resolved, marks)),
                     text=_opening_text(parts),
-                    body=" ".join(p.text for p in parts if p.text),
+                    body=_join_texts(p.text for p in parts if p.text),
+                    spans=[s for p in parts for s in p.spans],
                     level=entry.level,
                 )
             )
@@ -579,6 +617,7 @@ def extract(pack: DaisyPack, level: str = "chapter") -> Book:
             segments=tuple(_merge(d.segments)),
             text=d.text,
             body=d.body,
+            spans=tuple(d.spans),
         )
         for index, d in enumerate(drafts)
         if d.segments or d.body

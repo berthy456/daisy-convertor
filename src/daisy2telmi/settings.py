@@ -32,12 +32,15 @@ DEFAULTS: dict = {
     "card_negative": False,
     "frameless": False,
     "format": "telmi",
-    "tts": "chatterbox",
+    "tts": "auto",
     "voice": None,
+    "speed": "normal",
     "command": None,
     "python": None,
     "clip": None,
     "device": "auto",
+    "input_dir": None,
+    "output_dir": None,
 }
 
 
@@ -109,9 +112,18 @@ def data_dir() -> Path:
     return base / "daisy2telmi"
 
 
-def chatterbox_env() -> Path:
-    """The Python environment the app builds for Chatterbox when asked to."""
-    return data_dir() / "chatterbox"
+def speech_env(engine: str) -> Path:
+    """The Python environment the app builds for one speech engine when asked to.
+
+    Each engine gets its own: Chatterbox and Coqui want different torch versions,
+    and one environment holding both spends the install arguing about it.
+    """
+    return data_dir() / engine
+
+
+def speech_voices() -> Path:
+    """Where the speech voices the app downloads live, next to the models."""
+    return data_dir() / "voices"
 
 
 def load() -> dict:

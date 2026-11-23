@@ -32,7 +32,7 @@ def app(tmp_path, monkeypatch):
     except tk.TclError as exc:  # headless CI
         pytest.skip(f"no display: {exc}")
     instance = gui.App(root)
-    instance.options["tts"] = "off"  # a window test must not stop on a Chatterbox install
+    instance.options["tts"] = "off"  # a window test must not stop on an engine install
     try:
         yield instance
     finally:
@@ -475,68 +475,148 @@ def test_the_options_page_saves_what_it_shows(app: gui.App, tmp_path, monkeypatc
 
 def test_every_option_sits_inside_the_page_frame(app: gui.App) -> None:
     """A box parented to the window instead of its frame is drawn outside the window."""
-    page = gui.Options(app)
-    frames = page.top.winfo_children()
-    assert len(frames) == 1, "the window holds one frame"
-    inside, pending = set(), list(frames)
-    while pending:
-        widget = pending.pop()
-        inside.add(widget)
-        pending.extend(widget.winfo_children())
-    for box in (page.language_box, page.announce_box, page.engine_box, page.voice_box, page.device_box, page.python_box):
-        assert box.master in inside, box
+    pages = [(gui.Options(app), "language_box announce_box input_box output_box".split())]
+    pages.append((gui.Speech(app), "engine_box voice_box speed_box device_box python_box clip_box".split()))
+    for page, names in pages:
+        frames = page.top.winfo_children()
+        assert len(frames) == 1, "the window holds one frame"
+        inside, pending = set(), list(frames)
+        while pending:
+            widget = pending.pop()
+            inside.add(widget)
+            pending.extend(widget.winfo_children())
+        for name in names:
+            box = getattr(page, name)
+            assert box.master in inside, f"{page.__class__.__name__}.{name}"
+        page.top.destroy()
 
 
-def test_the_chatterbox_device_choice_is_saved(app: gui.App, tmp_path, monkeypatch) -> None:
+def test_the_main_window_asks_for_the_engine_and_a_page_to_configure_it(app: gui.App) -> None:
+    app.options["tts"] = "auto"
+    app._show_engines()
+    assert app.speech_box.get() == app.t("engine_auto")
+    assert app._labels["speech_configure"].cget("text") == app.t("speech_configure")
+
+    app.speech_box.set(app.engine_name("espeak"))
+    app._choose_engine()
+    assert app.options["tts"] == "espeak"
+
+
+def test_the_speech_page_saves_the_engine_the_device_and_the_speed(
+    app: gui.App, tmp_path, monkeypatch
+) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    page = gui.Options(app)
+    app.options["tts"] = "chatterbox"
+    page = gui.Speech(app)
     page.device_box.set("mps")
+    page.speed_box.set(app.t("speed_fast"))
+    page.clip_box.insert(0, "/tmp/voice.wav")
     page._close()
 
     assert app.options["device"] == "mps"
+    assert app.options["speed"] == "fast"
+    assert app.options["clip"] == "/tmp/voice.wav"
     saved = (tmp_path / "daisy2telmi" / "config.json").read_text(encoding="utf-8")
     assert '"device": "mps"' in saved
+    assert '"speed": "fast"' in saved
 
 
-def _settled(app: gui.App, page: gui.Options) -> None:
-    """The install runs on its own thread; the page's queue brings the button back."""
+def test_the_options_page_holds_the_folders_the_app_works_in(app: gui.App, tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    packs = tmp_path / "packs"
+    stories = tmp_path / "stories"
+    packs.mkdir()
+    page = gui.Options(app)
+    page.input_box.insert(0, str(packs))
+    page.output_box.insert(0, str(stories))
+    page._close()
+
+    assert app.options["input_dir"] == str(packs)
+    assert app.options["output_dir"] == str(stories)
+    # The main window's own output field follows the folder named here.
+    assert app.out_var.get() == str(stories)
+    assert app._start_dir() == str(packs)
+
+
+def test_the_output_folder_named_in_the_options_replaces_the_pack_folder(app: gui.App, tmp_path) -> None:
+    app.options["output_dir"] = str(tmp_path / "stories")
+    app.pack_var.set(str(tmp_path / "pack.zip"))
+    assert app.out_var.get() == str(tmp_path / "stories")
+
+    app.options["output_dir"] = None
+    app._auto_out = ""
+    app.out_var.set("")
+    app._follow_pack()
+    assert app.out_var.get() == str(tmp_path)
+
+
+def test_a_file_list_opens_in_the_folder_named_in_the_options(app: gui.App, tmp_path) -> None:
+    named = tmp_path / "packs"
+    named.mkdir()
+    app.options["input_dir"] = str(named)
+    assert app._start_dir() == str(named)
+    # The folder a file list was left in still wins, because the user was just there.
+    app.options["last_dir"] = str(tmp_path)
+    assert app._start_dir() == str(tmp_path)
+
+
+def _settled(app: gui.App, button: ttk.Button) -> None:
+    """A background job hands its button back through the page's queue."""
     for _ in range(300):
         app.root.update()
-        if page.chatterbox_button.instate(["!disabled"]):
+        if button.instate(["!disabled"]):
             return
         time.sleep(0.01)
-    pytest.fail("the install never reported back")
+    pytest.fail("the job never reported back")
 
 
-def test_the_options_page_can_install_chatterbox(app: gui.App, monkeypatch) -> None:
-    installed: list[str | None] = []
+def test_the_speech_page_installs_the_engine_it_shows(app: gui.App, monkeypatch) -> None:
+    installed: list[tuple[str, str | None]] = []
     monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
-    monkeypatch.setattr(gui.tts, "install_chatterbox", lambda python: installed.append(python))
-    page = gui.Options(app)
+    monkeypatch.setattr(
+        gui.tts,
+        "install_engine",
+        lambda engine, python=None: installed.append((engine, python)) or "/opt/venv/bin/python",
+    )
+    app.options["tts"] = "piper"
+    page = gui.Speech(app)
     page.python_box.insert(0, "/opt/python")
-    assert page.chatterbox_state.cget("text") == app.t("chatterbox_missing")
+    assert page.engine_state.cget("text") == app.t("speech_missing").format(engine="Piper")
 
-    page._install_chatterbox()
-    assert page.chatterbox_button.instate(["disabled"])
-    _settled(app, page)
-    assert installed == ["/opt/python"]
+    page._install_engine()
+    assert page.install_button.instate(["disabled"])
+    _settled(app, page.install_button)
+    assert installed == [("piper", "/opt/python")]
+
+
+def test_an_install_with_no_python_named_shows_the_one_the_app_built(app: gui.App, monkeypatch) -> None:
+    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
+    monkeypatch.setattr(gui.tts, "install_engine", lambda engine, python=None: "/opt/venv/bin/python")
+    app.options["tts"] = "piper"
+    page = gui.Speech(app)
+    page._install_engine()
+    _settled(app, page.install_button)
+    assert page.python_box.get() == "/opt/venv/bin/python"
 
 
 def test_a_failing_install_is_reported_and_the_button_comes_back(app: gui.App, monkeypatch, caplog) -> None:
-    def refuse(_python):
+    def refuse(engine, python=None):
         raise gui.tts.TtsError("no network")
 
     monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
-    monkeypatch.setattr(gui.tts, "install_chatterbox", refuse)
-    page = gui.Options(app)
-    page._install_chatterbox()
-    _settled(app, page)
+    monkeypatch.setattr(gui.tts, "install_engine", refuse)
+    app.options["tts"] = "coqui"
+    page = gui.Speech(app)
+    page._install_engine()
+    _settled(app, page.install_button)
     assert "no network" in caplog.text
 
 
-def test_a_missing_chatterbox_is_offered_before_the_cards_are_made(app: gui.App, monkeypatch) -> None:
-    """Chatterbox is the default voice, but it is not inside the app: the user says
-    whether it may be downloaded, and Cancel takes the machine's own voice."""
+def test_an_engine_that_is_not_installed_is_offered_before_the_cards_are_made(
+    app: gui.App, monkeypatch
+) -> None:
+    """The neural engines are not inside the app: the user says whether one may be
+    downloaded, and Cancel takes the machine's own voice."""
     app.options["tts"] = "chatterbox"
     monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
 
@@ -547,24 +627,95 @@ def test_a_missing_chatterbox_is_offered_before_the_cards_are_made(app: gui.App,
     assert app._speech() == (gui.tts.AUTO, False)
 
 
-def test_an_installed_chatterbox_is_used_without_asking(app: gui.App, monkeypatch) -> None:
-    app.options["tts"] = "chatterbox"
+def test_an_installed_engine_is_used_without_asking(app: gui.App, monkeypatch) -> None:
+    app.options["tts"] = "piper"
     monkeypatch.setattr(gui.tts, "available", lambda name, python=None: True)
     monkeypatch.setattr(
         gui.messagebox, "askokcancel", lambda *args: pytest.fail("asked about an installed engine")
     )
-    assert app._speech() == ("chatterbox", False)
+    assert app._speech() == ("piper", False)
+
+
+def test_the_speech_page_greys_out_the_rows_the_engine_cannot_answer_for(app: gui.App) -> None:
+    app.options["tts"] = "piper"
+    page = gui.Speech(app)
+    assert str(page.speed_box.cget("state")) == "readonly"
+    assert str(page.clip_box.cget("state")) == "disabled"
+    assert page.install_button.instate(["!disabled"])
+
+    page.engine_box.set(app.engine_name("espeak"))
+    page._show_engine()
+    assert str(page.python_box.cget("state")) == "disabled"
+    assert str(page.download_box.cget("state")) == "disabled"
+    assert page.install_button.instate(["disabled"])
+
+    page.engine_box.set(app.engine_name("chatterbox"))
+    page._show_engine()
+    assert str(page.clip_box.cget("state")) == "normal"
+    assert str(page.device_box.cget("state")) == "readonly"
 
 
 def test_the_voice_list_follows_the_engine_and_language(app: gui.App) -> None:
-    page = gui.Options(app)
-    page.language_box.set("fr - Français")
+    app.options["language"] = "fr"
+    app.options["tts"] = "espeak"
     espeak = next(e for e in gui.tts.engines() if e.name == "espeak")
     if not espeak.found:
         pytest.skip("no espeak-ng on this machine")
-    page.engine_box.set(espeak.label)
-    page._fill_voices()
+    page = gui.Speech(app)
     assert any("French" in name or "fr" in name for name in page.voice_box.cget("values"))
+
+
+def test_the_voice_box_lists_the_voices_the_language_still_lacks(app: gui.App, tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(gui.tts.settings, "speech_voices", lambda: tmp_path)
+    (tmp_path / "en_US-lessac-medium.onnx").write_bytes(b"")
+    app.options["tts"] = "piper"
+    page = gui.Speech(app)
+    assert "en_US-lessac-medium" not in list(page.download_box.cget("values"))
+    assert any(name.startswith("en_US-") for name in page.download_box.cget("values"))
+    assert "en_US-lessac-medium" in [page._label_text(k) for k in page.voice_keys]
+
+
+def test_installing_a_voice_adds_it_to_the_voice_list(app: gui.App, tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(gui.tts.settings, "speech_voices", lambda: tmp_path)
+
+    def fake(voice: str, python: str | None = None) -> Path:
+        path = tmp_path / f"{voice}.onnx"
+        path.write_bytes(b"")
+        return path
+
+    monkeypatch.setattr(gui.tts, "download_voice", fake)
+    app.options["tts"] = "piper"
+    page = gui.Speech(app)
+    page.download_box.set("en_US-amy-medium")
+    page._download_voice()
+    _settled(app, page.download_button)
+    assert "en_US-amy-medium" in [page._label_text(k) for k in page.voice_keys]
+
+
+def test_the_try_box_speaks_its_text_and_plays_it_back(app: gui.App, monkeypatch) -> None:
+    spoken: list[tuple[str, str]] = []
+
+    def fake(phrase: str, lang_code: str, dest: Path, *rest) -> None:
+        dest.write_bytes(b"")
+        spoken.append((phrase, lang_code))
+
+    played: list[Path] = []
+    monkeypatch.setattr(gui.tts, "synthesize", fake)
+    monkeypatch.setattr(gui.chapters, "open_preview", lambda path, resume=0.0: played.append(path))
+    app.options["tts"] = "espeak"
+    app.language_var.set("fr")
+    app.options["language"] = "fr"
+    page = gui.Speech(app)
+    assert page.try_box.get() == "Chapitre 1", "the box starts with the card's own words"
+
+    page.try_box.delete(0, "end")
+    page.try_box.insert(0, "Le lapin")
+    page._try_voice()
+    _settled(app, page.try_button)
+    assert spoken == [("Le lapin", "fr")]
+    assert played and played[0].name == "try.mp3"
+    page._close()
+    assert not page._try_folder.exists(), "the sample clip goes with the window"
 
 
 def test_every_card_pattern_is_offered_in_the_language_of_the_window(

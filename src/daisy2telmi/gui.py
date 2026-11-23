@@ -30,7 +30,7 @@ from . import audio, chapters, covers, emulator, images, settings, tts
 from .cli import FORMATS, convert
 from .detector import DaisyPackError, open_pack
 from .extractor import CUT_LEVELS, extract
-from .i18n import LANGUAGES, text
+from .i18n import LANGUAGES, Language, text
 from .telmi_builder import ANNOUNCE_MODES, Announce, slugify
 
 try:
@@ -42,6 +42,12 @@ except ImportError:  # drag and drop is a bonus, browsing works without it
 log = logging.getLogger("daisy2telmi")
 
 ANNOUNCE_KEYS = {mode: f"announce_{mode}" for mode in ANNOUNCE_MODES}
+SPEED_KEYS = {speed: f"speed_{speed}" for speed in tts.SPEEDS}
+
+
+def engine_keys() -> list[str]:
+    """Every engine the app can be told to read with: automatic first, silence last."""
+    return ["auto"] + [engine.name for engine in tts.engines()] + ["off"]
 
 # The crop frame is drawn this wide, whatever the player's ratio: the same room to
 # move the cover in on every machine, and the web page draws it at the same size.
@@ -628,7 +634,7 @@ class App:
         # when the window is widened.
         grid.columnconfigure(1, weight=1)
         grid.columnconfigure(2, weight=1)
-        grid.rowconfigure(7, weight=1)
+        grid.rowconfigure(8, weight=1)
 
         self._label(grid, "pack_label").grid(row=0, column=0, sticky="w")
         ttk.Entry(grid, textvariable=self.pack_var).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 8))
@@ -651,8 +657,20 @@ class App:
         self.format_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_format())
         self._show_formats()
 
+        # The voice the cards get is picked here, next to the machine they are read
+        # on; everything that goes with it - voices, installs, a sample to clone -
+        # sits behind its own button, on a page of its own.
+        speech_row = ttk.Frame(grid)
+        speech_row.grid(row=5, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        self._label(speech_row, "speech_label").pack(side="left", padx=(0, 10))
+        self.speech_box = ttk.Combobox(speech_row, values=self.engine_names(), state="readonly", width=20)
+        self.speech_box.pack(side="left")
+        self.speech_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_engine())
+        self._button(speech_row, "speech_configure", self._open_speech).pack(side="left", padx=(10, 0))
+        self._show_engines()
+
         cover_row = ttk.Frame(grid)
-        cover_row.grid(row=5, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        cover_row.grid(row=6, column=0, columnspan=3, sticky="w", pady=(0, 4))
         self._label(cover_row, "cover_label").pack(side="left")
         ttk.Entry(cover_row, textvariable=self.cover_var, width=40).pack(side="left", padx=(6, 8))
         self._button(cover_row, "browse_cover", self._pick_cover).pack(side="left")
@@ -665,7 +683,7 @@ class App:
         # are the search: an image search on the author and the title, on either
         # of the two engines that answer without an account.
         search = ttk.Frame(grid)
-        search.grid(row=6, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        search.grid(row=7, column=0, columnspan=3, sticky="w", pady=(6, 0))
         self._label(search, "cover_author").pack(side="left")
         ttk.Entry(search, textvariable=self.author_var, width=18).pack(side="left", padx=(6, 12))
         self._label(search, "cover_book_title").pack(side="left")
@@ -685,7 +703,7 @@ class App:
         self.crop_frame = tk.Canvas(
             grid, highlightthickness=0, cursor="fleur", takefocus=1, background=SUNK
         )
-        self.crop_frame.grid(row=7, column=0, sticky="n", pady=(6, 0))
+        self.crop_frame.grid(row=8, column=0, sticky="n", pady=(6, 0))
         self._crop_item = self.crop_frame.create_image(0, 0, anchor="nw")
         self.crop_frame.bind("<ButtonPress-1>", self._grab_crop)
         self.crop_frame.bind("<B1-Motion>", self._drag_crop)
@@ -708,7 +726,7 @@ class App:
         # the eye goes over a picture: which band to keep, how far in, then the way
         # the player's own grey screen reads the ink.
         side = ttk.Frame(grid)
-        side.grid(row=7, column=1, sticky="n", padx=(12, 0))
+        side.grid(row=8, column=1, sticky="n", padx=(12, 0))
         self._label(side, "cover_crop_label").pack(anchor="w")
         self.crop_boxes: dict[str, ttk.Radiobutton] = {}
         for mode in images.CROP_MODES:
@@ -744,7 +762,7 @@ class App:
         self._show_negative()
 
         controls = ttk.Frame(grid)
-        controls.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(8, 8))
+        controls.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(8, 8))
         self.save_button = self._button(controls, "save", self._start, style="Work.TButton")
         self.save_button.pack(side="left")
         self._button(controls, "options", self._open_options).pack(side="left", padx=12)
@@ -759,7 +777,7 @@ class App:
         self.progress.pack(side="right")
 
         log_frame = ttk.Frame(grid)
-        log_frame.grid(row=7, column=2, sticky="nsew", padx=(12, 0))
+        log_frame.grid(row=8, column=2, sticky="nsew", padx=(12, 0))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
         self.log_view = tk.Text(
@@ -812,6 +830,7 @@ class App:
             widget.configure(text=self.t(key))
         self.bar.relabel()
         self._show_formats()
+        self._show_engines()
         if not DND_FILES:
             self._append(self.t("drop_unavailable"))
 
@@ -936,6 +955,7 @@ class App:
             announce.python,
             announce.clip,
             announce.device,
+            announce.speed,
         )
 
     def _test_story(self) -> None:
@@ -994,32 +1014,33 @@ class App:
             python=self.options["python"],
             clip=self.options["clip"],
             device=self.options["device"],
+            speed=self.options["speed"],
         )
 
     def _follow_pack(self, *_: object) -> None:
-        """The story lands next to the pack it came from.
+        """The story lands in the folder named in the options, or next to its pack.
 
         Only the folder this put there last time is replaced: an output path the
         user typed or picked themselves is never overwritten.
         """
         pack = self._typed_path(self.pack_var)
-        folder = "" if pack is None else str(pack.parent)
+        folder = self.options.get("output_dir") or ("" if pack is None else str(pack.parent))
         if self.out_var.get() in ("", self._auto_out):
             self._auto_out = folder
             self.out_var.set(folder)
 
     def _start_dir(self, current: str = "") -> str:
         """Where a file list opens: the folder the field already names, then the
-        folder the last one ended in, then home."""
+        folder the last one ended in, then the one named in the options, then home."""
         typed = current.strip()
         if typed:
             named = Path(typed).expanduser()
             folder = named if named.is_dir() else named.parent
             if folder.is_dir():
                 return str(folder)
-        remembered = self.options.get("last_dir")
-        if remembered and Path(remembered).is_dir():
-            return str(remembered)
+        for remembered in (self.options.get("last_dir"), self.options.get("input_dir")):
+            if remembered and Path(remembered).is_dir():
+                return str(remembered)
         return str(Path.home())
 
     def _browse(self, key: str, current: str, pick: str) -> str:
@@ -1171,6 +1192,33 @@ class App:
         # The frame is the chosen player's screen, so it is drawn at its ratio again.
         self._crop_cover = None
         self._show_crop()
+
+    def engine_names(self) -> list[str]:
+        """The engines this machine can speak with, plus automatic and silence."""
+        return [self.engine_name(name) for name in engine_keys()]
+
+    def engine_name(self, key: str) -> str:
+        if key == "auto":
+            return self.t("engine_auto")
+        if key == "off":
+            return self.t("engine_off")
+        return next((e.label for e in tts.engines() if e.name == key), key)
+
+    def _show_engines(self) -> None:
+        """Refill the box in this language, and put it back on the chosen engine."""
+        names = self.engine_names()
+        self.speech_box.configure(values=names)
+        keys = engine_keys()
+        chosen = self.options["tts"]
+        self.speech_box.set(names[keys.index(chosen) if chosen in keys else 0])
+
+    def _choose_engine(self) -> None:
+        keys = engine_keys()
+        self.options["tts"] = keys[self.engine_names().index(self.speech_box.get())]
+        settings.save(self.options)
+
+    def _open_speech(self) -> None:
+        Speech(self)
 
     def _show_crop(self) -> None:
         """Draw the crop frame over the cover: which part of a tall cover the frame
@@ -1421,19 +1469,19 @@ class App:
         self._convert(source, out_dir, cover, self.force_var.get())
 
     def _speech(self) -> tuple[str, bool]:
-        """The engine this story's cards get, and whether Chatterbox goes in first.
+        """The engine this story's cards get, and whether one has to be installed first.
 
-        Chatterbox is the default because a card read by a real voice is what the
-        player is for, but it does not ship inside the app: it is a package the
-        user's own Python installs. OK starts that install, Cancel takes the best
-        voice the machine already has.
+        The neural engines do not ship inside the app: they are packages a Python of
+        the user's installs. OK starts that install, Cancel takes the best voice the
+        machine already has.
         """
         engine = self.options["tts"]
-        if engine != tts.CHATTERBOX or tts.available(tts.CHATTERBOX, self.options["python"]):
+        if engine not in tts.PACKAGES or tts.available(engine, self.options["python"]):
             return engine, False
-        if messagebox.askokcancel(self.t("opt_section_chatterbox"), self.t("chatterbox_needed")):
+        label = tts.LABELS[engine]
+        if messagebox.askokcancel(self.t("speech_title"), self.t("engine_needed").format(engine=label)):
             return engine, True
-        self._append("Chatterbox is not installed: the machine's own voice will read the cards")
+        self._append(f"{label} is not installed: the machine's own voice will read the cards")
         return tts.AUTO, False
 
     def _run(
@@ -1455,7 +1503,7 @@ class App:
         try:
             if install:
                 try:
-                    tts.install_chatterbox(announce.python)
+                    tts.install_engine(announce.engine, announce.python)
                 except tts.TtsError as exc:
                     log.error("%s: the machine's own voice will read the cards instead", exc)
                     announce = replace(announce, engine=tts.AUTO)
@@ -1826,90 +1874,24 @@ class ChapterList:
         self.top.destroy()
 
 
-class Options:
-    """Language and speech settings, saved when the window closes.
+class Settings:
+    """The rows a settings window is made of: labels, boxes, ticks and folder fields.
 
-    The boxes show translated names, so each one keeps its own list of keys in
-    the same order as the values it displays and reads the choice back by index.
+    Both windows below are built the same way, so the helpers live here: the boxes
+    show translated names, and each one keeps its own list of keys in the same order
+    as the values it displays, reading the choice back by index.
     """
 
-    def __init__(self, app: App) -> None:
+    def __init__(self, app: App, title_key: str) -> None:
         self.app = app
         self.top = tk.Toplevel(app.root)
-        self.top.title(app.t("opt_title"))
+        self.top.title(app.t(title_key))
         self.top.configure(background=PAPER)
         self.top.resizable(False, False)
-
-        self.language_keys = list(LANGUAGES)
-        self.announce_keys = list(ANNOUNCE_MODES)
-        self.engine_keys = ["auto"] + [engine.name for engine in tts.engines()] + ["off"]
-        self.device_keys = list(tts.DEVICES)
-
-        grid = ttk.Frame(self.top, padding=12)
-        grid.grid(sticky="nsew")
-        grid.columnconfigure(1, weight=1)
-
-        self.language_box = self._combo(grid, self.language_keys, app.options["language"])
-        self.announce_box = self._combo(
-            grid, self.announce_keys, app.options["announce"], ANNOUNCE_KEYS
-        )
-        self.engine_box = self._combo(grid, self.engine_keys, app.options["tts"])
-        self.voice_box = self._combo(grid, [None], app.options["voice"])
-        self.card_total_var = tk.BooleanVar(value=bool(app.options["card_total"]))
-        self.autoplay_var = tk.BooleanVar(value=bool(app.options["autoplay"]))
-        self.frameless_var = tk.BooleanVar(value=bool(app.options["frameless"]))
-
-        self._row(grid, "opt_language", 0, self.language_box)
-        self._row(grid, "opt_announce", 1, self.announce_box)
-        self._check(grid, "opt_card_total", 2, self.card_total_var)
-        self._check(grid, "opt_autoplay", 3, self.autoplay_var)
-        self._row(grid, "opt_engine", 4, self.engine_box)
-        self._row(grid, "opt_voice", 5, self.voice_box)
-        self._check(grid, "opt_frameless", 6, self.frameless_var)
-        # The bar is drawn either way; what the tick changes is whether the system's
-        # own bar is left above it, and what that bar was doing for the window.
-        ttk.Label(grid, text=app.t("opt_frameless_hint"), style="Brand.TLabel").grid(
-            row=7, column=0, columnspan=2, sticky="w"
-        )
-
-        # Chatterbox is a package that goes into the Python named below, not part of
-        # the app, so its rows sit behind their own border.
-        chatterbox = ttk.Labelframe(grid, text=app.t("opt_section_chatterbox"), padding=(10, 6))
-        chatterbox.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(14, 0))
-        chatterbox.columnconfigure(1, weight=1)
-        self.device_box = self._combo(chatterbox, self.device_keys, app.options["device"])
-        self.python_box = ttk.Entry(chatterbox, width=28)
-        self.python_box.insert(0, app.options["python"] or "")
-        clip_row = ttk.Frame(chatterbox)
-        self.clip_box = ttk.Entry(clip_row, width=22)
-        self.clip_box.insert(0, app.options["clip"] or "")
-        self.clip_box.pack(side="left")
-        ttk.Button(clip_row, text=app.t("browse_output"), command=self._pick_clip).pack(side="left", padx=(6, 0))
-
-        ttk.Label(chatterbox, text=app.t("opt_chatterbox_hint")).grid(
-            row=0, column=0, columnspan=2, sticky="w", pady=(0, 6)
-        )
-        # Whether the package is already in the Python named below, and the way to put it there.
-        self.chatterbox_state = ttk.Label(chatterbox, text=self._chatterbox_text())
-        self.chatterbox_state.grid(row=1, column=0, sticky="w")
-        self.chatterbox_button = ttk.Button(
-            chatterbox, text=app.t("chatterbox_install"), command=self._install_chatterbox
-        )
-        self.chatterbox_button.grid(row=1, column=1, sticky="e", padx=(8, 0))
-        self._row(chatterbox, "opt_python", 2, self.python_box)
-        self._row(chatterbox, "opt_device", 3, self.device_box)
-        self._row(chatterbox, "opt_clip", 4, clip_row)
-
-        ttk.Button(grid, text=app.t("opt_close"), command=self._close).grid(
-            row=9, column=0, columnspan=2, sticky="e", pady=(12, 0)
-        )
-
-        self.engine_box.bind("<<ComboboxSelected>>", lambda _e: self._fill_voices())
-        self.language_box.bind("<<ComboboxSelected>>", lambda _e: self._fill_voices())
-        self.python_box.bind("<FocusOut>", lambda _e: self._recheck_chatterbox())
-        self._fill_voices()
-
-        self.events: queue.Queue[str | None] = queue.Queue()
+        self.grid = ttk.Frame(self.top, padding=12)
+        self.grid.grid(sticky="nsew")
+        self.grid.columnconfigure(1, weight=1)
+        self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.top.after(200, self._drain)
 
     def _label_text(self, key: str | None, labels: dict[str, str] | None = None) -> str:
@@ -1944,26 +1926,274 @@ class Options:
         except ValueError:
             return keys[0]
 
-    def _row(self, grid: ttk.Frame, key: str, row: int, widget: tk.Widget) -> None:
-        ttk.Label(grid, text=self.app.t(key)).grid(row=row, column=0, sticky="w", pady=4)
+    def _row(self, parent: ttk.Frame, key: str, row: int, widget: tk.Widget) -> None:
+        ttk.Label(parent, text=self.app.t(key)).grid(row=row, column=0, sticky="w", pady=4)
         widget.grid(row=row, column=1, sticky="ew", padx=(8, 0), pady=4)
 
-    def _check(self, grid: ttk.Frame, key: str, row: int, var: tk.BooleanVar) -> None:
+    def _check(self, parent: ttk.Frame, key: str, row: int, var: tk.BooleanVar) -> None:
         """The tick and its words in one widget: a label in the left column would
         leave the box a hand's width from the sentence it belongs to."""
-        ttk.Checkbutton(grid, text=self.app.t(key), variable=var).grid(
+        ttk.Checkbutton(parent, text=self.app.t(key), variable=var).grid(
             row=row, column=0, columnspan=2, sticky="w", pady=4
         )
 
+    def _folder(self, parent: ttk.Frame, key: str, row: int, value: str | None) -> ttk.Entry:
+        """A folder that can be typed as well as picked, like the main window's two."""
+        line = ttk.Frame(parent)
+        box = ttk.Entry(line, width=28)
+        box.insert(0, value or "")
+        box.pack(side="left")
+        ttk.Button(line, text=self.app.t("browse_output"), command=lambda: self._pick_folder(box)).pack(
+            side="left", padx=(6, 0)
+        )
+        self._row(parent, key, row, line)
+        return box
+
+    def _pick_folder(self, box: ttk.Entry) -> None:
+        path = self.app._browse("browse_output", box.get(), "folder")
+        if path:
+            box.delete(0, "end")
+            box.insert(0, path)
+
+    def _save(self, options: dict) -> None:
+        self.app.options.update(options)
+        try:
+            settings.save(self.app.options)
+        except OSError as exc:
+            self.app._append(f"ERROR: could not save options: {exc}")
+
+    def _drain(self) -> None:
+        """Whatever a background job finished, in the order the jobs were started."""
+        if not self.top.winfo_exists():
+            return
+        try:
+            while True:
+                self.finished(*self.events.get_nowait())
+        except queue.Empty:
+            pass
+        self.top.after(200, self._drain)
+
+    def finished(self, kind: str, result: object) -> None:
+        """What a finished job changes. Only the speech window has jobs of its own."""
+
+
+class Options(Settings):
+    """The app's own settings, saved when the window closes.
+
+    The speech engine is not here: it has a page of its own, because everything
+    that goes with it - voices, installs, a sample to clone - is a page's worth.
+    """
+
+    def __init__(self, app: App) -> None:
+        super().__init__(app, "opt_title")
+
+        self.language_keys = list(LANGUAGES)
+        self.announce_keys = list(ANNOUNCE_MODES)
+
+        self.language_box = self._combo(self.grid, self.language_keys, app.options["language"])
+        self.announce_box = self._combo(
+            self.grid, self.announce_keys, app.options["announce"], ANNOUNCE_KEYS
+        )
+        self.card_total_var = tk.BooleanVar(value=bool(app.options["card_total"]))
+        self.autoplay_var = tk.BooleanVar(value=bool(app.options["autoplay"]))
+        self.frameless_var = tk.BooleanVar(value=bool(app.options["frameless"]))
+
+        self._row(self.grid, "opt_language", 0, self.language_box)
+        self._row(self.grid, "opt_announce", 1, self.announce_box)
+        self._check(self.grid, "opt_card_total", 2, self.card_total_var)
+        self._check(self.grid, "opt_autoplay", 3, self.autoplay_var)
+        self._check(self.grid, "opt_frameless", 4, self.frameless_var)
+        # The bar is drawn either way; what the tick changes is whether the system's
+        # own bar is left above it, and what that bar was doing for the window.
+        ttk.Label(self.grid, text=app.t("opt_frameless_hint"), style="Brand.TLabel").grid(
+            row=5, column=0, columnspan=2, sticky="w"
+        )
+
+        folders = ttk.Labelframe(self.grid, text=app.t("opt_section_folders"), padding=(10, 6))
+        folders.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        folders.columnconfigure(1, weight=1)
+        self.input_box = self._folder(folders, "opt_input_dir", 0, app.options["input_dir"])
+        self.output_box = self._folder(folders, "opt_output_dir", 1, app.options["output_dir"])
+        ttk.Label(folders, text=app.t("opt_folders_hint"), style="Brand.TLabel").grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(6, 0)
+        )
+
+        ttk.Button(self.grid, text=app.t("opt_close"), command=self._close).grid(
+            row=7, column=0, columnspan=2, sticky="e", pady=(12, 0)
+        )
+
+    def _close(self) -> None:
+        input_dir = self.input_box.get().strip() or None
+        output_dir = self.output_box.get().strip() or None
+        moved_input = input_dir != self.app.options.get("input_dir")
+        moved_output = output_dir != self.app.options.get("output_dir")
+        self._save(
+            {
+                "language": self._chosen(self.language_box, self.language_keys),
+                "announce": self._chosen(self.announce_box, self.announce_keys, ANNOUNCE_KEYS),
+                "autoplay": self.autoplay_var.get(),
+                "card_total": self.card_total_var.get(),
+                "input_dir": input_dir,
+                "output_dir": output_dir,
+                "frameless": self.frameless_var.get(),
+            }
+        )
+        if moved_input:
+            # A folder the user named beats the one a file list happened to end in.
+            self.app.options["last_dir"] = None
+            settings.save(self.app.options)
+        if moved_output:
+            # The main window's own field follows the folder named here, until the
+            # user types or picks another one.
+            self.app._auto_out = output_dir or ""
+            self.app.out_var.set(output_dir or "")
+        self.app.language_var.set(self.app.options["language"])
+        self.app.set_frameless(self.app.options["frameless"])
+        self.app._relabel()
+        self.app._follow_pack()
+        self.top.destroy()
+
+
+class Speech(Settings):
+    """The voice the chapter cards get, and everything that goes with it.
+
+    The engines that are packages rather than parts of the app are installed from
+    here, into a Python of their own; so are the Piper voices they read with. A box
+    the chosen engine has nothing to do with is greyed out rather than taken away,
+    so the page keeps its shape when the engine changes.
+    """
+
+    # The rows each engine can answer for. `auto` gets the voice downloads because
+    # it reaches for Piper as soon as a voice for the language is on the machine.
+    LIVE = {
+        "auto": ("speed", "download"),
+        tts.PIPER: ("voice", "speed", "python", "download"),
+        tts.ESPEAK: ("voice", "speed"),
+        tts.SAY: ("voice", "speed"),
+        tts.SAPI: ("voice", "speed"),
+        tts.COQUI: ("voice", "clip", "python", "device"),
+        tts.CHATTERBOX: ("voice", "clip", "python", "device"),
+        tts.COMMAND: (),
+        "off": (),
+    }
+
+    def __init__(self, app: App) -> None:
+        super().__init__(app, "speech_title")
+
+        self.engine_keys = engine_keys()
+        self.device_keys = list(tts.DEVICES)
+        self.speed_keys = list(tts.SPEEDS)
+        self._try_folder: Path | None = None
+        self._playing: subprocess.Popen | None = None
+
+        self.engine_box = self._combo(self.grid, self.engine_keys, app.options["tts"])
+        self.voice_box = self._combo(self.grid, [None], app.options["voice"])
+        self.speed_box = self._combo(self.grid, self.speed_keys, app.options["speed"], SPEED_KEYS)
+        self.python_box = ttk.Entry(self.grid, width=28)
+        self.python_box.insert(0, app.options["python"] or "")
+        self.device_box = self._combo(self.grid, self.device_keys, app.options["device"])
+        clip_row = ttk.Frame(self.grid)
+        self.clip_box = ttk.Entry(clip_row, width=22)
+        self.clip_box.insert(0, app.options["clip"] or "")
+        self.clip_box.pack(side="left")
+        ttk.Button(clip_row, text=app.t("browse_output"), command=self._pick_clip).pack(side="left", padx=(6, 0))
+        try_row = ttk.Frame(self.grid)
+        self.try_box = ttk.Entry(try_row, width=22)
+        self.try_box.insert(0, self._sample_text())
+        self.try_box.pack(side="left")
+        self.try_button = ttk.Button(try_row, text=app.t("speech_try"), command=self._try_voice)
+        self.try_button.pack(side="left", padx=(6, 0))
+
+        self._row(self.grid, "opt_engine", 0, self.engine_box)
+        self._row(self.grid, "opt_voice", 1, self.voice_box)
+        self._row(self.grid, "opt_speed", 2, self.speed_box)
+        self._row(self.grid, "opt_python", 3, self.python_box)
+        self._row(self.grid, "opt_device", 4, self.device_box)
+        self._row(self.grid, "opt_clip", 5, clip_row)
+        self._row(self.grid, "speech_try_label", 6, try_row)
+
+        install = ttk.Labelframe(self.grid, text=app.t("speech_section"), padding=(10, 6))
+        install.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        install.columnconfigure(1, weight=1)
+        ttk.Label(install, text=app.t("speech_hint"), style="Brand.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 6)
+        )
+        self.engine_state = ttk.Label(install, text=self._engine_text())
+        self.engine_state.grid(row=1, column=0, sticky="w")
+        self.install_button = ttk.Button(install, text=app.t("speech_install"), command=self._install_engine)
+        self.install_button.grid(row=1, column=1, sticky="e", padx=(8, 0))
+        download_row = ttk.Frame(install)
+        self.download_box = ttk.Combobox(download_row, values=[], state="readonly", width=26)
+        self.download_box.pack(side="left")
+        self.download_button = ttk.Button(
+            download_row, text=app.t("speech_download"), command=self._download_voice
+        )
+        self.download_button.pack(side="left", padx=(6, 0))
+        self._row(install, "speech_download_label", 2, download_row)
+
+        ttk.Button(self.grid, text=app.t("opt_close"), command=self._close).grid(
+            row=8, column=0, columnspan=2, sticky="e", pady=(12, 0)
+        )
+
+        self.engine_box.bind("<<ComboboxSelected>>", lambda _e: self._show_engine())
+        self.python_box.bind("<FocusOut>", lambda _e: self._recheck())
+        self._show_engine()
+
+    def language(self) -> Language:
+        return LANGUAGES.get(self.app.options["language"], LANGUAGES["en"])
+
+    def _sample_text(self) -> str:
+        """What the try box holds before the user types anything: the card's own words."""
+        return self.language().chapter.format(n=1)
+
+    def _show_engine(self) -> None:
+        """Refill the voice lists and grey out the rows this engine cannot answer for."""
+        self._fill_voices()
+        self._fill_downloads()
+        self._show_live()
+        self.engine_state.configure(text=self._engine_text())
+
+    def _show_live(self) -> None:
+        engine = self._chosen(self.engine_box, self.engine_keys)
+        live = self.LIVE.get(engine, ())
+        for key, box in (("voice", self.voice_box), ("speed", self.speed_box), ("device", self.device_box)):
+            box.configure(state="readonly" if key in live else "disabled")
+        for key, box in (("python", self.python_box), ("clip", self.clip_box)):
+            box.configure(state="normal" if key in live else "disabled")
+        self.download_box.configure(state="readonly" if "download" in live else "disabled")
+        self.download_button.state(["!disabled"] if "download" in live and self.download_keys else ["disabled"])
+        self.install_button.state(["!disabled"] if engine in tts.PACKAGES else ["disabled"])
+
+    def _engine_text(self) -> str:
+        engine = self._chosen(self.engine_box, self.engine_keys)
+        if engine not in tts.PACKAGES:
+            return self.app.t("speech_builtin")
+        if tts.available(engine, self.python_box.get().strip() or None):
+            return self.app.t("speech_found").format(engine=tts.LABELS[engine])
+        return self.app.t("speech_missing").format(engine=tts.LABELS[engine])
+
+    def _recheck(self) -> None:
+        self.engine_state.configure(text=self._engine_text())
+
     def _fill_voices(self) -> None:
-        code = self._chosen(self.language_box, self.language_keys)
         engine = self._chosen(self.engine_box, self.engine_keys)
         names: list[str | None] = [None]
         if engine not in (None, "auto", "off"):
-            names += tts.voices(engine, LANGUAGES.get(code, LANGUAGES["en"]))
+            names += tts.voices(engine, self.language())
         self.voice_keys = names
         self.voice_box.configure(values=[self._label_text(k) for k in names])
-        self.voice_box.set(self._label_text(None))
+        saved = self.app.options["voice"]
+        self.voice_box.set(self._label_text(saved if saved in names else None))
+
+    def _fill_downloads(self) -> None:
+        """The Piper voices this language has that are not on the machine yet."""
+        engine = self._chosen(self.engine_box, self.engine_keys)
+        code = self.language().code
+        have = set(tts.piper_voices(code))
+        wanted = tts.PIPER_VOICES.get(code, []) if engine in ("auto", tts.PIPER) else []
+        self.download_keys = [name for name in wanted if name not in have]
+        self.download_box.configure(values=self.download_keys)
+        self.download_box.set(self.download_keys[0] if self.download_keys else "")
 
     def _pick_clip(self) -> None:
         path = self.app._browse("opt_clip", self.clip_box.get(), "file")
@@ -1971,69 +2201,98 @@ class Options:
             self.clip_box.delete(0, "end")
             self.clip_box.insert(0, path)
 
-    def _chatterbox_text(self) -> str:
-        engine = tts.CHATTERBOX
-        python = self.python_box.get().strip() or None
-        if tts.available(engine, python):
-            return self.app.t("chatterbox_found")
-        return self.app.t("chatterbox_missing")
+    def _settings(self) -> dict:
+        """The engine settings as they stand in the boxes. Only this thread reads a widget."""
+        return {
+            "engine": self._chosen(self.engine_box, self.engine_keys),
+            "voice": self._chosen(self.voice_box, self.voice_keys),
+            "speed": self._chosen(self.speed_box, self.speed_keys, SPEED_KEYS),
+            "python": self.python_box.get().strip() or None,
+            "clip": self.clip_box.get().strip() or None,
+            "device": self._chosen(self.device_box, self.device_keys),
+        }
 
-    def _recheck_chatterbox(self) -> None:
-        self.chatterbox_state.configure(text=self._chatterbox_text())
+    def _install_engine(self) -> None:
+        """pip runs in the background: a neural engine is a gigabyte or more."""
+        engine = self._chosen(self.engine_box, self.engine_keys)
+        self.install_button.state(["disabled"])
+        self.install_button.configure(text=self.app.t("speech_installing"))
+        threading.Thread(target=self._job, args=("install", engine, self._settings()), daemon=True).start()
 
-    def _install_chatterbox(self) -> None:
-        """pip runs in the background: the download is a gigabyte or more."""
-        self.chatterbox_button.state(["disabled"])
-        self.chatterbox_button.configure(text=self.app.t("chatterbox_installing"))
-        # The entry is read here: only this thread may touch a widget.
-        python = self.python_box.get().strip() or None
-        threading.Thread(target=self._chatterbox_install, args=(python,), daemon=True).start()
+    def _download_voice(self) -> None:
+        name = self._chosen(self.download_box, self.download_keys)
+        if not name:
+            return
+        self.download_button.state(["disabled"])
+        self.download_button.configure(text=self.app.t("speech_installing"))
+        threading.Thread(target=self._job, args=("voice", name, self._settings()), daemon=True).start()
 
-    def _chatterbox_install(self, python: str | None = None) -> None:
+    def _try_voice(self) -> None:
+        """Speak the sample with the settings as they stand, then play it back."""
+        self.try_button.state(["disabled"])
+        threading.Thread(
+            target=self._job, args=("try", self.try_box.get().strip() or self._sample_text(), self._settings()),
+            daemon=True,
+        ).start()
+
+    def _job(self, kind: str, argument: str, options: dict) -> None:
+        code = self.language().code
         try:
-            self.events.put(tts.install_chatterbox(python))
+            if kind == "install":
+                self.events.put(("install", tts.install_engine(argument, options["python"])))
+                return
+            if kind == "voice":
+                self.events.put(("voice", tts.download_voice(argument, options["python"])))
+                return
+            if self._try_folder is None:
+                self._try_folder = Path(tempfile.mkdtemp(prefix="daisy2telmi-try-"))
+            clip = options["clip"]
+            if clip and not Path(clip).is_file():
+                raise tts.TtsError(f"no such reference clip: {clip}")
+            tts.synthesize(
+                argument, code, self._try_folder / "try.mp3",
+                options["engine"], options["voice"], self.app.options["command"], options["python"],
+                clip, options["device"], options["speed"],
+            )
+            self.events.put(("try", self._try_folder / "try.mp3"))
         except tts.TtsError as exc:
             log.error("%s", exc)
-            self.events.put(None)
+            self.events.put((kind, None))
 
-    def _drain(self) -> None:
-        if not self.top.winfo_exists():
-            return
-        try:
-            installed = self.events.get_nowait()
-        except queue.Empty:
-            self.top.after(200, self._drain)
-            return
-        if installed and not self.python_box.get().strip():
-            # The app built its own Python: show the user which one now speaks.
-            self.python_box.insert(0, installed)
-        self.chatterbox_button.state(["!disabled"])
-        self.chatterbox_button.configure(text=self.app.t("chatterbox_install"))
-        self.chatterbox_state.configure(text=self._chatterbox_text())
-        self.top.after(200, self._drain)
+    def finished(self, kind: str, result: object) -> None:
+        if kind == "install":
+            if result and not self.python_box.get().strip():
+                # The app built its own Python: show the user which one now speaks.
+                self.python_box.insert(0, str(result))
+            self.install_button.state(["!disabled"])
+            self.install_button.configure(text=self.app.t("speech_install"))
+            self._show_engine()
+        elif kind == "voice":
+            self.download_button.state(["!disabled"])
+            self.download_button.configure(text=self.app.t("speech_download"))
+            self._show_engine()
+        elif kind == "try":
+            self.try_button.state(["!disabled"])
+            self.try_button.configure(text=self.app.t("speech_try"))
+            if result is not None:
+                chapters.stop_preview(self._playing)
+                self._playing = chapters.open_preview(Path(result))
 
     def _close(self) -> None:
-        self.app.options.update(
+        self._save(
             {
-                "language": self._chosen(self.language_box, self.language_keys),
-                "announce": self._chosen(self.announce_box, self.announce_keys, ANNOUNCE_KEYS),
-                "autoplay": self.autoplay_var.get(),
-                "card_total": self.card_total_var.get(),
                 "tts": self._chosen(self.engine_box, self.engine_keys),
                 "voice": self._chosen(self.voice_box, self.voice_keys),
+                "speed": self._chosen(self.speed_box, self.speed_keys, SPEED_KEYS),
                 "python": self.python_box.get().strip() or None,
                 "clip": self.clip_box.get().strip() or None,
                 "device": self._chosen(self.device_box, self.device_keys),
-                "frameless": self.frameless_var.get(),
             }
         )
-        self.app.language_var.set(self.app.options["language"])
-        self.app.set_frameless(self.app.options["frameless"])
-        self.app._relabel()
-        try:
-            settings.save(self.app.options)
-        except OSError as exc:
-            self.app._append(f"ERROR: could not save options: {exc}")
+        self.app._show_engines()
+        chapters.stop_preview(self._playing)
+        if self._try_folder is not None:
+            shutil.rmtree(self._try_folder, ignore_errors=True)
         self.top.destroy()
 
 

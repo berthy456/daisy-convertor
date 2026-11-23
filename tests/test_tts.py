@@ -21,8 +21,16 @@ requires_espeak = pytest.mark.skipif(
 requires_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
 
 
-def test_the_engine_list_names_the_five_back_ends() -> None:
-    assert [engine.name for engine in tts.engines()] == [tts.ESPEAK, tts.SAY, tts.SAPI, tts.COMMAND, tts.CHATTERBOX]
+def test_the_engine_list_names_the_back_ends_in_the_order_the_page_lists_them() -> None:
+    assert [engine.name for engine in tts.engines()] == [
+        tts.PIPER,
+        tts.ESPEAK,
+        tts.SAY,
+        tts.SAPI,
+        tts.COQUI,
+        tts.CHATTERBOX,
+        tts.COMMAND,
+    ]
 
 
 def test_windows_speech_is_only_offered_on_windows(monkeypatch) -> None:
@@ -38,8 +46,9 @@ def test_off_short_circuits_before_any_lookup() -> None:
 
 
 def test_an_absent_engine_is_refused_rather_than_tried() -> None:
-    # Chatterbox answers with its own hint about pip, and has a test of its own.
-    absent = next((e.name for e in tts.engines() if not e.found and e.name != tts.CHATTERBOX), None)
+    # The package engines answer with their own hint about pip, and have tests of
+    # their own; this one is about the engines that live on the machine.
+    absent = next((e.name for e in tts.engines() if not e.found and e.name not in tts.PACKAGES), None)
     if absent is None:
         pytest.skip("this machine has every engine")
     with pytest.raises(tts.TtsError, match="not available"):
@@ -48,7 +57,7 @@ def test_an_absent_engine_is_refused_rather_than_tried() -> None:
 
 def test_an_unknown_engine_name_is_refused() -> None:
     with pytest.raises(tts.TtsError, match="unknown speech engine"):
-        tts.resolve("coqui", LANGUAGES["en"])
+        tts.resolve("festival", LANGUAGES["en"])
 
 
 @requires_espeak
@@ -126,23 +135,29 @@ def test_a_custom_command_needs_a_template() -> None:
         tts.synthesize("Chapter 1", "en", Path("/tmp/x.mp3"), engine=tts.COMMAND)
 
 
-def test_the_chatterbox_helper_is_a_real_file() -> None:
+@pytest.mark.parametrize("engine", [tts.CHATTERBOX, tts.PIPER, tts.COQUI])
+def test_each_engine_helper_is_a_real_file(engine: str) -> None:
     # The frozen binary has no Python of its own, so the helper it hands to the
     # user's interpreter has to exist on disk rather than live inside the archive.
-    assert tts._speak_script().is_file()
+    assert tts._speak_script(engine).is_file()
 
 
-def test_chatterbox_is_refused_when_no_python_is_on_the_machine(monkeypatch) -> None:
-    monkeypatch.setattr(tts, "_python", lambda python=None: None)
+@pytest.mark.parametrize("engine", [tts.CHATTERBOX, tts.PIPER, tts.COQUI])
+def test_a_package_engine_is_refused_when_no_python_is_on_the_machine(monkeypatch, engine: str) -> None:
+    monkeypatch.setattr(tts, "_pythons", lambda python=None: [])
     with pytest.raises(tts.TtsError, match="runs in your own Python"):
-        tts.resolve(tts.CHATTERBOX, LANGUAGES["fr"])
+        tts.resolve(engine, LANGUAGES["fr"])
 
 
-def test_chatterbox_points_at_the_install_when_it_is_missing(monkeypatch) -> None:
-    monkeypatch.setattr(tts, "_python", lambda python=None: "/usr/bin/python3")
-    monkeypatch.setattr(tts, "_has_chatterbox", lambda exe: False)
-    with pytest.raises(tts.TtsError, match="pip install chatterbox-tts"):
-        tts.resolve(tts.CHATTERBOX, LANGUAGES["fr"])
+@pytest.mark.parametrize(
+    "engine,package",
+    [(tts.CHATTERBOX, "chatterbox-tts"), (tts.PIPER, "piper-tts"), (tts.COQUI, "coqui-tts")],
+)
+def test_a_package_engine_points_at_the_install_when_it_is_missing(monkeypatch, engine: str, package: str) -> None:
+    monkeypatch.setattr(tts, "_pythons", lambda python=None: ["/usr/bin/python3"])
+    monkeypatch.setattr(tts, "_has_package", lambda name, exe: False)
+    with pytest.raises(tts.TtsError, match=f"pip install {package}"):
+        tts.resolve(engine, LANGUAGES["fr"])
 
 
 class _SilentProcess:
@@ -152,7 +167,7 @@ class _SilentProcess:
         return 0
 
 
-def test_installing_chatterbox_uses_the_pip_of_the_python_named(monkeypatch) -> None:
+def test_installing_a_package_uses_the_pip_of_the_python_named(monkeypatch) -> None:
     started: list[list[str]] = []
 
     def fake_popen(argv, **kwargs):
@@ -161,13 +176,13 @@ def test_installing_chatterbox_uses_the_pip_of_the_python_named(monkeypatch) -> 
 
     monkeypatch.setattr(tts.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(tts, "_python", lambda python=None: "/opt/python")
-    tts._chatterbox_cache["/opt/python"] = False
+    tts._package_cache[("/opt/python", tts.PIPER)] = False
 
-    assert tts.install_chatterbox("/opt/python") == "/opt/python"
-    assert started == [["/opt/python", "-m", "pip", "install", "--upgrade", tts.CHATTERBOX_PACKAGE]]
+    assert tts.install_engine(tts.PIPER, "/opt/python") == "/opt/python"
+    assert started == [["/opt/python", "-m", "pip", "install", "--upgrade", tts.PACKAGES[tts.PIPER]]]
     # The options page shows whether the package is there, so it must look again.
-    assert "/opt/python" not in tts._chatterbox_cache
-    tts._chatterbox_cache.clear()
+    assert ("/opt/python", tts.PIPER) not in tts._package_cache
+    tts._package_cache.clear()
 
 
 def test_an_install_with_no_python_named_makes_an_environment_of_its_own(
@@ -175,7 +190,7 @@ def test_an_install_with_no_python_named_makes_an_environment_of_its_own(
 ) -> None:
     """Debian 13 and Fedora refuse a pip install in their own Python, so the app builds one."""
     started: list[list[str]] = []
-    env = tmp_path / "chatterbox"
+    env = tmp_path / "piper"
 
     def fake_run(argv, **kwargs):
         started.append(argv)
@@ -187,20 +202,20 @@ def test_an_install_with_no_python_named_makes_an_environment_of_its_own(
 
     monkeypatch.setattr(tts.subprocess, "run", fake_run)
     monkeypatch.setattr(tts.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(tts.settings, "chatterbox_env", lambda: env)
+    monkeypatch.setattr(tts.settings, "speech_env", lambda engine: env)
     monkeypatch.setattr(tts, "_python", lambda python=None: "/usr/bin/python3")
 
-    exe = tts.install_chatterbox()
+    exe = tts.install_engine(tts.PIPER)
 
     assert started[0] == ["/usr/bin/python3", "-m", "venv", str(env)]
-    assert [exe, "-m", "pip", "install", "--upgrade", tts.CHATTERBOX_PACKAGE] in started
+    assert [exe, "-m", "pip", "install", "--upgrade", tts.PACKAGES[tts.PIPER]] in started
     assert exe == str(env / "bin/python")
 
 
 def test_an_environment_whose_python_lacks_ensurepip_is_given_its_pip(tmp_path, monkeypatch) -> None:
     """Debian ships venv without ensurepip: the environment still has to end up with pip."""
     started: list[list[str]] = []
-    env = tmp_path / "chatterbox"
+    env = tmp_path / "piper"
 
     def fake_run(argv, **kwargs):
         started.append(argv)
@@ -224,10 +239,10 @@ def test_an_environment_whose_python_lacks_ensurepip_is_given_its_pip(tmp_path, 
 
     monkeypatch.setattr(tts.subprocess, "run", fake_run)
     monkeypatch.setattr(tts.urllib.request, "urlopen", lambda *a, **k: FakeDownload())
-    monkeypatch.setattr(tts.settings, "chatterbox_env", lambda: env)
+    monkeypatch.setattr(tts.settings, "speech_env", lambda engine: env)
     monkeypatch.setattr(tts, "_python", lambda python=None: "/usr/bin/python3")
 
-    exe = tts.make_chatterbox_env()
+    exe = tts.make_speech_env(tts.PIPER)
 
     assert started[1] == ["/usr/bin/python3", "-m", "venv", "--without-pip", str(env)]
     assert started[2][0] == exe and started[2][1].endswith(".py"), "pip is fetched into that environment"
@@ -237,7 +252,7 @@ def test_an_environment_whose_python_lacks_ensurepip_is_given_its_pip(tmp_path, 
 def test_an_environment_falls_back_to_the_machines_own_pip(tmp_path, monkeypatch) -> None:
     """No pip to fetch from the network: the machine's own pip can still fill the environment."""
     started: list[list[str]] = []
-    env = tmp_path / "chatterbox"
+    env = tmp_path / "piper"
 
     def fake_run(argv, **kwargs):
         started.append(argv)
@@ -260,10 +275,10 @@ def test_an_environment_falls_back_to_the_machines_own_pip(tmp_path, monkeypatch
 
     monkeypatch.setattr(tts.subprocess, "run", fake_run)
     monkeypatch.setattr(tts.urllib.request, "urlopen", lambda *a, **k: FakeDownload())
-    monkeypatch.setattr(tts.settings, "chatterbox_env", lambda: env)
+    monkeypatch.setattr(tts.settings, "speech_env", lambda engine: env)
     monkeypatch.setattr(tts, "_python", lambda python=None: "/usr/bin/python3")
 
-    exe = tts.make_chatterbox_env()
+    exe = tts.make_speech_env(tts.PIPER)
 
     assert exe == str(env / "bin/python")
     assert started[-2] == [
@@ -278,7 +293,7 @@ def test_an_environment_falls_back_to_the_machines_own_pip(tmp_path, monkeypatch
 
 
 def test_no_pip_at_all_names_the_package_to_install(tmp_path, monkeypatch) -> None:
-    env = tmp_path / "chatterbox"
+    env = tmp_path / "piper"
 
     def fake_run(argv, **kwargs):
         if argv[1:3] == ["-m", "venv"]:
@@ -300,17 +315,17 @@ def test_no_pip_at_all_names_the_package_to_install(tmp_path, monkeypatch) -> No
 
     monkeypatch.setattr(tts.subprocess, "run", fake_run)
     monkeypatch.setattr(tts.urllib.request, "urlopen", lambda *a, **k: FakeDownload())
-    monkeypatch.setattr(tts.settings, "chatterbox_env", lambda: env)
+    monkeypatch.setattr(tts.settings, "speech_env", lambda engine: env)
     monkeypatch.setattr(tts, "_python", lambda python=None: "/usr/bin/python3")
 
     with pytest.raises(tts.TtsError) as raised:
-        tts.make_chatterbox_env()
+        tts.make_speech_env(tts.PIPER)
     assert "python3-venv" in str(raised.value)
 
 
 def test_a_second_install_reuses_the_environment(tmp_path, monkeypatch) -> None:
-    env = tmp_path / "chatterbox"
-    exe = tts.chatterbox_python(env)
+    env = tmp_path / "piper"
+    exe = tts.speech_python(env)
     Path(exe).parent.mkdir(parents=True)
     Path(exe).write_text("")
 
@@ -318,9 +333,9 @@ def test_a_second_install_reuses_the_environment(tmp_path, monkeypatch) -> None:
         assert argv[1:3] == ["-m", "pip"], "the environment is looked at, never rebuilt"
         return subprocess.CompletedProcess(argv, 0, "pip 25.1.1 from site-packages", "")
 
-    monkeypatch.setattr(tts.settings, "chatterbox_env", lambda: env)
+    monkeypatch.setattr(tts.settings, "speech_env", lambda engine: env)
     monkeypatch.setattr(tts.subprocess, "run", fake_run)
-    assert tts.make_chatterbox_env() == exe
+    assert tts.make_speech_env(tts.PIPER) == exe
 
 
 def test_an_environment_left_without_pip_is_given_its_pip(tmp_path, monkeypatch) -> None:
@@ -328,8 +343,8 @@ def test_an_environment_left_without_pip_is_given_its_pip(tmp_path, monkeypatch)
     nothing to install with. Reusing it fails on the first pip line, so the pip is
     fetched into the environment that is already there."""
     started: list[list[str]] = []
-    env = tmp_path / "chatterbox"
-    exe = tts.chatterbox_python(env)
+    env = tmp_path / "piper"
+    exe = tts.speech_python(env)
     Path(exe).parent.mkdir(parents=True)
     Path(exe).write_text("")
 
@@ -351,15 +366,15 @@ def test_an_environment_left_without_pip_is_given_its_pip(tmp_path, monkeypatch)
 
     monkeypatch.setattr(tts.subprocess, "run", fake_run)
     monkeypatch.setattr(tts.urllib.request, "urlopen", lambda *a, **k: FakeDownload())
-    monkeypatch.setattr(tts.settings, "chatterbox_env", lambda: env)
+    monkeypatch.setattr(tts.settings, "speech_env", lambda engine: env)
     monkeypatch.setattr(tts, "_python", lambda python=None: pytest.fail("no new environment"))
 
-    assert tts.make_chatterbox_env() == exe
+    assert tts.make_speech_env(tts.PIPER) == exe
     assert started[0] == [exe, "-m", "pip", "--version"]
     assert started[1][0] == exe and started[1][1].endswith(".py"), "pip goes into the environment left behind"
 
 
-def test_a_failed_chatterbox_install_says_so(monkeypatch) -> None:
+def test_a_failed_install_says_so(monkeypatch) -> None:
     class FailedProcess:
         stdout: list[str] = []
 
@@ -368,32 +383,35 @@ def test_a_failed_chatterbox_install_says_so(monkeypatch) -> None:
 
     monkeypatch.setattr(tts.subprocess, "Popen", lambda argv, **kwargs: FailedProcess())
     monkeypatch.setattr(tts, "_python", lambda python=None: "/opt/python")
-    with pytest.raises(tts.TtsError, match="could not install"):
-        tts.install_chatterbox("/opt/python")
+    with pytest.raises(tts.TtsError, match="pip failed in /opt/python"):
+        tts.install_engine(tts.PIPER, "/opt/python")
 
 
-def test_chatterbox_cannot_be_installed_without_a_python(monkeypatch) -> None:
+def test_a_package_cannot_be_installed_without_a_python(monkeypatch) -> None:
     monkeypatch.setattr(tts, "_python", lambda python=None: None)
     with pytest.raises(tts.TtsError, match="no Python to install"):
-        tts.install_chatterbox("/opt/python")
+        tts.install_engine(tts.PIPER, "/opt/python")
 
 
-def test_a_run_without_chatterbox_still_makes_its_cards(monkeypatch) -> None:
-    """Chatterbox is the saved default, so a machine that lacks it must convert
-    with its own voice instead of failing on the cards."""
-    monkeypatch.setattr(tts, "_python", lambda python=None: "/usr/bin/python3")
-    monkeypatch.setattr(tts, "_has_chatterbox", lambda exe: False)
-    chosen = cli.speech(Announce(mode="chapter", language="fr", engine=tts.CHATTERBOX))
-    assert chosen.engine == tts.AUTO
+def test_a_run_without_a_neural_engine_still_makes_its_cards(monkeypatch) -> None:
+    """A neural engine is the one a user picks for its voice, but it is not inside
+    the app, so a machine that lacks it must convert with its own voice instead of
+    failing on the cards."""
+    monkeypatch.setattr(tts, "_pythons", lambda python=None: ["/usr/bin/python3"])
+    monkeypatch.setattr(tts, "_has_package", lambda name, exe: False)
+    for engine in (tts.CHATTERBOX, tts.COQUI, tts.PIPER):
+        chosen = cli.speech(Announce(mode="chapter", language="fr", engine=engine))
+        assert chosen.engine == tts.AUTO
 
-    monkeypatch.setattr(tts, "_has_chatterbox", lambda exe: True)
-    assert cli.speech(Announce(engine=tts.CHATTERBOX)).engine == tts.CHATTERBOX
+    monkeypatch.setattr(tts, "_has_package", lambda name, exe: True)
+    for engine in (tts.CHATTERBOX, tts.COQUI, tts.PIPER):
+        assert cli.speech(Announce(engine=engine)).engine == engine
     assert cli.speech(Announce(engine=tts.ESPEAK)).engine == tts.ESPEAK
     assert cli.speech(None) is None
 
 
-def test_chatterbox_is_only_offered_when_its_package_is_installed(monkeypatch) -> None:
-    tts._chatterbox_cache.clear()
+def test_a_package_engine_is_only_offered_when_its_package_is_installed(monkeypatch) -> None:
+    tts._package_cache.clear()
     seen: list[str] = []
 
     def fake_run(argv, capture_output, text):
@@ -401,19 +419,19 @@ def test_chatterbox_is_only_offered_when_its_package_is_installed(monkeypatch) -
         return subprocess.CompletedProcess(argv, 0, stdout="False\n", stderr="")
 
     monkeypatch.setattr(tts.subprocess, "run", fake_run)
+    monkeypatch.setattr(tts, "_pythons", lambda python=None: ["/usr/bin/python3"])
     assert not tts.available(tts.CHATTERBOX, "/usr/bin/python3")
-    # find_spec only looks the package up; importing chatterbox would pull torch in.
+    # find_spec only looks the package up; importing any of them would pull torch in.
     assert seen[:2] == ["/usr/bin/python3", "-I"] and "find_spec" in " ".join(seen)
     # The options page asks on every relabel, so the answer is kept.
     once = len(seen)
     assert not tts.available(tts.CHATTERBOX, "/usr/bin/python3")
     assert len(seen) == once
-    tts._chatterbox_cache.clear()
+    tts._package_cache.clear()
 
 
-@requires_ffmpeg
-def test_chatterbox_loads_its_model_once_for_the_whole_batch(tmp_path, monkeypatch) -> None:
-    manifests: list[dict] = []
+def _fake_batch(monkeypatch, manifests: list[dict], stdout: str = "") -> None:
+    """A stand-in for the helper process: it writes silent WAVs and reports nothing."""
 
     def fake_check(argv, label, env=None):
         manifests.append(json.loads(Path(argv[3]).read_text(encoding="utf-8")))
@@ -423,11 +441,17 @@ def test_chatterbox_loads_its_model_once_for_the_whole_batch(tmp_path, monkeypat
                 handle.setnchannels(1)
                 handle.setsampwidth(2)
                 handle.writeframes(b"\x00\x20" * 8000)
-        return subprocess.CompletedProcess(argv, 0, "chatterbox speaking on mps\n", "")
+        return subprocess.CompletedProcess(argv, 0, stdout, "")
 
     monkeypatch.setattr(tts, "_check", fake_check)
-    monkeypatch.setattr(tts, "_python", lambda python=None: "/usr/bin/python3")
-    monkeypatch.setattr(tts, "_has_chatterbox", lambda exe: True)
+    monkeypatch.setattr(tts, "_pythons", lambda python=None: ["/usr/bin/python3"])
+    monkeypatch.setattr(tts, "_has_package", lambda name, exe: True)
+
+
+@requires_ffmpeg
+def test_a_neural_engine_loads_its_model_once_for_the_whole_batch(tmp_path, monkeypatch) -> None:
+    manifests: list[dict] = []
+    _fake_batch(monkeypatch, manifests, "chatterbox speaking on mps\n")
 
     dests = [tmp_path / f"c{k}.mp3" for k in range(3)]
     tts.synthesize_all(
@@ -453,23 +477,113 @@ def test_chatterbox_loads_its_model_once_for_the_whole_batch(tmp_path, monkeypat
 @requires_ffmpeg
 def test_the_device_is_left_to_the_model_when_not_chosen(tmp_path, monkeypatch) -> None:
     manifests: list[dict] = []
-
-    def fake_check(argv, label, env=None):
-        manifest = json.loads(Path(argv[3]).read_text(encoding="utf-8"))
-        manifests.append(manifest)
-        for out in manifest["outs"]:
-            with wave.open(out, "wb") as handle:
-                handle.setframerate(8000)
-                handle.setnchannels(1)
-                handle.setsampwidth(2)
-                handle.writeframes(b"\x00\x20" * 8000)
-        return subprocess.CompletedProcess(argv, 0, "", "")
-
-    monkeypatch.setattr(tts, "_check", fake_check)
-    monkeypatch.setattr(tts, "_python", lambda python=None: "/usr/bin/python3")
-    monkeypatch.setattr(tts, "_has_chatterbox", lambda exe: True)
+    _fake_batch(monkeypatch, manifests)
     tts.synthesize_all(["un"], "fr", [tmp_path / "c0.mp3"], engine=tts.CHATTERBOX)
     assert manifests[0]["device"] == "auto"
+
+
+def test_the_piper_voice_folder_lists_only_the_language_it_holds(tmp_path, monkeypatch) -> None:
+    voices = tmp_path / "voices"
+    voices.mkdir()
+    for name in ("fr_FR-siwis-medium", "fr_FR-tom-medium", "en_US-lessac-medium", "fr_FR-unlisted-low"):
+        (voices / f"{name}.onnx").write_text("")
+    monkeypatch.setattr(tts.settings, "speech_voices", lambda: voices)
+
+    # The voices the app lists come in the order it lists them; a voice the user put
+    # there themselves is still offered, at the end.
+    listed = tts.PIPER_VOICES["fr"][0]
+    assert tts.piper_voices("fr") == [listed, "fr_FR-tom-medium", "fr_FR-unlisted-low"]
+    assert tts.piper_voices("de") == []
+    assert tts.piper_voice("fr").name == f"{listed}.onnx"
+    assert tts.piper_voice("de") is None
+
+
+def test_downloading_a_voice_runs_piper_in_the_engine_python(tmp_path, monkeypatch) -> None:
+    started: list[list[str]] = []
+    voices = tmp_path / "voices"
+    monkeypatch.setattr(tts.settings, "speech_voices", lambda: voices)
+    monkeypatch.setattr(tts, "_pythons", lambda python=None: ["/opt/python"])
+    monkeypatch.setattr(tts, "_has_package", lambda name, exe: True)
+    monkeypatch.setattr(tts, "_stream", lambda exe, args, label: started.append([exe, *args]))
+    voices.mkdir()
+    (voices / "fr_FR-siwis-medium.onnx").write_text("")
+
+    assert tts.download_voice("fr_FR-siwis-medium") == voices / "fr_FR-siwis-medium.onnx"
+    assert started == [["/opt/python", "-m", "piper.download_voices", "fr_FR-siwis-medium", "--data-dir", str(voices)]]
+
+
+def test_a_voice_download_needs_the_engine_installed_first(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(tts, "_pythons", lambda python=None: ["/usr/bin/python3"])
+    monkeypatch.setattr(tts, "_has_package", lambda name, exe: False)
+    with pytest.raises(tts.TtsError, match="is not installed"):
+        tts.download_voice("fr_FR-siwis-medium")
+
+
+@requires_ffmpeg
+def test_a_piper_card_carries_the_voice_and_the_speed(tmp_path, monkeypatch) -> None:
+    manifests: list[dict] = []
+    _fake_batch(monkeypatch, manifests, "piper speaking on cpu\n")
+    voices = tmp_path / "voices"
+    voices.mkdir()
+    (voices / "fr_FR-siwis-medium.onnx").write_text("")
+    monkeypatch.setattr(tts.settings, "speech_voices", lambda: voices)
+
+    tts.synthesize_all(["chapitre 1"], "fr", [tmp_path / "c0.mp3"], engine=tts.PIPER, speed="slow")
+
+    assert manifests[0]["model"] == str(voices / "fr_FR-siwis-medium.onnx")
+    assert manifests[0]["length_scale"] == tts.LENGTH_SCALES["slow"]
+
+
+@requires_ffmpeg
+def test_a_piper_card_without_a_voice_says_what_to_download(tmp_path, monkeypatch) -> None:
+    manifests: list[dict] = []
+    _fake_batch(monkeypatch, manifests)
+    monkeypatch.setattr(tts.settings, "speech_voices", lambda: tmp_path / "nothing")
+    with pytest.raises(tts.TtsError, match="Install voice"):
+        tts.synthesize_all(["chapitre 1"], "fr", [tmp_path / "c0.mp3"], engine=tts.PIPER)
+
+
+def test_auto_takes_piper_only_when_it_has_a_voice_for_the_language(monkeypatch) -> None:
+    monkeypatch.setattr(tts, "available", lambda name, python=None: name == tts.PIPER)
+    monkeypatch.setattr(tts, "piper_voice", lambda lang, voice=None: None)
+    with pytest.raises(tts.TtsError, match="no speech engine"):
+        tts.resolve(tts.AUTO, LANGUAGES["fr"])
+
+    monkeypatch.setattr(tts, "piper_voice", lambda lang, voice=None: Path(f"/v/{lang.code}.onnx"))
+    assert tts.resolve(tts.AUTO, LANGUAGES["fr"]) == tts.PIPER
+
+
+def test_auto_takes_the_lightest_engine_installed(monkeypatch) -> None:
+    monkeypatch.setattr(tts, "available", lambda name, python=None: name in (tts.ESPEAK, tts.CHATTERBOX))
+    assert tts.resolve(tts.AUTO, LANGUAGES["fr"]) == tts.ESPEAK
+
+
+def test_coqui_lists_the_models_of_the_language_then_the_cloning_one(monkeypatch) -> None:
+    models = tts.voices(tts.COQUI, LANGUAGES["fr"])
+    assert models[0] == tts.COQUI_MODELS["fr"][0]
+    assert tts.COQUI_MULTILINGUAL in models
+    # Arabic has no model of its own: only the cloning one reads it.
+    assert tts.voices(tts.COQUI, LANGUAGES["ar"]) == [tts.COQUI_MULTILINGUAL]
+
+
+@requires_ffmpeg
+def test_coqui_needs_a_recording_for_the_model_that_clones(tmp_path, monkeypatch) -> None:
+    manifests: list[dict] = []
+    _fake_batch(monkeypatch, manifests)
+    with pytest.raises(tts.TtsError, match="reads with a cloned voice"):
+        tts.synthesize_all(
+            ["un"], "fr", [tmp_path / "c0.mp3"], engine=tts.COQUI, voice=tts.COQUI_MULTILINGUAL
+        )
+
+    tts.synthesize_all(
+        ["un"],
+        "fr",
+        [tmp_path / "c0.mp3"],
+        engine=tts.COQUI,
+        voice=tts.COQUI_MULTILINGUAL,
+        clip="ref.wav",
+    )
+    assert manifests[0]["clip"] == "ref.wav"
 
 
 def test_a_forced_chatterbox_device_is_refused_when_the_machine_lacks_it() -> None:

@@ -93,7 +93,9 @@ def speak_chatterbox(phrases: list[str], lang, raws: list[Path], folder: Path, p
         encoding="utf-8",
     )
     result = subprocess.run(
-        [python, "-I", str(tts._speak_script()), str(manifest)], capture_output=True, text=True
+        [python, "-I", str(tts._speak_script(tts.CHATTERBOX)), str(manifest)],
+        capture_output=True,
+        text=True,
     )
     if result.returncode:
         raise SystemExit(f"chatterbox failed: {(result.stderr or result.stdout).strip()}")

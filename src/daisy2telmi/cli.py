@@ -148,20 +148,32 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     speech.add_argument(
         "--tts",
         choices=tts.ENGINES,
-        help="speech engine for the cards: chatterbox (the default) unless it is missing "
-        "from --tts-python, in which case the machine's own voice is used",
+        help="speech engine for the cards: auto (the default) takes the lightest one found — "
+        "Piper when it is installed and has a voice for the language, then espeak-ng, "
+        "macOS say, Windows speech",
     )
-    speech.add_argument("--tts-voice", help="voice name for the speech engine")
-    speech.add_argument("--tts-clip", help="a few seconds of someone speaking, for --tts chatterbox to copy")
+    speech.add_argument(
+        "--tts-voice",
+        help="voice for the engine: a Piper voice name, a Coqui model, an espeak-ng or say voice",
+    )
+    speech.add_argument(
+        "--tts-clip",
+        help="a few seconds of someone speaking, for --tts chatterbox or --tts coqui to read with",
+    )
+    speech.add_argument(
+        "--tts-speed",
+        choices=tts.SPEEDS,
+        help="how fast the cards are read; espeak-ng, Piper, say and Windows speech all take it",
+    )
     speech.add_argument(
         "--tts-python",
-        help="interpreter --tts chatterbox runs in, for a Python where `pip install chatterbox-tts` was done",
+        help="interpreter the engine runs in, for a Python where its package was pip-installed",
     )
     speech.add_argument(
         "--tts-device",
         choices=tts.DEVICES,
-        help="what --tts chatterbox runs on: auto (default) takes the fastest device, "
-        "mps the Apple GPU, cuda an Nvidia one; Chatterbox otherwise stays on the CPU",
+        help="what a neural engine runs on: auto (default) takes the fastest device for "
+        "Chatterbox and the CPU for Coqui, mps the Apple GPU, cuda an Nvidia one",
     )
     speech.add_argument(
         "--tts-command",
@@ -204,6 +216,7 @@ def announce_options(args: argparse.Namespace) -> Announce:
         python=args.tts_python or saved["python"],
         clip=args.tts_clip or saved["clip"],
         device=args.tts_device or saved["device"],
+        speed=args.tts_speed or saved["speed"],
     )
 
 
@@ -280,22 +293,22 @@ def inspect(
 
 
 def speech(announce: Announce | None) -> Announce | None:
-    """The engine this run's cards get, falling back when Chatterbox is not there.
+    """The engine this run's cards get, falling back when it is not installed.
 
-    Chatterbox is the saved default because a card read by a real voice is what the
-    player is for, but it is not inside the app: it is a package the user's own
-    Python installs. A machine that does not have it keeps its own voice rather
-    than losing the story over a card.
+    The neural engines are packages the user's own Python installs, not parts of
+    the app. A machine that does not have one keeps its own voice rather than
+    losing the story over a card.
     """
-    if announce is None or announce.engine != tts.CHATTERBOX:
+    if announce is None or announce.engine not in tts.PACKAGES:
         return announce
-    if tts.available(tts.CHATTERBOX, announce.python):
+    if tts.available(announce.engine, announce.python):
         return announce
     log.warning(
-        "chatterbox is not installed in %s: the machine's own voice will read the cards "
+        "%s is not installed in %s: the machine's own voice will read the cards "
         "(pip install %s there, or pass --tts auto)",
+        tts.LABELS[announce.engine],
         announce.python or "your Python",
-        tts.CHATTERBOX_PACKAGE,
+        tts.PACKAGES[announce.engine],
     )
     return replace(announce, engine=tts.AUTO)
 

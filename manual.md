@@ -68,11 +68,12 @@ Chapter card speech:
 | `--card-negative` / `--no-card-negative` | | draws the black-and-white Lunii cards light-for-dark. Only those cards have a negative |
 | `--language` | `ar de en es fr it nl pt tr zh` | the phrase and the voice; wording in `src/daisy2telmi/i18n.py` |
 | `--autoplay` | | a part advances by itself instead of waiting for OK. A card's audio plays as soon as the card is drawn either way |
-| `--tts` | `chatterbox` `auto` `espeak` `say` `sapi` `command` `off` | `chatterbox`; `auto` is espeak-ng, then macOS `say`, then Windows speech. Asking for Chatterbox where it is missing logs a warning and uses `auto` |
-| `--tts-voice` | | voice name |
-| `--tts-clip` | | a few seconds of someone speaking, which Chatterbox copies as a voice |
-| `--tts-python` | | the interpreter that has `chatterbox-tts` |
-| `--tts-device` | `auto` `cpu` `mps` `cuda` | `auto` picks the fastest and logs it; a forced device the machine lacks stops the run |
+| `--tts` | `auto` `piper` `espeak` `say` `sapi` `coqui` `chatterbox` `command` `off` | `auto`: Piper when it is installed and has a voice for the language, then espeak-ng, then macOS `say`, then Windows speech. Asking for an engine whose package is missing logs a warning and uses `auto` |
+| `--tts-voice` | | a Piper voice file (`fr_FR-siwis-medium`), a Coqui model (`tts_models/fr/css10/vits`), or an espeak-ng / `say` voice |
+| `--tts-clip` | | a few seconds of someone speaking, which Coqui or Chatterbox reads with |
+| `--tts-speed` | `slow` `normal` `fast` | `normal`. Piper, espeak-ng, `say` and Windows speech take it; the neural models do not |
+| `--tts-python` | | the interpreter that has `piper-tts`, `coqui-tts` or `chatterbox-tts` |
+| `--tts-device` | `auto` `cpu` `mps` `cuda` | `auto` takes the fastest device for Coqui and Chatterbox, and the CPU for Piper; a forced device the machine lacks stops the run |
 | `--tts-command` | | a template with `{text}` `{out}` `{lang}` `{locale}` `{voice}` |
 
 Cards get a spoken number only when the cut is by chapter. At paragraph or sentence level a card plays the opening seconds of its own part instead, which is the only way to tell hundreds of cards apart.
@@ -164,9 +165,13 @@ The GUI looks a cover up by itself as soon as a pack is picked or dropped, and n
 
 ## Speech
 
-Chatterbox is not bundled — the binaries carry no torch — so daisy-convertor runs `src/daisy2telmi/chatterbox_speak.py` in an interpreter of your own: `pip install chatterbox-tts` first, and `--tts-python` picks the interpreter if the `python3` on `PATH` is not the one that has it. The app offers that install instead of asking you to type it: on Save, a machine without the package gets one dialog, OK runs the install in the interpreter named in the options and streams pip's output into the log, Cancel uses the machine's own voice. The options page says whether the package is in the interpreter it is pointed at and has an **Install Chatterbox** button.
+`auto`, espeak-ng, macOS `say` and Windows speech need nothing installed. The three better voices are packages in a Python rather than programs on the machine, and the binaries carry no torch and no onnxruntime: daisy-convertor runs `src/daisy2telmi/piper_speak.py`, `coqui_speak.py` or `chatterbox_speak.py` with an interpreter that has the package — `pip install piper-tts`, `coqui-tts` or `chatterbox-tts` — and `--tts-python` picks the interpreter when the `python3` on `PATH` is not the one that has it. The app offers that install instead of asking you to type it: on Save, a machine without the package gets one dialog, OK runs the install in the interpreter named on the **Speech** page and streams pip's output into the log, Cancel uses the machine's own voice. That page says whether the package is in the interpreter it is pointed at and has an **Install** button for it. Each engine gets its own environment under the data folder (`~/.local/share/daisy2telmi/<engine>`), because Coqui and Chatterbox want different torch versions.
 
-One process speaks the whole batch, because loading the model costs more than saying a chapter number. Chatterbox leaves the GPU alone unless asked, so `--tts-device mps` takes the Apple GPU and `cuda` an Nvidia one. Chatterbox is retired upstream: as of August 2026 the repository is an unmaintained MIT archive.
+Piper is the light default. `python3 -m piper.download_voices <voice> --data-dir <data folder>/voices` is what the app runs to get one, and the **Speech** page lists the voices the language has that are not downloaded yet; a Piper voice is a few tens of megabytes. Coqui downloads its model into `~/.TTS` the first time it is used.
+
+Cloning takes only the recording: `--tts-clip` is a few seconds of someone speaking, and neither Coqui's `xtts_v2` nor Chatterbox is given the words that recording says. `tts_models/multilingual/multi-dataset/xtts_v2` is the Coqui model that clones, and asking for it without a clip stops the run.
+
+One process speaks the whole batch, because loading the model costs more than saying a chapter number. Coqui and Chatterbox run on the CPU unless `--tts-device` names one, Piper asks onnxruntime for CUDA only when `cuda` is named, and a forced device the interpreter lacks stops the run. Chatterbox is retired upstream: as of August 2026 the repository is an unmaintained MIT archive.
 
 Where `python3 -m venv` cannot bootstrap pip — Debian ships `venv` without `ensurepip` unless `python3-venv` is installed — the app fetches `get-pip.py`; where that cannot be fetched either, it rebuilds the environment with `--system-site-packages` so it can run the machine's own pip, which still installs inside the environment.
 
@@ -178,7 +183,9 @@ The built binaries carry espeak-ng, its shared libraries and its language data, 
 
 The window draws its own bar along the top: the mark, its name, and the hide, enlarge and close controls. **Options → Draw the window's own bar instead of the system one** takes the system bar away; the window then moves by dragging that bar. On Linux and Windows that also leaves the window unmanaged, so it cannot be minimised or resized by its edges and the hide control is left out.
 
-**Options** holds the interface language, what the cards say, whether the drawn card counts the parts, autoplay, the speech engine, the voice, the window bar, and the Chatterbox rows: which Python runs it, which device, the voice clip, and whether the package is in that Python. Closing it writes `~/.config/daisy2telmi/config.json` (`%APPDATA%\daisy2telmi\config.json` on Windows), which the CLI reads too, so a flag only overrides what is already saved.
+The main window asks which engine reads the cards, in a box beside the player the story is made for, with a **Configure the speech...** button beside it. That opens **Speech**: the engine, its voice, the reading speed, the Python the engine runs in, the device, the recording a cloning engine reads with, a text to hear that voice in, and the install rows — whether the engine's package is in the interpreter named, and the voices the language still lacks. A row the chosen engine cannot answer for is greyed out rather than removed.
+
+**Options** holds the rest: the interface language, what the cards say, whether the drawn card counts the parts, autoplay, the window bar, and the two folders the app works in — the one the file lists open in, and the one stories are written to. Closing either window writes `~/.config/daisy2telmi/config.json` (`%APPDATA%\daisy2telmi\config.json` on Windows), which the CLI reads too, so a flag only overrides what is already saved.
 
 Drag-and-drop needs the optional `tkinterdnd2`; without it the browse buttons work and the window says so. `build_binary.py` passes `--collect-all tkinterdnd2` when it is installed.
 
@@ -330,7 +337,7 @@ Builds:
 
 - **DAISY 3 has been run against one book.** `*.opf` + `*.ncx` + per-chapter SMIL is parsed, and verified on a single published 3.x pack; other 3.x dialects are unproven.
 - **A pack with no recorded audio is only spoken on the desktop.** The web page makes no speech of its own, so it refuses such a pack rather than build a silent story.
-- **TTS speaks the cards and any part that has no audio of its own.** The default voice is Chatterbox, which is not in the binaries; the engine the binaries do carry, espeak-ng, is robotic, and `--tts command` is the way to put any other model behind it.
+- **TTS speaks the cards and any part that has no audio of its own.** The engine the binaries carry is espeak-ng, which is robotic; Piper, Coqui and Chatterbox are packages the app can install for you but does not ship, and `--tts command` is the way to put any other model behind it.
 - **The bundled ffmpeg is the build machine's binary**, unmodified and unsigned.
 - **No cover art comes from the pack.** DAISY 2.02 audio packs carry no usable cover. A lookup needs the network, and a pack with no ISBN and no searchable title has nothing to ask with.
 - **The drawn card label is uppercase Latin.** The bitmap font in `src/daisy2telmi/images.py` covers the eight Latin-script languages plus accented letters; Chinese and Arabic cards fall back to the bare number.

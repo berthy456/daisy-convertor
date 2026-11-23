@@ -82,6 +82,7 @@ class Announce:
     python: str | None = None
     clip: str | None = None
     device: str = tts.AUTO
+    speed: str = "normal"
 
     def phrase(self, number: int, total: int | None = None, title: str = "") -> str | None:
         """What the card says for one part.
@@ -251,6 +252,7 @@ def build_card_audio(
             python=announce.python,
             clip=announce.clip,
             device=announce.device,
+            speed=announce.speed,
             loudness=loudness,
         )
     except (tts.TtsError, audio.AudioError) as exc:
@@ -280,6 +282,7 @@ def narrate(text: str, announce: Announce | None, dest: Path) -> None:
             python=voice.python,
             clip=voice.clip,
             device=voice.device,
+            speed=voice.speed,
         )
     except tts.TtsError as exc:
         raise StoryError(f"this pack has no audio, and its text cannot be spoken: {exc}") from exc

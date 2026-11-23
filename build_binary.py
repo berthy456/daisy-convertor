@@ -325,10 +325,13 @@ def main() -> int:
         "--hidden-import",
         "lxml._elementpath",
         *_ffmpeg_options(ffmpeg),
-        # Chatterbox runs in the user's own Python, so its helper has to be a real
-        # file on disk; PyInstaller keeps this one at the top of the unpacked folder.
-        "--add-data",
-        f"{ROOT / 'src' / 'daisy2telmi' / 'chatterbox_speak.py'}{os.pathsep}.",
+        # Every speech engine runs in the user's own Python, so its helper has to be
+        # a real file on disk; PyInstaller keeps these at the top of the unpacked folder.
+        *[
+            option
+            for name in sorted((ROOT / "src" / "daisy2telmi").glob("*_speak.py"))
+            for option in ("--add-data", f"{name}{os.pathsep}.")
+        ],
         *_speech_options(),
         *_gui_options(),
         *_icon_options(),

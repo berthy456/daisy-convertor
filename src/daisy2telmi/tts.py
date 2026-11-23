@@ -29,19 +29,39 @@ log = logging.getLogger(__name__)
 
 AUTO = "auto"
 OFF = "off"
+PIPER = "piper"
 ESPEAK = "espeak"
 SAY = "say"
 SAPI = "sapi"
+COQUI = "coqui"
 COMMAND = "command"
 CHATTERBOX = "chatterbox"
 
-ENGINES = (AUTO, ESPEAK, SAY, SAPI, COMMAND, CHATTERBOX, OFF)
+# The engines `auto` may reach for, in the order it prefers them: the light ones
+# first, because a card has to be spoken on a machine that may have nothing
+# installed at all. Chatterbox and Coqui come after it, as the better voices a
+# user chooses on purpose.
+ENGINES = (AUTO, PIPER, ESPEAK, SAY, SAPI, COQUI, CHATTERBOX, COMMAND, OFF)
+PREFERRED = (PIPER, ESPEAK, SAY, SAPI)
 
 # What Chatterbox runs on. It picks the CPU on its own even where a GPU is
 # there, so the user can force one; `auto` takes the fastest device found.
 DEVICES = (AUTO, "cpu", "mps", "cuda")
 
+# The engines that are a package in a Python rather than a program on the machine,
+# and the name each one is imported by.
+PACKAGES = {PIPER: "piper-tts", COQUI: "coqui-tts", CHATTERBOX: "chatterbox-tts"}
+MODULES = {PIPER: "piper", COQUI: "TTS", CHATTERBOX: "chatterbox"}
+
 SPEAKING_RATE = 150  # words per minute, espeak-ng's unit
+
+SPEEDS = ("slow", "normal", "fast")
+# espeak-ng and `say` count words a minute; Piper holds each phoneme longer or
+# shorter. Only these three can be spoken at another speed.
+RATES = {"slow": 120, "normal": SPEAKING_RATE, "fast": 190}
+LENGTH_SCALES = {"slow": 1.25, "normal": 1.0, "fast": 0.8}
+# Windows speech counts steps either side of zero, and a step is about 5%.
+SAPI_RATES = {"slow": -3, "normal": 0, "fast": 3}
 
 # A card is heard over the narration, so it is levelled instead of left at whatever
 # the engine made: espeak lands near -25 LUFS and `say` near -16 on the same words.
@@ -54,6 +74,55 @@ UNLEVELLED = ""
 # Chatterbox drifts from the reference voice after a few hundred words and
 # espeak-ng is slow to answer, so narration is spoken in sentence-sized pieces.
 NARRATION_CHUNK = 400
+
+# The Piper voices to pick from, one entry per language the app has words for,
+# named as rhasspy/piper-voices names its files. Each voice carries its own
+# licence on its model card; the defaults here are CC0 or CC-BY but one.
+PIPER_VOICES: dict[str, list[str]] = {
+    "ar": ["ar_JO-kareem-medium", "ar_JO-kareem-low"],
+    "de": ["de_DE-thorsten-medium", "de_DE-thorsten-high", "de_DE-mls-medium", "de_DE-kerstin-low"],
+    "en": [
+        "en_US-lessac-medium",
+        "en_US-lessac-high",
+        "en_US-lessac-low",
+        "en_US-ryan-medium",
+        "en_US-amy-medium",
+        "en_GB-jenny_dioco-medium",
+        "en_GB-vctk-medium",
+    ],
+    "es": ["es_ES-davefx-medium", "es_ES-sharvard-medium", "es_MX-ald-medium", "es_MX-claude-high"],
+    "fr": ["fr_FR-siwis-medium", "fr_FR-upmc-medium", "fr_FR-tom-medium", "fr_FR-mls-medium", "fr_FR-siwis-low"],
+    "it": ["it_IT-paola-medium", "it_IT-riccardo-x_low"],
+    "nl": ["nl_NL-pim-medium", "nl_NL-ronnie-medium", "nl_NL-mls-medium", "nl_BE-nathalie-medium"],
+    "pt": ["pt_BR-faber-medium", "pt_BR-cadu-medium", "pt_BR-jeff-medium", "pt_PT-tugão-medium"],
+    "tr": ["tr_TR-fahrettin-medium", "tr_TR-dfki-medium", "tr_TR-fettah-medium"],
+    "zh": ["zh_CN-huayan-medium", "zh_CN-huayan-x_low"],
+}
+
+# The one Coqui model that covers every language, at the price of a recording to
+# clone and of the non-commercial terms its weights are released under.
+COQUI_MULTILINGUAL = "tts_models/multilingual/multi-dataset/xtts_v2"
+
+# The Coqui models for each language, in the order the options page lists them.
+# Arabic has none of its own: only the multilingual model speaks it, and that one
+# asks for a recording of the voice to read with.
+COQUI_MODELS: dict[str, list[str]] = {
+    "en": ["tts_models/en/ljspeech/vits", "tts_models/en/vctk/vits"],
+    "fr": ["tts_models/fr/css10/vits", "tts_models/fr/mai/tacotron2-DDC"],
+    "de": ["tts_models/de/thorsten/vits", "tts_models/de/css10/vits-neon"],
+    "es": ["tts_models/es/css10/vits", "tts_models/es/mai/tacotron2-DDC"],
+    "it": ["tts_models/it/mai_female/vits", "tts_models/it/mai_male/vits"],
+    "nl": ["tts_models/nl/css10/vits", "tts_models/nl/rdh/tacotron2-DDC"],
+    "pt": ["tts_models/pt/cv/vits"],
+    "tr": ["tts_models/tr/common-voice/glow-tts"],
+    "zh": ["tts_models/zh-CN/baker/tacotron2-DDC-GST"],
+    "ar": [COQUI_MULTILINGUAL],
+}
+
+# The languages that one model can take a recording of.
+COQUI_CLONE_LANGUAGES = {
+    "en", "es", "fr", "de", "it", "pt", "nl", "tr", "ar", "zh", "pl", "ru", "cs", "ja", "hu", "ko", "hi",
+}
 
 
 def card_target(story: float | None) -> float:
@@ -116,26 +185,48 @@ def _python(python: str | None = None) -> str | None:
     return python or _which("python3") or _which("python")
 
 
-def _speak_script() -> Path:
+def _pythons(python: str | None = None) -> list[str]:
+    """Every interpreter the app could speak with: the one named, then the ones it built.
+
+    The engines live in interpreters the app made for them, which are not on `PATH`,
+    so asking only the machine's Python would report an installed engine as missing.
+    """
+    found: list[str] = []
+    for exe in (_python(python), *(speech_python(settings.speech_env(name)) for name in PACKAGES)):
+        if exe and os.path.exists(exe) and exe not in found:
+            found.append(exe)
+    return found
+
+
+def _speak_script(engine: str) -> Path:
+    """The helper a Python outside the app runs to speak a whole batch.
+
+    Each engine gets its own file because each one loads its model differently,
+    and none of them can be imported by the app itself: the binaries carry no
+    torch and no onnxruntime.
+    """
+    name = f"{engine}_speak.py"
     if hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS) / "chatterbox_speak.py"
-    return Path(__file__).parent / "chatterbox_speak.py"
+        return Path(sys._MEIPASS) / name
+    return Path(__file__).parent / name
 
 
 # Spawning a Python to look for a package is cheap but not free, and the options
 # page asks on every relabel.
-_chatterbox_cache: dict[str, bool] = {}
+_package_cache: dict[tuple[str, str], bool] = {}
 
 
-def _has_chatterbox(exe: str | None) -> bool:
+def _has_package(engine: str, exe: str | None) -> bool:
     if not exe:
         return False
-    if exe not in _chatterbox_cache:
-        # find_spec only looks the package up: importing chatterbox would pull torch in.
-        probe = "import importlib.util as u; print(u.find_spec('chatterbox') is not None)"
+    key = (exe, engine)
+    if key not in _package_cache:
+        # find_spec only looks the package up: importing any of them pulls torch
+        # or onnxruntime in, which is what asking costs.
+        probe = f"import importlib.util as u; print(u.find_spec({MODULES[engine]!r}) is not None)"
         result = subprocess.run([exe, "-I", "-c", probe], capture_output=True, text=True)
-        _chatterbox_cache[exe] = result.stdout.strip() == "True"
-    return _chatterbox_cache[exe]
+        _package_cache[key] = result.stdout.strip() == "True"
+    return _package_cache[key]
 
 
 def available(name: str, python: str | None = None) -> bool:
@@ -148,22 +239,33 @@ def available(name: str, python: str | None = None) -> bool:
         return sys.platform == "win32" and (_which("powershell") or _which("pwsh"))
     if name == COMMAND:
         return True
-    if name == CHATTERBOX:
-        return _has_chatterbox(_python(python))
+    if name in PACKAGES:
+        return any(_has_package(name, exe) for exe in _pythons(python))
     return False
 
 
-CHATTERBOX_PACKAGE = "chatterbox-tts"
 GET_PIP = "https://bootstrap.pypa.io/get-pip.py"
 
+# What each engine is called to a person. The order is the order the options page
+# lists them in, and the text the install errors use.
+LABELS = {
+    PIPER: "Piper",
+    ESPEAK: "espeak-ng",
+    SAY: "macOS say",
+    SAPI: "Windows speech",
+    COQUI: "Coqui TTS",
+    CHATTERBOX: "Chatterbox",
+    COMMAND: "custom command",
+}
 
-def chatterbox_python(env: Path) -> str:
+
+def speech_python(env: Path) -> str:
     """The interpreter of the environment `env` holds, whether it was built or not."""
     return str(env / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python"))
 
 
-def make_chatterbox_env() -> str:
-    """Build the app's own Python environment for Chatterbox, and return its interpreter.
+def make_speech_env(engine: str) -> str:
+    """Build the app's own Python environment for `engine`, and return its interpreter.
 
     The machine's Python is not a safe place to install: Debian 13 and Fedora mark
     it externally managed and ship no pip module at all, so `python3 -m pip install`
@@ -172,8 +274,8 @@ def make_chatterbox_env() -> str:
     when `ensurepip` is missing; where it cannot be fetched, an environment that
     reads the system's packages runs the machine's own pip instead.
     """
-    env = settings.chatterbox_env()
-    exe = chatterbox_python(env)
+    env = settings.speech_env(engine)
+    exe = speech_python(env)
     if os.path.exists(exe):
         if _has_pip(exe):
             return exe
@@ -189,11 +291,11 @@ def make_chatterbox_env() -> str:
     base = _python(None)
     if not base:
         raise TtsError(
-            "no Python to build a Chatterbox environment with: install Python 3.11 or newer, "
-            "or set the Chatterbox Python in the options"
+            f"no Python to build a {LABELS[engine]} environment with: install Python 3.10 or newer, "
+            f"or set the {LABELS[engine]} Python in the options"
         )
     env.parent.mkdir(parents=True, exist_ok=True)
-    log.info("making a Chatterbox environment in %s", env)
+    log.info("making a %s environment in %s", LABELS[engine], env)
     result = subprocess.run([base, "-m", "venv", str(env)], capture_output=True, text=True)
     if result.returncode == 0 and _has_pip(exe):
         return exe
@@ -218,8 +320,8 @@ def make_chatterbox_env() -> str:
         log.info("%s: trying the machine's own pip", exc)
         if not _shared_pip(base, env):
             raise TtsError(
-                "no pip for the Chatterbox environment: install Python's venv package "
-                "(on Debian: apt install python3-venv), or set a Chatterbox Python in the options"
+                f"no pip for the {LABELS[engine]} environment: install Python's venv package "
+                f"(on Debian: apt install python3-venv), or set a {LABELS[engine]} Python in the options"
             ) from exc
     return exe
 
@@ -240,7 +342,7 @@ def _shared_pip(base: str, env: Path) -> bool:
     )
     if result.returncode:
         return False
-    exe = chatterbox_python(env)
+    exe = speech_python(env)
     if not _has_pip(exe):
         return False
     log.info("pip comes from the machine's Python")
@@ -266,79 +368,153 @@ def _bootstrap_pip(exe: str) -> None:
     finally:
         script.unlink(missing_ok=True)
     if result.returncode:
-        raise TtsError(f"could not install pip into the Chatterbox environment: {_reason(result)}")
+        raise TtsError(f"could not install pip into the environment: {_reason(result)}")
 
 
-def install_chatterbox(python: str | None = None) -> str:
-    """Install Chatterbox, and answer which interpreter now has it.
+def _stream(exe: str, args: list[str], label: str) -> None:
+    """Run a long download in `exe`, logging its output line by line.
 
-    Asked for rather than done on the side: the wheel brings torch with it, which
-    is a download of a gigabyte or more. pip's own output goes to the log, since
-    a silent minute and a half looks like a hang.
+    A silent minute and a half looks like a hang, and a torch wheel is a silent
+    minute and a half.
+    """
+    log.info("%s: %s", label, " ".join(args[:4]))
+    process = subprocess.Popen([exe, *args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    assert process.stdout is not None
+    for line in process.stdout:
+        if line.strip():
+            log.info("%s: %s", label, line.strip())
+    if process.wait():
+        raise TtsError(f"{label} failed in {exe}: {' '.join(args)}")
+
+
+def install_engine(engine: str, python: str | None = None) -> str:
+    """Install `engine`'s package, and answer which interpreter now has it.
+
+    Asked for rather than done on the side: Chatterbox and Coqui bring torch with
+    them, which is a download of a gigabyte or more.
 
     With no Python named, the app installs into one it made itself: the machine's
     own Python refuses the install on Debian 13 and Fedora.
     """
-    exe = _python(python) if python else make_chatterbox_env()
+    package = PACKAGES.get(engine)
+    if package is None:
+        raise TtsError(f"{LABELS.get(engine, engine)} is not something the app can install")
+    exe = _python(python) if python else make_speech_env(engine)
     if not exe:
         raise TtsError(
-            "no Python to install Chatterbox into: set the Chatterbox Python in the options, "
+            f"no Python to install {package} into: set the {LABELS[engine]} Python in the options, "
             "or pass --tts-python"
         )
-    command = [exe, "-m", "pip", "install", "--upgrade", CHATTERBOX_PACKAGE]
-    log.info("installing %s into %s", CHATTERBOX_PACKAGE, exe)
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    assert process.stdout is not None
-    for line in process.stdout:
-        if line.strip():
-            log.info("pip: %s", line.strip())
-    if process.wait():
-        raise TtsError(f"pip could not install {CHATTERBOX_PACKAGE} into {exe}")
-    _chatterbox_cache.clear()
-    log.info("%s is installed", CHATTERBOX_PACKAGE)
+    _stream(exe, ["-m", "pip", "install", "--upgrade", package], "pip")
+    _package_cache.clear()
+    log.info("%s is installed in %s", package, exe)
     return exe
 
 
+def engine_python(engine: str, python: str | None = None) -> str:
+    """The interpreter that has `engine`: the one named, else the one the app built."""
+    for exe in _pythons(python):
+        if _has_package(engine, exe):
+            return exe
+    raise TtsError(f"{LABELS[engine]} is not installed: install it from the speech page first")
+
+
+def download_voice(voice: str, python: str | None = None) -> Path:
+    """Download one Piper voice into the app's voice folder, and answer where it landed.
+
+    The weights are the one part of a speech engine the app never ships: a voice is
+    tens of megabytes, and the machine that speaks the cards should fetch its own.
+    """
+    exe = engine_python(PIPER, python)
+    folder = settings.speech_voices()
+    folder.mkdir(parents=True, exist_ok=True)
+    _stream(exe, ["-m", "piper.download_voices", voice, "--data-dir", str(folder)], "piper")
+    path = folder / f"{voice}.onnx"
+    if not path.is_file():
+        raise TtsError(f"the {voice} voice did not arrive in {folder}")
+    log.info("%s is in %s", voice, folder)
+    return path
+
+
 def engines(python: str | None = None) -> list[Engine]:
-    labels = {
-        ESPEAK: "espeak-ng",
-        SAY: "macOS say",
-        SAPI: "Windows speech",
-        COMMAND: "custom command",
-        CHATTERBOX: "Chatterbox",
-    }
-    return [Engine(name, labels[name], bool(available(name, python))) for name in labels]
+    return [
+        Engine(name, LABELS[name], bool(available(name, python)))
+        for name in ENGINES
+        if name not in (AUTO, OFF)
+    ]
 
 
 def resolve(engine: str, lang: Language, python: str | None = None) -> str:
-    """Pick an engine. `auto` prefers espeak-ng: it covers all ten languages."""
-    if engine in (AUTO, OFF):
-        if engine == OFF:
-            return OFF
-        for name in (ESPEAK, SAY, SAPI):
-            if available(name):
-                return name
+    """Pick an engine. `auto` takes the lightest one that can speak `lang`.
+
+    Piper wins when it is installed and has a voice for the language on disk: it is
+    neural, so it is the only one of the light engines that sounds like a person, and
+    it runs on a CPU. espeak-ng follows, because it covers all ten languages with
+    nothing installed at all.
+    """
+    if engine == OFF:
+        return OFF
+    if engine == AUTO:
+        for name in PREFERRED:
+            if not available(name, python):
+                continue
+            if name == PIPER and piper_voice(lang) is None:
+                continue
+            return name
         raise TtsError(
             "no speech engine found. Install espeak-ng "
-            "(macOS: brew install espeak-ng, Debian/Ubuntu: apt install espeak-ng) "
-            "or pass --tts command."
+            "(macOS: brew install espeak-ng, Debian/Ubuntu: apt install espeak-ng), "
+            "or install Piper from the speech page."
         )
     if engine not in ENGINES:
         raise TtsError(f"unknown speech engine {engine!r}; choose from {', '.join(ENGINES)}")
-    if engine == CHATTERBOX and not _python(python):
-        raise TtsError("chatterbox runs in your own Python: pass --tts-python with that interpreter")
-    if engine == CHATTERBOX and not _has_chatterbox(_python(python)):
+    if engine in PACKAGES and not _pythons(python):
         raise TtsError(
-            "chatterbox is not installed in that Python: pip install chatterbox-tts there, "
-            "or point --tts-python at an interpreter that has it"
+            f"{LABELS[engine]} runs in your own Python: pass --tts-python with that interpreter"
+        )
+    if engine in PACKAGES and not available(engine, python):
+        raise TtsError(
+            f"{LABELS[engine]} is not installed: pip install {PACKAGES[engine]} into a Python of your "
+            "own and point --tts-python at it, or use the Install button on the speech page"
         )
     if engine != COMMAND and not available(engine, python):
         raise TtsError(f"{engine} is not available on this machine")
     return engine
 
 
+def piper_voices(lang: Language | str) -> list[str]:
+    """The Piper voices already downloaded for `lang`.
+
+    The ones this app lists come first, in the order it lists them; a voice the user
+    put in the folder themselves is still offered, at the end.
+    """
+    code = lang.code if isinstance(lang, Language) else str(lang)
+    found = {path.name[: -len(".onnx")] for path in settings.speech_voices().glob(f"{code}_*-*.onnx")}
+    listed = [name for name in PIPER_VOICES.get(code, []) if name in found]
+    return listed + sorted(found - set(PIPER_VOICES.get(code, [])))
+
+
+def piper_voice(lang: Language | str, voice: str | None = None) -> Path | None:
+    """The model file for one Piper voice, or None when it was never downloaded."""
+    name = voice or (piper_voices(lang) or [None])[0]
+    if not name:
+        return None
+    path = Path(name)
+    if path.is_file():
+        return path
+    path = settings.speech_voices() / f"{name}.onnx"
+    return path if path.is_file() else None
+
+
 def voices(engine: str, lang: Language) -> list[str]:
     """Voices the engine offers for `lang`, for the options page to list."""
+    if engine == PIPER:
+        return piper_voices(lang)
+    if engine == COQUI:
+        models = list(COQUI_MODELS.get(lang.code, []))
+        if lang.code in COQUI_CLONE_LANGUAGES and COQUI_MULTILINGUAL not in models:
+            models.append(COQUI_MULTILINGUAL)
+        return models
     if engine == ESPEAK and (exe := _which("espeak-ng") or _which("espeak")):
         return _lines(exe, ["--voices=" + lang.espeak], _espeak_env(), skip_header=True)
     if engine == SAY and (exe := _which("say")):
@@ -384,12 +560,20 @@ def _run_powershell(exe: str, script: str) -> str:
     return result.stdout.strip()
 
 
-def _render(engine: str, phrase: str, lang: Language, voice: str | None, command: str | None, out: Path) -> None:
+def _render(
+    engine: str,
+    phrase: str,
+    lang: Language,
+    voice: str | None,
+    command: str | None,
+    out: Path,
+    speed: str = "normal",
+) -> None:
     if engine == ESPEAK:
         exe = _which("espeak-ng") or _which("espeak")
         voice_name = voice or lang.espeak
         _check(
-            [exe, "-v", voice_name, "-s", str(SPEAKING_RATE), "-w", str(out), "--", phrase],
+            [exe, "-v", voice_name, "-s", str(RATES.get(speed, SPEAKING_RATE)), "-w", str(out), "--", phrase],
             "espeak-ng",
             _espeak_env(),
         )
@@ -397,7 +581,7 @@ def _render(engine: str, phrase: str, lang: Language, voice: str | None, command
         # Without a matching voice, say reads foreign text with the default one
         # and mangles it, so pick one for the language rather than trusting -v.
         voice = voice or (voices(SAY, lang) or [None])[0]
-        args = ["-r", str(SPEAKING_RATE)]
+        args = ["-r", str(RATES.get(speed, SPEAKING_RATE))]
         if voice:
             args += ["-v", voice]
         elif lang.code != "en":
@@ -413,7 +597,8 @@ def _render(engine: str, phrase: str, lang: Language, voice: str | None, command
             "Add-Type -AssemblyName System.Speech;"
             "$s=[System.Speech.Synthesis.SpeechSynthesizer]::new();"
             f"{select}"
-            f"$s.Rate=0;$s.SetOutputToWaveFile('{out}');$s.Speak('{spoken}');$s.Dispose();"
+            f"$s.Rate={SAPI_RATES.get(speed, 0)};"
+            f"$s.SetOutputToWaveFile('{out}');$s.Speak('{spoken}');$s.Dispose();"
         )
         _run_powershell(exe, script)
     elif engine == COMMAND:
@@ -453,52 +638,75 @@ def _speak_one(
     voice: str | None,
     command: str | None,
     loudness: str,
+    speed: str = "normal",
 ) -> None:
     suffix = ".aiff" if engine == SAY else ".wav"
     with tempfile.TemporaryDirectory(prefix="daisy2telmi-tts-") as tmp:
         raw = Path(tmp) / f"speech{suffix}"
-        _render(engine, phrase, lang, voice, command, raw)
+        _render(engine, phrase, lang, voice, command, raw, speed)
         _to_spec(raw, dest, engine, phrase, loudness)
     log.debug("speech via %s: %r -> %s", engine, phrase, dest.name)
 
 
 def _speak_batch(
+    engine: str,
     phrases: list[str],
     lang: Language,
     dests: list[Path],
+    voice: str | None,
     clip: str | None,
     python: str | None,
     device: str,
+    speed: str,
     loudness: str,
 ) -> None:
-    """One Chatterbox process for the whole batch: loading the model costs more
+    """One process for the whole batch: loading a neural model costs far more
     than speaking a chapter number, and it would otherwise happen once per card."""
-    exe = _python(python)
-    log.info("speaking %d card(s) with Chatterbox in %s; the first run downloads the model", len(phrases), exe)
-    with tempfile.TemporaryDirectory(prefix="daisy2telmi-chatterbox-") as tmp:
+    exe = engine_python(engine, python)
+    manifest: dict = {
+        "phrases": phrases,
+        "outs": [],
+        "lang": lang.code,
+        "device": device,
+    }
+    if engine == PIPER:
+        model = piper_voice(lang, voice)
+        if model is None:
+            raise TtsError(
+                f"no Piper voice for {lang.name} is downloaded: pick one on the speech page and "
+                "use Install voice"
+            )
+        manifest["model"] = str(model)
+        manifest["length_scale"] = LENGTH_SCALES.get(speed, 1.0)
+    elif engine == COQUI:
+        model = voice or (voices(COQUI, lang) or [None])[0]
+        if not model:
+            raise TtsError(f"Coqui has no model listed for {lang.name}: name one with --tts-voice")
+        manifest["model"] = model
+        manifest["clip"] = clip
+        if model == COQUI_MULTILINGUAL and not clip:
+            raise TtsError(
+                f"{COQUI_MULTILINGUAL} reads with a cloned voice: give it a recording with --tts-clip "
+                "or pick another model"
+            )
+    else:
+        manifest["clip"] = clip
+    label = LABELS[engine]
+    log.info("speaking %d phrase(s) with %s in %s", len(phrases), label, exe)
+    with tempfile.TemporaryDirectory(prefix=f"daisy2telmi-{engine}-") as tmp:
         folder = Path(tmp)
         raw = [folder / f"speech{k}.wav" for k in range(len(phrases))]
-        manifest = folder / "manifest.json"
-        manifest.write_text(
-            json.dumps(
-                {
-                    "phrases": phrases,
-                    "outs": [str(path) for path in raw],
-                    "lang": lang.code,
-                    "clip": clip,
-                    "device": device,
-                }
-            ),
-            encoding="utf-8",
-        )
-        result = _check([exe, "-I", str(_speak_script()), str(manifest)], "chatterbox")
+        manifest["outs"] = [str(path) for path in raw]
+        manifest_path = folder / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = _check([exe, "-I", str(_speak_script(engine)), str(manifest_path)], engine)
         # The script reports the device it settled on, so a run that silently
         # stayed on the CPU is visible in the log.
         for line in result.stdout.splitlines():
-            if line.startswith("chatterbox "):
+            if line.startswith(f"{engine} "):
                 log.info(line)
         for phrase, source, dest in zip(phrases, raw, dests):
-            _to_spec(source, dest, CHATTERBOX, phrase, loudness)
+            _to_spec(source, dest, engine, phrase, loudness)
 
 
 def synthesize_all(
@@ -511,6 +719,7 @@ def synthesize_all(
     python: str | None = None,
     clip: str | None = None,
     device: str = AUTO,
+    speed: str = "normal",
     loudness: str | None = None,
 ) -> None:
     """Speak every phrase into `dests`, one file each.
@@ -527,11 +736,11 @@ def synthesize_all(
     if chosen == OFF:
         raise TtsError("speech is switched off")
     chain = card_loudness(None) if loudness is None else loudness
-    if chosen == CHATTERBOX:
-        _speak_batch(list(phrases), lang, list(dests), clip, python, device, chain)
+    if chosen in PACKAGES:
+        _speak_batch(chosen, list(phrases), lang, list(dests), voice, clip, python, device, speed, chain)
         return
     for phrase, dest in zip(phrases, dests):
-        _speak_one(phrase, lang, dest, chosen, voice, command, chain)
+        _speak_one(phrase, lang, dest, chosen, voice, command, chain, speed)
 
 
 def synthesize(
@@ -542,9 +751,12 @@ def synthesize(
     voice: str | None = None,
     command: str | None = None,
     python: str | None = None,
+    clip: str | None = None,
+    device: str = AUTO,
+    speed: str = "normal",
 ) -> None:
     """Speak `phrase` into `dest` as an MP3 in the Telmi audio spec."""
-    synthesize_all([phrase], lang_code, [dest], engine, voice, command, python)
+    synthesize_all([phrase], lang_code, [dest], engine, voice, command, python, clip, device, speed)
 
 
 _SENTENCE_BREAK = re.compile(r"(?<=[.!?:;…])\s+")
@@ -585,6 +797,7 @@ def narrate(
     python: str | None = None,
     clip: str | None = None,
     device: str = AUTO,
+    speed: str = "normal",
 ) -> None:
     """Speak a whole part of a book into `dest`, chunked and joined back.
 
@@ -596,5 +809,7 @@ def narrate(
         raise TtsError("nothing to speak")
     with tempfile.TemporaryDirectory(prefix="daisy2telmi-narration-") as tmp:
         parts = [Path(tmp) / f"part{index}.mp3" for index in range(len(phrases))]
-        synthesize_all(phrases, lang_code, parts, engine, voice, command, python, clip, device, UNLEVELLED)
+        synthesize_all(
+            phrases, lang_code, parts, engine, voice, command, python, clip, device, speed, UNLEVELLED
+        )
         audio.render([AudioSegment(part) for part in parts], dest)

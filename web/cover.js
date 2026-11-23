@@ -43,13 +43,13 @@ export function screen(player) {
   return SCREENS[player];
 }
 
-/** The margin and thumbnail of a card this wide: a smaller screen shrinks both. */
+/** The margin and the height the cover keeps to itself: a smaller screen shrinks both. */
 function layout(width) {
   const step = width / IMAGE_SIZE[0];
-  const thumb = Math.floor(width / 4);
+  const cover = Math.floor(width / 4);
   return {
     margin: Math.max(6, Math.round(CARD_MARGIN * step)),
-    thumb: [thumb, Math.floor((thumb * 3) / 4)],
+    coverTop: Math.floor((cover * 3) / 4),
   };
 }
 
@@ -250,10 +250,8 @@ export function cardWords(ctx, text, width) {
 /**
  * One card: the part's number, its opening words, and the cover behind them.
  *
- * A colour card keeps a small thumbnail rather than the whole cover: a book cut to
- * the sentence level has hundreds of cards, and that is what keeps the zip
- * importable. A sixteen-grey card is the Lunii's: the cover across the whole screen,
- * and the number alone in the middle of it.
+ * Every card carries the cover across the whole screen. A sixteen-grey card is the
+ * Lunii's: the number alone in the middle of it.
  *
  * `negative` only means anything for the grey card: the card is drawn as usual and
  * light and dark are swapped once, when it is flattened, so the number reads as the
@@ -271,17 +269,14 @@ export async function cardPng(
 ) {
   const canvas = surface(width, height);
   const ctx = canvas.getContext("2d");
-  const { margin, thumb } = layout(width);
+  const { margin, coverTop } = layout(width);
   const band = style === "bw";
   ctx.fillStyle = PALETTE[style].background;
   ctx.fillRect(0, 0, width, height);
   ctx.lineJoin = "round";
   ctx.miterLimit = 2;
   ctx.textBaseline = "top";
-  if (cover) {
-    if (band) drawCover(ctx, cover, 0, 0, width, height, view, style);
-    else drawCover(ctx, cover, margin, margin, ...thumb, view, style);
-  }
+  if (cover) drawCover(ctx, cover, 0, 0, width, height, view, style);
 
   if (band) {
     // The Lunii screen sits behind a plastic window, so nothing drawn small is
@@ -316,7 +311,7 @@ export async function cardPng(
   // The words are measured in the font they will be drawn in, so it goes on first.
   ctx.font = `${size}px system-ui, sans-serif`;
   const lines = cardWords(ctx, text, width - 2 * margin);
-  const wordsTop = margin + thumb[1] + margin;
+  const wordsTop = margin + coverTop + margin;
 
   ctx.font = `bold ${numberSize}px system-ui, sans-serif`;
   ctx.lineWidth = 6;

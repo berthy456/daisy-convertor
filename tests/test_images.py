@@ -88,8 +88,8 @@ def test_each_player_draws_at_its_own_screen() -> None:
 
 def test_a_smaller_card_shrinks_everything_around_it() -> None:
     """The font is a fixed 5x7 grid, so the card's furniture scales with its screen."""
-    assert images._layout(640) == (24, (160, 120), 4, 6)
-    assert images._layout(320) == (12, (80, 60), 2, 3)
+    assert images._layout(640) == (24, 120, 4, 6)
+    assert images._layout(320) == (12, 60, 2, 3)
 
 
 def test_a_smaller_card_holds_the_same_words() -> None:
@@ -99,9 +99,9 @@ def test_a_smaller_card_holds_the_same_words() -> None:
 
 def test_the_lettering_of_every_card_stays_inside_its_screen() -> None:
     for player, (scene, _) in images.SCREENS.items():
-        margin, thumb, scale, number_scale = images._layout(scene[0])
+        margin, cover_top, scale, number_scale = images._layout(scene[0])
         lines = images.card_words("the second of six parts, and the words keep going", scene[0], scale)
-        bottom = margin + thumb[1] + margin + (len(lines) - 1) * scale * 9 + 7 * scale
+        bottom = margin + cover_top + margin + (len(lines) - 1) * scale * 9 + 7 * scale
         assert bottom <= scene[1], player
         number = images.glyph_rows("213/213")
         assert margin + len(number[0]) * number_scale <= scene[0], player
@@ -121,7 +121,6 @@ def test_the_placeholder_and_the_card_are_the_sizes_telmi_wants() -> None:
     assert png_header(images.placeholder_png())[:2] == (640, 480)
     assert png_header(images.placeholder_png(*images.COVER_SIZE))[:2] == (512, 512)
     assert png_header(images.card_png("7/9"))[:2] == (640, 480)
-    assert png_header(images.flat_png())[:2] == (640, 480)
 
 
 @NO_FFMPEG
@@ -154,8 +153,9 @@ def test_write_cover_crops_the_picture_and_numbers_every_card(tmp_path: Path) ->
     first = (out / "images/m0.png").read_bytes()
     second = (out / "images/m1.png").read_bytes()
     assert first != second
-    # A book cut to the sentence level has hundreds of cards, so one must stay small.
-    assert len(first) < 20_000
+    # A card is the cover it carries plus its lettering, so it weighs about what the
+    # title picture weighs: many times more means something was drawn at the wrong size.
+    assert len(first) < 2 * len((out / images.TITLE_IMAGE).read_bytes())
 
 
 @NO_FFMPEG
@@ -279,7 +279,7 @@ def test_the_crop_choice_reaches_every_image_write_cover_draws(tmp_path: Path) -
     for name in (images.TITLE_IMAGE, images.COVER_IMAGE):
         assert _band(high / name) == BANDS["top"], name
         assert _band(low / name) == BANDS["bottom"], name
-    # The card's thumbnail follows the same band, so it is the choice that changes it.
+    # The card's cover follows the same band, so it is the choice that changes it.
     assert (high / "images/m0.png").read_bytes() != (low / "images/m0.png").read_bytes()
 
 
@@ -460,14 +460,17 @@ def test_a_four_grey_card_fills_its_screen_with_the_cover(tmp_path: Path) -> Non
 
 
 @NO_FFMPEG
-def test_a_colour_card_keeps_its_thumbnail_and_its_flat_ground(tmp_path: Path) -> None:
+def test_a_colour_card_fills_its_screen_with_the_cover_too(tmp_path: Path) -> None:
     out = tmp_path / "story"
     images.write_cover(
         _tall_cover(tmp_path), out, ["1/1"], [""], "center", "colour", (320, 240), (320, 240)
     )
-    # ffmpeg moves a flat colour on the way through, and by how much depends on the
-    # build: two units on Homebrew's, four on Debian 13's.
-    assert _pixel(out / "images" / "m0.png", 160, 120) == pytest.approx(images.BACKGROUND, abs=6)
+    card = out / "images" / "m0.png"
+    # The lettering layer goes over the cover on ffmpeg's way out, and it moves a
+    # colour by a unit or two on the way.
+    assert _pixel(card, 160, 120) == pytest.approx(_pixel(out / images.TITLE_IMAGE, 160, 120), abs=2)
+    corner = _pixel(out / images.TITLE_IMAGE, 20, 220)
+    assert _pixel(card, 20, 220) == pytest.approx(corner, abs=2), "the cover reaches the corners"
 
 
 def _inked(ink: list[bytearray], top: int, bottom: int) -> tuple[int, int]:

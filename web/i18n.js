@@ -41,7 +41,7 @@ export const UI = {
     fmt_merlin: "Merlin (beta)",
     language: "Language",
     cover_title: "Cover image",
-    cover_hint: "Optional. Without one the cards keep a plain background instead of a thumbnail.",
+    cover_hint: "Optional. Without one the cards keep a plain background.",
     cover_pick: "Choose an image",
     cover_url: "or paste an image link",
     cover_use: "Use this link",
@@ -71,7 +71,7 @@ export const UI = {
     before_2:
       "Clips are cut at MP3 frame boundaries, within 26 ms of the pack's own time marks.",
     before_3: "Only audio books are handled. Synchronised text and TTS are not.",
-    before_4: "Every card shows the part's number and the words it opens with, over the cover's thumbnail or a plain background.",    desktop_title: "The desktop app does more",
+    before_4: "Every card shows the part's number and the words it opens with, over the cover or a plain background.",    desktop_title: "The desktop app does more",
     desktop_p1:
       "The desktop app speaks the cards with any voice installed on your computer, re-encodes audio to Telmi's exact spec, trims clips inside a file, and lets you listen to each chapter before converting. Its window shows in English, French, Chinese, Arabic, Turkish, German, Italian, Spanish, Portuguese or Dutch.",
     desktop_line:
@@ -149,7 +149,7 @@ export const UI = {
     fmt_merlin: "Merlin (bêta)",
     language: "Langue",
     cover_title: "Image de couverture",
-    cover_hint: "Facultatif. Sans couverture, les cartes gardent un fond uni au lieu d'une vignette.",
+    cover_hint: "Facultatif. Sans couverture, les cartes gardent un fond uni.",
     cover_pick: "Choisir une image",
     cover_url: "ou coller un lien d'image",
     cover_use: "Utiliser ce lien",
@@ -179,7 +179,7 @@ export const UI = {
     before_2:
       "Les extraits sont coupés aux trames MP3, à moins de 26 ms près des repères du pack.",
     before_3: "Seuls les livres audio sont traités. Le texte synchronisé et la synthèse vocale ne le sont pas.",
-    before_4: "Chaque carte montre le numéro de la partie et ses premiers mots, sur une vignette de la couverture ou sur fond uni.",    desktop_title: "L'application de bureau fait plus",
+    before_4: "Chaque carte montre le numéro de la partie et ses premiers mots, sur la couverture ou sur fond uni.",    desktop_title: "L'application de bureau fait plus",
     desktop_p1:
       "L'application de bureau fait parler les cartes avec n'importe quelle voix installée sur l'ordinateur, ré-encode l'audio aux spécifications exactes de Telmi, coupe les extraits dans un fichier et permet d'écouter chaque chapitre avant la conversion. Sa fenêtre s'affiche en anglais, français, chinois, arabe, turc, allemand, italien, espagnol, portugais ou néerlandais.",
     desktop_line:
@@ -256,7 +256,7 @@ export const UI = {
     fmt_merlin: "Merlin (测试版)",
     language: "语言",
     cover_title: "封面图片",
-    cover_hint: "可选。没有封面时，卡片不显示缩略图，只用纯色背景。",
+    cover_hint: "可选。没有封面时，卡片只用纯色背景。",
     cover_pick: "选择图片",
     cover_url: "或粘贴图片链接",
     cover_use: "使用此链接",
@@ -283,7 +283,7 @@ export const UI = {
     before_1: "音频保留源码率，不重新编码。Telmi 播放器自己重采样到 44100 Hz，所以能播放，但音质取决于 DAISY 包。",
     before_2: "片段按 MP3 帧边界剪切，与包内时间标记相差不超过 26 毫秒。",
     before_3: "只处理有声书，不处理同步文本和语音合成。",
-    before_4: "每张卡片显示段号与该段开头的文字，背景是封面缩略图或纯色。",    desktop_title: "桌面版功能更多",
+    before_4: "每张卡片显示段号与该段开头的文字，背景是封面或纯色。",    desktop_title: "桌面版功能更多",
     desktop_p1:
       "桌面版用电脑上安装的任意语音让卡片说话，按 Telmi 规格重新编码音频，可在文件内部剪切片段，并能在转换前试听每个章节。窗口界面可用英语、法语、中文、阿拉伯语、土耳其语、德语、意大利语、西班牙语、葡萄牙语和荷兰语显示。",
     desktop_line:
@@ -357,7 +357,7 @@ export const UI = {
     fmt_merlin: "Merlin (تجريبي)",
     language: "اللغة",
     cover_title: "صورة الغلاف",
-    cover_hint: "اختياري. بدون غلاف تحتفظ البطاقات بخلفية سادة بدل مصغّرة.",
+    cover_hint: "اختياري. بدون غلاف تحتفظ البطاقات بخلفية سادة.",
     cover_pick: "اختر صورة",
     cover_url: "أو الصق رابط صورة",
     cover_use: "استخدم هذا الرابط",
@@ -384,7 +384,7 @@ export const UI = {
     before_1: "يبقى الصوت بمعدل المصدر دون إعادة ترميز. مشغل Telmi يعيد التردد إلى 44100 هرتز بنفسه، فيعمل الصوت، لكن الجودة تبقى كما تركتها الحزمة.",
     before_2: "تُقصّ المقاطع عند حدود إطارات MP3، ضمن 26 ملّي ثانية من علامات الحزمة.",
     before_3: "تُعالج الكتب الصوتية فقط، لا النص المتزامن ولا تحويل النص إلى كلام.",
-    before_4: "تعرض كل بطاقة رقم الجزء والكلمات التي يبدأ بها، فوق مصغّرة الغلاف أو خلفية سادة.",    desktop_title: "تطبيق سطح المكتب أوسع",
+    before_4: "تعرض كل بطاقة رقم الجزء والكلمات التي يبدأ بها، فوق الغلاف أو خلفية سادة.",    desktop_title: "تطبيق سطح المكتب أوسع",
     desktop_p1:
       "تطبيق سطح المكتب ينطق البطاقات بأي صوت مثبّت على الحاسوب، ويعيد ترميز الصوت إلى مواصفات Telmi بدقة، ويقص المقاطع داخل الملف، ويسمح بالاستماع إلى كل فصل قبل التحويل. وتُعرض نافذته بالإنجليزية والفرنسية والصينية والعربية والتركية والألمانية والإيطالية والإسبانية والبرتغالية والهولندية.",
     desktop_line:
@@ -459,7 +459,7 @@ export const UI = {
     fmt_merlin: "Merlin (beta)",
     language: "Dil",
     cover_title: "Kapak resmi",
-    cover_hint: "Zorunlu değil. Kapak yoksa kartlar küçük resim yerine düz zemin kullanır.",
+    cover_hint: "Zorunlu değil. Kapak yoksa kartlar düz zemin kullanır.",
     cover_pick: "Resim seçin",
     cover_url: "ya da bir resim bağlantısı yapıştırın",
     cover_use: "Bu bağlantıyı kullan",
@@ -489,7 +489,7 @@ export const UI = {
     before_2:
       "Kırpıntılar MP3 kare sınırlarında kesilir; paketin zaman işaretlerinden 26 ms sapmaya kadar.",
     before_3: "Yalnızca sesli kitaplar işlenir. Eşzamanlı metin ve ses sentezi işlenmez.",
-    before_4: "Her kart, parçanın numarasını ve ilk sözlerini, kapağın küçük resmi ya da düz bir zemin üzerinde gösterir.",    desktop_title: "Masaüstü uygulaması daha fazlasını yapar",
+    before_4: "Her kart, parçanın numarasını ve ilk sözlerini, kapağın kendisi ya da düz bir zemin üzerinde gösterir.",    desktop_title: "Masaüstü uygulaması daha fazlasını yapar",
     desktop_p1:
       "Masaüstü uygulaması kartları bilgisayarda kurulu herhangi bir sesle konuşturur, sesi Telmi'nin tam ölçütlerine göre yeniden kodlar, kırpımları dosyanın içinde keser ve dönüştürmeden önce her bölümü dinletir. Penceresi İngilizce, Fransızca, Çince, Arapça, Türkçe, Almanca, İtalyanca, İspanyolca, Portekizce ve Felemenkçe gösterilir.",
     desktop_line:
@@ -567,7 +567,7 @@ export const UI = {
     fmt_merlin: "Merlin (Beta)",
     language: "Sprache",
     cover_title: "Coverbild",
-    cover_hint: "Optional. Ohne Cover behalten die Karten einfarbigen Grund statt eines Thumbnails.",
+    cover_hint: "Optional. Ohne Cover behalten die Karten einfarbigen Grund.",
     cover_pick: "Bild wählen",
     cover_url: "oder einen Bildlink einfügen",
     cover_use: "Diesen Link benutzen",
@@ -597,7 +597,7 @@ export const UI = {
     before_2:
       "Ausschnitte werden an MP3-Rahmengrenzen geschnitten, bis auf 26 ms genau an den Marken des Pakets.",
     before_3: "Nur Hörbücher werden verarbeitet. Synchronisierter Text und Sprachausgabe nicht.",
-    before_4: "Jede Karte zeigt die Nummer des Teils und seine ersten Worte, über dem Deckblatt-Thumbnail oder auf einfarbigem Grund.",    desktop_title: "Die Desktop-App kann mehr",
+    before_4: "Jede Karte zeigt die Nummer des Teils und seine ersten Worte, über dem Deckblatt oder auf einfarbigem Grund.",    desktop_title: "Die Desktop-App kann mehr",
     desktop_p1:
       "Die Desktop-App lässt die Karten mit jeder auf dem Rechner installierten Stimme sprechen, kodiert Audio nach Telmis genauer Vorgabe neu, schneidet Ausschnitte innerhalb einer Datei und erlaubt es, jedes Kapitel vor der Konvertierung zu hören. Ihr Fenster ist auf Englisch, Französisch, Chinesisch, Arabisch, Türkisch, Deutsch, Italienisch, Spanisch, Portugiesisch und Niederländisch möglich.",
     desktop_line:
@@ -675,7 +675,7 @@ export const UI = {
     fmt_merlin: "Merlin (beta)",
     language: "Lingua",
     cover_title: "Immagine di copertina",
-    cover_hint: "Facoltativa. Senza copertina le carte restano su sfondo uniforme invece di una miniatura.",
+    cover_hint: "Facoltativa. Senza copertina le carte restano su sfondo uniforme.",
     cover_pick: "Scegli un'immagine",
     cover_url: "o incolla un link all'immagine",
     cover_use: "Usa questo link",
@@ -705,7 +705,7 @@ export const UI = {
     before_2:
       "Le clip sono tagliate ai confini dei frame MP3, entro 26 ms dai segni temporali del pacchetto.",
     before_3: "Solo gli audiolibri sono gestiti. Il testo sincronizzato e la sintesi vocale no.",
-    before_4: "Ogni carta mostra il numero della parte e le parole con cui inizia, sopra una miniatura della copertina o su sfondo uniforme.",    desktop_title: "L'app per desktop fa di più",
+    before_4: "Ogni carta mostra il numero della parte e le parole con cui inizia, sopra la copertina o su sfondo uniforme.",    desktop_title: "L'app per desktop fa di più",
     desktop_p1:
       "L'app per desktop fa parlare le carte con qualsiasi voce installata sul computer, ricodifica l'audio alle specifiche esatte di Telmi, taglia le clip dentro un file e permette di ascoltare ogni capitolo prima della conversione. La sua finestra si mostra in inglese, francese, cinese, arabo, turco, tedesco, italiano, spagnolo, portoghese o neerlandese.",
     desktop_line:
@@ -783,7 +783,7 @@ export const UI = {
     fmt_merlin: "Merlin (beta)",
     language: "Idioma",
     cover_title: "Imagen de portada",
-    cover_hint: "Opcional. Sin portada, las tarjetas mantienen un fondo liso en lugar de una miniatura.",
+    cover_hint: "Opcional. Sin portada, las tarjetas mantienen un fondo liso.",
     cover_pick: "Elegir una imagen",
     cover_url: "o pegar un enlace de imagen",
     cover_use: "Usar este enlace",
@@ -813,7 +813,7 @@ export const UI = {
     before_2:
       "Los fragmentos se cortan en los límites de trama MP3, a menos de 26 ms de las marcas del paquete.",
     before_3: "Solo se procesan audiolibros. El texto sincronizado y la síntesis de voz no.",
-    before_4: "Cada tarjeta muestra el número de la parte y las palabras con las que empieza, sobre una miniatura de la portada o un fondo liso.",    desktop_title: "La aplicación de escritorio hace más",
+    before_4: "Cada tarjeta muestra el número de la parte y las palabras con las que empieza, sobre la portada o un fondo liso.",    desktop_title: "La aplicación de escritorio hace más",
     desktop_p1:
       "La aplicación de escritorio hace hablar las tarjetas con cualquier voz instalada en el ordenador, recodifica el audio a la especificación exacta de Telmi, recorta fragmentos dentro de un archivo y permite escuchar cada capítulo antes de convertir. Su ventana se muestra en inglés, francés, chino, árabe, turco, alemán, italiano, español, portugués y neerlandés.",
     desktop_line:
@@ -891,7 +891,7 @@ export const UI = {
     fmt_merlin: "Merlin (beta)",
     language: "Idioma",
     cover_title: "Imagem de capa",
-    cover_hint: "Opcional. Sem capa, os cartões mantêm fundo liso em vez de uma miniatura.",
+    cover_hint: "Opcional. Sem capa, os cartões mantêm fundo liso.",
     cover_pick: "Escolher uma imagem",
     cover_url: "ou colar um link de imagem",
     cover_use: "Usar este link",
@@ -921,7 +921,7 @@ export const UI = {
     before_2:
       "Os trechos são cortados nos limites de quadro MP3, a menos de 26 ms das marcas do pacote.",
     before_3: "Só audiobooks são tratados. Texto sincronizado e síntese de voz não.",
-    before_4: "Cada cartão mostra o número da parte e as palavras com que ela começa, sobre uma miniatura da capa ou fundo liso.",    desktop_title: "O aplicativo de desktop faz mais",
+    before_4: "Cada cartão mostra o número da parte e as palavras com que ela começa, sobre a capa ou fundo liso.",    desktop_title: "O aplicativo de desktop faz mais",
     desktop_p1:
       "O aplicativo de desktop faz os cartões falarem com qualquer voz instalada no computador, recodifica o áudio à especificação exata do Telmi, corta trechos dentro de um arquivo e permite ouvir cada capítulo antes de converter. Sua janela aparece em inglês, francês, chinês, árabe, turco, alemão, italiano, espanhol, português e holandês.",
     desktop_line:
@@ -999,7 +999,7 @@ export const UI = {
     fmt_merlin: "Merlin (bèta)",
     language: "Taal",
     cover_title: "Omslagafbeelding",
-    cover_hint: "Optioneel. Zonder omslag houden de kaarten een effen achtergrond in plaats van een miniatuur.",
+    cover_hint: "Optioneel. Zonder omslag houden de kaarten een effen achtergrond.",
     cover_pick: "Kies een afbeelding",
     cover_url: "of plak een afbeeldingslink",
     cover_use: "Deze link gebruiken",
@@ -1029,7 +1029,7 @@ export const UI = {
     before_2:
       "Fragmenten worden op MP3-framegrenzen geknipt, binnen 26 ms van de markeringen van het pakket.",
     before_3: "Alleen audioboeken worden verwerkt. Gesynchroniseerde tekst en TTS niet.",
-    before_4: "Elke kaart toont het nummer van het deel en de woorden waarmee het begint, bovenop een miniatuur van het omslag of op een effen achtergrond.",    desktop_title: "De desktop-app kan meer",
+    before_4: "Elke kaart toont het nummer van het deel en de woorden waarmee het begint, bovenop het omslag of op een effen achtergrond.",    desktop_title: "De desktop-app kan meer",
     desktop_p1:
       "De desktop-app laat de kaarten spreken met elke stem die op de computer is geïnstalleerd, hercodeert audio naar Telmis exacte specificatie, knipt fragmenten binnen een bestand en laat je elk hoofdstuk voor de omzetting beluisteren. Zijn venster is in het Engels, Frans, Chinees, Arabisch, Turks, Duits, Italiaans, Spaans, Portugees en Nederlands te tonen.",
     desktop_line:

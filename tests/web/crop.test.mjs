@@ -70,14 +70,13 @@ test("the slider stops at its two ends", async () => {
   assert.equal((await drawn({ zoom: 99 }))[3], 2560, "and past four times the frame the cover stops growing");
 });
 
-test("a card's thumbnail follows the same band", async () => {
+test("a colour card carries the whole cover, on the same band", async () => {
   const { cardPng } = await import("../../web/cover.js");
   DRAWS.length = 0;
   await cardPng("Chapter 1/6", "Once upon a time", cover, { crop: "bottom" });
-  // The thumbnail is drawn onto the card canvas, so it is the wide argument that says which draw it is.
-  const thumb = DRAWS.find((draw) => draw.args[3] === 160).args;
-  // 160x120 from 1000x1500 scales by 0.16: 160 wide, 240 tall.
-  assert.equal(thumb[2], CARD_MARGIN + (120 - 240));
+  const card = DRAWS.find((draw) => draw.args[3] === 640).args;
+  // 640x480 from 1000x1500 scales by 0.64: 640 wide, 960 tall, so the cover runs past the card.
+  assert.equal(card[2], 480 - 960);
 });
 
 test("a smaller card shrinks its margins with its screen", async () => {

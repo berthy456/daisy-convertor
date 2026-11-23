@@ -172,17 +172,16 @@ CARD_SCALE = 4
 NUMBER_SCALE = 6
 
 
-def _layout(width: int) -> tuple[int, tuple[int, int], int, int]:
-    """The margin, thumbnail and two lettering sizes of a card this wide.
+def _layout(width: int) -> tuple[int, int, int, int]:
+    """The margin, the height the cover keeps to itself, and the two lettering sizes.
 
     The built-in font is a fixed 5x7 grid, so a smaller screen shrinks everything
     around it by the same step and the card still holds the same words.
     """
     step = width / IMAGE_SIZE[0]
-    thumb = (width // 4, width // 4 * 3 // 4)
     return (
         max(6, round(MARGIN * step)),
-        thumb,
+        width // 4 * 3 // 4,
         max(1, round(CARD_SCALE * step)),
         max(2, round(NUMBER_SCALE * step)),
     )
@@ -261,12 +260,13 @@ def _number_grid(label: str, width: int, height: int) -> list[bytearray]:
 def _card_grid(label: str, text: str, width: int, height: int, band: bool = False) -> list[bytearray]:
     """One card's lettering: its number, and the words it opens with.
 
-    A colour card numbers itself top right, under which the thumbnail leaves room
-    for the words. A four-grey card is the Lunii's, and draws the number alone.
+    A colour card numbers itself top right, and its words start under the height
+    the cover keeps to itself. A four-grey card is the Lunii's, and draws the
+    number alone.
     """
     if band:
         return _number_grid(label, width, height)
-    margin, thumb, scale, number_scale = _layout(width)
+    margin, cover_room, scale, number_scale = _layout(width)
     ink = [bytearray(width) for _ in range(height)]
     number = glyph_rows(label)
     number_width = len(number[0]) * number_scale
@@ -274,7 +274,7 @@ def _card_grid(label: str, text: str, width: int, height: int, band: bool = Fals
     _stamp(ink, left, margin, number, number_scale, 1)
 
     lines = card_words(text, width, scale)
-    top = margin + thumb[1] + margin
+    top = margin + cover_room + margin
     for offset, line in enumerate(lines):
         _stamp(ink, margin, top + offset * scale * 9, glyph_rows(line), scale, 1)
     return ink
@@ -349,11 +349,6 @@ def card_label(
     if all(character in GLYPHS for character in label):
         return label
     return shown
-
-
-def flat_png(width: int = IMAGE_SIZE[0], height: int = IMAGE_SIZE[1], style: str = "colour") -> bytes:
-    """A plain card background, before the cover thumbnail and the lettering go on it."""
-    return _png(width, height, [bytes(_PALETTE[style]["background"]) * width] * height)
 
 
 def _run(args: list[str], description: str) -> None:
@@ -591,16 +586,14 @@ def write_cover(
     `negative` swaps light and dark once the card is whole, which reads as the
     negative of an old film. `scene` and `cover_size` are that player's own sizes.
 
-    A colour card is a plain background with a small thumbnail of the cover, not
-    the cover blown up behind the words: a book cut to the sentence level has
-    hundreds of cards, and the thumbnail keeps one near 11 KB instead of 60 KB. A
-    grey card shows the cover across the whole screen instead, which costs about
-    as much again and is the only version that does not read as an empty page.
+    Every card shows the cover across the whole screen, with the number and the
+    opening words laid over it. A colour card of a photograph weighs far more than
+    a grey one of the same cover: the greys flatten into a few palette entries and
+    a photograph does not, and a book cut to the sentence level is where that shows.
     """
     ffmpeg = require_ffmpeg()
     images = out_dir / "images"
     images.mkdir(parents=True, exist_ok=True)
-    margin, thumb_size, _, _ = _layout(scene[0])
     # The band is painted before the flattening, so a negative card inverts it with
     # the rest of the picture: asking for the inverted colour here would flip it twice.
     band = _palette(style)["band"]
@@ -609,19 +602,12 @@ def write_cover(
         scratch = Path(tmp)
         base = scratch / "base.png"
         square = scratch / "square.png"
-        thumbnail = scratch / "thumb.png"
-        plain = scratch / "plain.png"
         card_base = scratch / "card.png"
         _crop(ffmpeg, source, scene, base, crop, view, band)
         _crop(ffmpeg, source, cover_size, square, crop, view, band)
-        if style == "bw":
-            # The whole cover behind the lettering. It is flattened with the
-            # lettering, once: flattening twice would push every grey up a level.
-            shutil.copyfile(base, card_base)
-        else:
-            _crop(ffmpeg, source, thumb_size, thumbnail, crop, view, band)
-            plain.write_bytes(flat_png(*scene, style=style))
-            _overlay(ffmpeg, plain, thumbnail, card_base, margin, margin)
+        # The whole cover behind the lettering. A grey card is flattened with the
+        # lettering, once: flattening twice would push every grey up a level.
+        shutil.copyfile(base, card_base)
 
         for index, (label, text) in enumerate(zip(labels, texts)):
             layer = scratch / f"layer{index}.png"

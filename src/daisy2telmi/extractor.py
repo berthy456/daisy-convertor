@@ -207,6 +207,10 @@ class _Marks:
     segments: dict[Path, tuple[AudioSegment, ...]] = field(default_factory=dict)
     parts: dict[Path, tuple[Chapter, ...]] = field(default_factory=dict)
     text: dict[Path, etree._Element | None] = field(default_factory=dict)
+    # The document a SMIL's bare `#anchor` points at. A DAISY 2.02 producer that
+    # synced only its headings writes `<text src="#h51"/>` with no file named: the
+    # words live in the pack's own text document, which is the NCC.
+    document: Path | None = None
 
 
 def _smil_segments(smil: Path, marks: _Marks) -> tuple[AudioSegment, ...]:
@@ -238,8 +242,11 @@ def _text_at(src: str, base: Path, marks: _Marks) -> str:
     """The pack's own words at a `gonxhtml.html#id` anchor, for a card to show."""
     file_part, _, anchor = unquote(src).partition("#")
     if not file_part:
-        return ""
-    path = (base / file_part).resolve()
+        if marks.document is None or not anchor:
+            return ""
+        path = marks.document
+    else:
+        path = (base / file_part).resolve()
     if path not in marks.text:
         marks.text[path] = _parse_xml(path)
     root = marks.text[path]
@@ -606,7 +613,7 @@ def extract(pack: DaisyPack, level: str = "chapter") -> Book:
             for key, value in _opf_meta(opf_root).items():
                 metadata.setdefault(f"dc:{key}", value)
 
-    marks = _Marks()
+    marks = _Marks(document=pack.ncc)
     drafts, front_matter = _group(entries, pack.root, marks, level)
     if not front_matter and pack.ncc is None:
         front_matter = _ncx_front_matter(root, pack.root)

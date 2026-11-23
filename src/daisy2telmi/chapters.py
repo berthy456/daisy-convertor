@@ -142,7 +142,7 @@ def _ffplay() -> str | None:
     return str(bundled) if bundled else shutil.which("ffplay")
 
 
-def open_preview(path: Path) -> subprocess.Popen | None:
+def open_preview(path: Path, resume: float = 0.0) -> subprocess.Popen | None:
     """Start a player for the rendered chapter, and hand back what can be stopped.
 
     A player the app started itself is the only one it can silence, which is what
@@ -151,17 +151,19 @@ def open_preview(path: Path) -> subprocess.Popen | None:
     ffplay, which the binaries carry next to ffmpeg. The desktop's opener is the
     last resort: it is the player the user chose for MP3s, but once it has the
     file the app cannot reach the sound again.
+
+    `resume` is how far into the clip to start. Only ffplay can be told that, so a
+    resumed clip asks for ffplay even on macOS, where `afplay` would start over.
     """
-    play = shutil.which("afplay") if sys.platform == "darwin" else _ffplay()
+    play = _ffplay() if resume > 0 else (shutil.which("afplay") if sys.platform == "darwin" else _ffplay())
     if play:
-        args = [play, str(path)] if play.endswith("afplay") else [
-            play,
-            "-nodisp",
-            "-autoexit",
-            "-loglevel",
-            "quiet",
-            str(path),
-        ]
+        if play.endswith("afplay"):
+            args = [play, str(path)]
+        else:
+            args = [play, "-nodisp", "-autoexit", "-loglevel", "quiet"]
+            if resume > 0:
+                args += ["-ss", f"{resume:.3f}"]
+            args.append(str(path))
         return subprocess.Popen(args)
     if sys.platform == "win32":
         try:

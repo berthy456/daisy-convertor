@@ -1005,24 +1005,33 @@ def _story_folder(root: Path) -> Path:
     return root
 
 
+def _clips(monkeypatch) -> list[tuple[str, float]]:
+    """Record every clip the emulator asked for, and where in it it asked to start."""
+    started: list[tuple[str, float]] = []
+
+    def open_clip(path: Path, resume: float = 0.0):
+        started.append((path.name, resume))
+        return _Player(path)
+
+    monkeypatch.setattr(gui.chapters, "open_preview", open_clip)
+    return started
+
+
 def test_the_emulator_window_walks_the_story_it_is_shown(
     app: gui.App, tmp_path: Path, monkeypatch
 ) -> None:
     """The window reads the folder the last run left and answers with the machine's
-    own buttons: OK moves on, Home goes back, and a stage with no picture of its own
-    shows nothing."""
-    started: list = []
-    monkeypatch.setattr(gui.chapters, "open_preview", lambda path: started.append(path))
+    own buttons: OK moves on, Home goes back."""
+    started = _clips(monkeypatch)
     window = gui.Emulator(app, _story_folder(tmp_path / "the book"))
     try:
         assert window.current == "m0"
-        assert window.canvas.find_all(), "the chapter card is drawn"
-        assert window.keys["ok"].instate(["!disabled"])
+        assert window.photo is not None, "the chapter card is drawn"
+        assert window.lit("ok")
 
         window._press("ok")
         assert window.current == "s0"
-        assert not window.canvas.find_all(), "the chapter itself has no picture"
-        assert [clip.name for clip in started] == ["c0.mp3"]
+        assert [clip for clip, _ in started] == ["c0.mp3"]
 
         window._press("home")
         assert window.current == "m0"
@@ -1030,17 +1039,81 @@ def test_the_emulator_window_walks_the_story_it_is_shown(
         window._close()
 
 
-def test_the_emulator_buttons_are_words_not_keys(app: gui.App, tmp_path: Path) -> None:
-    """The buttons are the machine's, so they carry the machine's words: a window
-    that reads `emu_ok` is a label that never went through the translation."""
+def test_the_emulator_keys_carry_the_machine_s_words(app: gui.App, tmp_path: Path) -> None:
+    """The keys are the machine's, so they carry the machine's words: a caption that
+    reads `emu_ok` is a label that never went through the translation. The Telmi's
+    two side buttons seek, the Lunii's are its wheel."""
     window = gui.Emulator(app, _story_folder(tmp_path / "the book"))
     try:
-        assert [window.keys[key].cget("text") for key in ("up", "ok", "home", "stop")] == [
-            "▲",
-            "OK",
-            "Home",
-            "Stop",
-        ]
+        assert [window.caption(key) for key in ("up", "ok", "pause", "home")] == ["Seek", "OK", "Pause", "Home"]
+    finally:
+        window._close()
+
+
+def test_a_key_the_stage_switched_off_does_nothing(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    """A dimmed key is a key the machine ignores, and the window says so on its face."""
+    _clips(monkeypatch)
+    window = gui.Emulator(app, _story_folder(tmp_path / "the book"))
+    try:
+        window._press("ok")
+        assert window.current == "s0"
+        assert not window.lit("ok"), "the chapter switched its own OK off"
+        window._press("ok")
+        assert window.current == "s0"
+    finally:
+        window._close()
+
+
+def test_a_chapter_keeps_its_card_then_leaves_the_screen_dark(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    """A chapter has no picture of its own, so it is read from the card it came from:
+    that card stays up while the clip runs, then the screen goes dark until a key."""
+    _clips(monkeypatch)
+    window = gui.Emulator(app, _story_folder(tmp_path / "the book"))
+    try:
+        window._press("ok")
+        assert window.photo is not None, "the card it is being read from is still up"
+        assert window._fade is not None, "and it is timed"
+
+        window._dark()
+        assert window.photo is None
+        assert window.face.find_withtag("picture") == (), "the screen is its own dark"
+    finally:
+        window._close()
+
+
+def test_pause_holds_the_clip_and_the_next_press_picks_it_up(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    """Pause stops the sound where it is, and the same key starts it again from there."""
+    started = _clips(monkeypatch)
+    window = gui.Emulator(app, _story_folder(tmp_path / "the book"))
+    try:
+        window._press("ok")
+        assert window.lit("pause")
+
+        window.started = time.monotonic() - 4
+        window._press("pause")
+        assert window.player is None
+        assert window.heard == pytest.approx(4, abs=0.5)
+        assert window.lit("pause"), "the key stays lit so the clip can be picked up"
+
+        window._press("pause")
+        assert window.player is not None
+        assert started[-1] == ("c0.mp3", pytest.approx(4, abs=0.5))
+    finally:
+        window._close()
+
+
+def test_the_telmi_s_side_buttons_step_through_the_clip(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    """The Telmi's side buttons are the machine's seek: ten seconds back, ten forward."""
+    started = _clips(monkeypatch)
+    window = gui.Emulator(app, _story_folder(tmp_path / "the book"))
+    try:
+        window._press("ok")
+        window._press("down")
+        assert started[-1] == ("c0.mp3", pytest.approx(10, abs=0.5))
+        window._press("up")
+        window._press("up")
+        assert started[-1] == ("c0.mp3", 0.0), "seeking back past the start stays at the start"
+        assert window.current == "s0", "the side buttons do not move between stages"
     finally:
         window._close()
 
@@ -1154,5 +1227,6 @@ def test_the_emulator_opens_the_lunii_archive_not_the_colour_folder(
         card = window.story.stages[window.story.start]
         assert card.image.parts[-2:] == ("assets", "a1.png")
         assert card.image.is_file(), "the archive was let out so its cards can be drawn"
+        assert window.caption("up") == "Wheel", "that machine has a wheel, not a seek"
     finally:
         window._close()

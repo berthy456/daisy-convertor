@@ -119,6 +119,20 @@ def test_a_preview_is_played_by_a_player_the_app_started(monkeypatch) -> None:
     assert started == [["/usr/bin/ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "/tmp/01 One.mp3"]]
 
 
+def test_a_resumed_clip_asks_for_the_player_that_can_start_mid_clip(monkeypatch) -> None:
+    """`afplay` can only start at the beginning, so picking a clip up asks for ffplay
+    even on macOS, and says where to pick it up."""
+    started: list[list[str]] = []
+    monkeypatch.setattr(chapters.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(subprocess, "Popen", lambda args: started.append(list(args)))
+    monkeypatch.setattr(chapters.sys, "platform", "darwin")
+
+    chapters.open_preview(Path("/tmp/01 One.mp3"), 12.5)
+    assert started == [
+        ["/usr/bin/ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-ss", "12.500", "/tmp/01 One.mp3"]
+    ]
+
+
 def test_a_preview_falls_back_to_the_desktop_when_there_is_no_player(monkeypatch) -> None:
     """No player of the app's own: the sound is out of reach, and it says so by
     handing back nothing to stop."""

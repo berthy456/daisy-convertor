@@ -26,6 +26,8 @@ const keys = {
 const STORED_LANGUAGE = "daisy2telmi.language";
 // The Telmi's side buttons step through the clip instead of between stages.
 const SEEK = 10;
+// How long a chapter keeps the card it is read from on the screen.
+const CARD_HOLD = 4000;
 
 const audio = new Audio();
 const paint = screen.getContext("2d");
@@ -34,6 +36,8 @@ let lang = "en";
 let story = null;
 let current = null;
 let sound = null;
+let shown = false;
+let hold = null;
 
 const t = (key, values) => text(lang, key, values);
 
@@ -75,8 +79,15 @@ function fail(cause) {
 
 /** The stage's picture: a card's own run-length bitmap, or a PNG straight from the zip. */
 async function draw(picture) {
+  if (hold !== null) {
+    clearTimeout(hold);
+    hold = null;
+  }
   if (!picture) {
-    paint.clearRect(0, 0, screen.width, screen.height);
+    // A chapter has no picture of its own: it is read from the card it came from, so
+    // that card stays up while the clip runs, then the screen goes dark until a key.
+    if (shown) hold = setTimeout(dark, CARD_HOLD);
+    else dark();
     return;
   }
   if (picture[0] === 0x42 && picture[1] === 0x4d) {
@@ -84,6 +95,7 @@ async function draw(picture) {
     screen.width = card.width;
     screen.height = card.height;
     paint.putImageData(new ImageData(card.rgba, card.width, card.height), 0, 0);
+    shown = true;
     return;
   }
   const image = await createImageBitmap(new Blob([picture]));
@@ -91,6 +103,13 @@ async function draw(picture) {
   screen.height = image.height;
   paint.drawImage(image, 0, 0);
   image.close();
+  shown = true;
+}
+
+function dark() {
+  hold = null;
+  shown = false;
+  paint.clearRect(0, 0, screen.width, screen.height);
 }
 
 function stop() {
@@ -111,7 +130,7 @@ function light(stage) {
   // lets them whenever there is a clip to seek through.
   keys.up.disabled = keys.down.disabled =
     story.machine === "telmi" ? stage.audio === null : !stage.controls.wheel;
-  keys.pause.disabled = !stage.controls.pause;
+  keys.pause.disabled = stage.audio === null;
   keys.pause.classList.toggle("on", !audio.paused);
 }
 
@@ -165,6 +184,7 @@ function startMachine() {
     if (event.key === "ArrowUp" || event.key === "ArrowDown") side();
     else if (event.key === "Enter" || event.key === " ") press("ok");
     else if (event.key === "Backspace" || event.key.toLowerCase() === "h") press("home");
+    else if (event.key.toLowerCase() === "p") keys.pause.click();
     else return;
     event.preventDefault();
   });

@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import tkinter as tk
 import webbrowser
 from dataclasses import replace
@@ -63,6 +64,20 @@ ALERT = "#ff8978"
 # The colour of the work the app does on the user's behalf: the progress bar, and the
 # button that starts it. The icon's magenta stays on the mark and the selections.
 NAVY = "#2a5ec7"
+
+# The emulator's machine, drawn by hand: Tk's buttons are rectangles and the
+# story-teller's keys are not. A key is one colour while the stage has it switched
+# on, another while it is off, and the icon's magenta while it is doing its thing.
+MACHINE = "#4a4160"
+BEZEL = "#10131a"
+DIAL = "#5b4a6e"
+DIAL_EDGE = "#8a4f86"
+DIAL_INK = "#f0b6e8"
+OFF = "#3a3750"
+OFF_EDGE = "#4c4866"
+OFF_INK = "#6f6a86"
+SLOT = "#2a2f3a"
+SLOT_INK = "#f2f4f8"
 
 
 def theme(root: tk.Misc) -> None:
@@ -1765,7 +1780,7 @@ class Options:
 
 
 class Emulator:
-    """The story a run just wrote, played with the machine's own buttons.
+    """The story a run just wrote, played on a machine drawn like the icon's.
 
     The story folder is already the machine's: `nodes.json` says where each button
     leads, `images/` and `audios/` hold what a stage shows and plays. A Lunii run
@@ -1774,19 +1789,35 @@ class Emulator:
     Reading either back answers "what will the teller do" without a teller, at the
     sizes that machine's screen has.
 
-    Two of the web emulator's buttons are missing here on purpose. The Telmi's side
-    buttons seek inside the clip, and the pause button holds it: both need a player
-    the app can steer, and the app hands the sound to `afplay` or `ffplay`. So the
-    side buttons stay shut unless the stage has a wheel, and Stop silences the clip.
+    The face is drawn rather than widgeted, because Tk's buttons are rectangles and
+    the teller's keys are round: the screen on its bezel, the wheel's ring beside it,
+    and along the bottom the two side buttons, the play triangle, the pause bars and
+    the card slot. A chapter keeps the card it was read from on the screen for a few
+    seconds, then the screen goes dark until a key is pressed.
     """
 
     # The screen is drawn at the width every player's card can be blown up to by
     # whole pixels, which keeps the sixteen greys of a Lunii card grey.
     SCREEN_WIDTH = 640
+    SCREEN_HEIGHT = 480
 
-    # The wheel's two buttons are arrows on every machine; the rest carry words.
-    ARROWS = {"up": "▲", "down": "▼"}
-    BUTTONS = {"ok": "emu_ok", "home": "emu_home", "stop": "chapters_stop"}
+    PAD = 14
+    GAP = 22
+    RING = 54
+    DIAL = 32
+    SPACING = 96
+    CAPTION = 24
+
+    # The Telmi's side buttons step through the clip; the Lunii's wheel moves between
+    # the stages of a run.
+    SEEK = 10
+    # How long a chapter keeps its card on the screen before the screen goes dark.
+    CARD_HOLD = 4000
+
+    KEYS = ("up", "down", "ok", "pause", "home")
+
+    FACE_WIDTH = PAD * 2 + SCREEN_WIDTH + GAP + RING * 2
+    FACE_HEIGHT = PAD * 2 + SCREEN_HEIGHT + GAP + DIAL * 2 + CAPTION
 
     def __init__(self, app: App, folder: Path) -> None:
         self.app = app
@@ -1800,37 +1831,41 @@ class Emulator:
         self.top.title(f"{app.t('test_story')}: {self.story.title}")
         self.top.configure(background=PAPER)
         self.top.resizable(False, False)
+
         self.photo: tk.PhotoImage | None = None
         self.player: subprocess.Popen | None = None
+        self.sound: Path | None = None
         self.current: str | None = None
-        # The screen keeps the size of the cards once seen, so a stage with no
-        # picture of its own does not shrink the window mid-story.
-        self.size = (self.SCREEN_WIDTH, self.SCREEN_WIDTH * 3 // 4)
+        self.paused = False
+        # How much of the clip has already been heard, which is where a resumed one
+        # starts and what a side button steps through.
+        self.heard = 0.0
+        self.started = 0.0
+        self._fade: str | None = None
+        self.keys: dict[str, dict[str, int]] = {}
 
-        grid = ttk.Frame(self.top, padding=12)
-        grid.grid(sticky="nsew")
-        self.canvas = tk.Canvas(
-            grid,
-            background=SUNK,
-            relief="flat",
-            highlightthickness=1,
-            highlightbackground=LINE,
-            highlightcolor=ACCENT,
+        body = ttk.Frame(self.top, padding=12)
+        body.grid(sticky="nsew")
+        self.name = ttk.Label(body, text=self.story.title, foreground=INK)
+        self.name.grid(row=0, column=0, pady=(0, 6))
+
+        self.face = tk.Canvas(
+            body,
+            width=self.FACE_WIDTH,
+            height=self.FACE_HEIGHT,
+            background=PAPER,
+            highlightthickness=0,
         )
-        self.canvas.grid(row=0, column=0, columnspan=5)
+        self.face.grid(row=1, column=0)
+        self.status = ttk.Label(
+            body,
+            text=f"{self.t('emu_hint')} {self.t('emu_dimmed')}",
+            foreground=MUTED,
+            wraplength=self.SCREEN_WIDTH,
+        )
+        self.status.grid(row=2, column=0, sticky="w", pady=(8, 0))
 
-        self.status = ttk.Label(grid, text=self.t("emu_hint"), foreground=MUTED, wraplength=420)
-        self.status.grid(row=1, column=0, columnspan=5, sticky="w", pady=(8, 8))
-
-        self.keys: dict[str, ttk.Button] = {}
-        for column, button in enumerate(("up", "down", "ok", "home", "stop")):
-            box = ttk.Button(
-                grid,
-                text=self.ARROWS.get(button) or self.t(self.BUTTONS[button]),
-                command=lambda which=button: self._press(which),
-            )
-            box.grid(row=2, column=column, padx=(0, 6))
-            self.keys[button] = box
+        self._build()
 
         self.top.bind("<Up>", lambda _event: self._press("up"))
         self.top.bind("<Down>", lambda _event: self._press("down"))
@@ -1838,6 +1873,7 @@ class Emulator:
         self.top.bind("<space>", lambda _event: self._press("ok"))
         self.top.bind("<BackSpace>", lambda _event: self._press("home"))
         self.top.bind("<h>", lambda _event: self._press("home"))
+        self.top.bind("<p>", lambda _event: self._press("pause"))
         self.top.protocol("WM_DELETE_WINDOW", self._close)
 
         self._show(self.story.start)
@@ -1846,56 +1882,247 @@ class Emulator:
     def t(self, key: str) -> str:
         return self.app.t(key)
 
+    def _build(self) -> None:
+        """The machine's face: the shell, the screen, the ring, and the keys."""
+        left, top = 2, 2
+        right, bottom = self.FACE_WIDTH - 2, self.FACE_HEIGHT - 2
+        corner = 18
+        self.face.create_polygon(
+            (
+                left + corner, top,
+                right - corner, top,
+                right, top + corner,
+                right, bottom - corner,
+                right - corner, bottom,
+                left + corner, bottom,
+                left, bottom - corner,
+                left, top + corner,
+            ),
+            smooth=True,
+            fill=MACHINE,
+            outline=LINE,
+        )
+        self.face.create_rectangle(
+            self.PAD,
+            self.PAD,
+            self.PAD + self.SCREEN_WIDTH,
+            self.PAD + self.SCREEN_HEIGHT,
+            fill=BEZEL,
+            outline=LINE,
+        )
+
+        ring_x = self.PAD + self.SCREEN_WIDTH + self.GAP + self.RING
+        ring_y = self.PAD + self.SCREEN_HEIGHT // 2
+        self.face.create_oval(
+            ring_x - self.RING,
+            ring_y - self.RING,
+            ring_x + self.RING,
+            ring_y + self.RING,
+            fill=DIAL,
+            outline=DIAL_EDGE,
+            width=6,
+        )
+        self.face.create_oval(
+            ring_x - self.RING // 2,
+            ring_y - self.RING // 2,
+            ring_x + self.RING // 2,
+            ring_y + self.RING // 2,
+            fill=MACHINE,
+            outline=DIAL_EDGE,
+        )
+
+        first = (self.FACE_WIDTH - (len(self.KEYS) - 1) * self.SPACING) / 2
+        y = self.PAD + self.SCREEN_HEIGHT + self.GAP + self.DIAL
+        for column, button in enumerate(self.KEYS):
+            label = None if button in ("up", "down") else self.t(f"emu_{button}")
+            self._key(button, first + column * self.SPACING, y, label)
+        # The two side keys are one pair with one word: the Lunii's wheel, or the
+        # Telmi's seek, which is what the machine's own face says.
+        self.pair_caption = self.face.create_text(
+            first + self.SPACING / 2,
+            y + self.DIAL + 12,
+            text=self.t("emu_seek" if self.story.machine == "telmi" else "emu_wheel"),
+            fill=MUTED,
+            font=("TkDefaultFont", 9),
+        )
+
+    def _key(self, button: str, x: float, y: float, label: str | None) -> None:
+        group = f"key-{button}"
+        dial = self.face.create_oval(
+            x - self.DIAL,
+            y - self.DIAL,
+            x + self.DIAL,
+            y + self.DIAL,
+            fill=SLOT if button == "home" else DIAL,
+            outline=SLOT if button == "home" else DIAL_EDGE,
+            tags=(group,),
+        )
+        icons = []
+        if button == "home":
+            # The card slot on the machine's face: dark, and rectangular.
+            icons.append(
+                self.face.create_rectangle(x - 16, y - 9, x + 16, y + 9, fill=SLOT_INK, outline=SLOT_INK, tags=(group,))
+            )
+        elif button == "pause":
+            for bar in (-11, 3):
+                icons.append(
+                    self.face.create_rectangle(
+                        x + bar, y - 13, x + bar + 8, y + 13, fill=DIAL_INK, outline=DIAL_INK, tags=(group,)
+                    )
+                )
+        else:
+            points = {
+                "up": [(x, y - 14), (x - 15, y + 10), (x + 15, y + 10)],
+                "down": [(x, y + 14), (x - 15, y - 10), (x + 15, y - 10)],
+                "ok": [(x - 11, y - 14), (x - 11, y + 14), (x + 15, y)],
+            }[button]
+            icons.append(self.face.create_polygon(*points, fill=DIAL_INK, outline=DIAL_INK, tags=(group,)))
+        caption = 0
+        if label:
+            caption = self.face.create_text(
+                x, y + self.DIAL + 12, text=label, fill=MUTED, font=("TkDefaultFont", 9), tags=(group,)
+            )
+        self.keys[button] = {"dial": dial, "icons": icons, "caption": caption, "state": "on"}
+        self.face.tag_bind(group, "<Button-1>", lambda _event, which=button: self._press(which))
+
+    def caption(self, button: str) -> str:
+        item = self.pair_caption if button in ("up", "down") else self.keys[button]["caption"]
+        return self.face.itemcget(item, "text")
+
+    def lit(self, button: str) -> bool:
+        return self.keys[button]["state"] != "off"
+
     def _show(self, stage_id: str) -> None:
         stage = self.story.stages.get(stage_id)
         if stage is None:
             return
         self.current = stage_id
-        self._stop()
-        self._draw(stage.image)
+        self._silence()
+        self._screen(stage)
         if stage.audio is not None and stage.audio.is_file():
-            try:
-                self.player = chapters.open_preview(stage.audio)
-            except chapters.ChapterError as exc:
-                self.status.configure(text=str(exc))
+            self.sound = stage.audio
+            self._play()
         self._light(stage)
 
-    def _draw(self, image: Path | None) -> None:
-        """The stage's own picture, blown up by whole pixels. A stage with no image
-        of its own leaves the screen empty, at the size the story's cards have."""
-        self.canvas.delete("all")
-        self.photo = None
-        if image is not None and image.is_file():
-            photo = tk.PhotoImage(data=image.read_bytes())
-            step = self.SCREEN_WIDTH // photo.width()
-            self.photo = photo.zoom(step, step) if step > 1 else photo
-            self.size = (self.photo.width(), self.photo.height())
-        self.canvas.configure(width=self.size[0], height=self.size[1])
-        if self.photo is not None:
-            self.canvas.create_image(self.size[0] // 2, self.size[1] // 2, image=self.photo)
+    def _screen(self, stage: emulator.Stage) -> None:
+        """The stage's own picture; a chapter keeps the card it was read from, then
+        leaves the screen dark until the next key."""
+        self._cancel()
+        if stage.image is not None and stage.image.is_file():
+            self._draw(stage.image)
+        elif self.photo is not None:
+            self._fade = self.top.after(self.CARD_HOLD, self._dark)
+        else:
+            self._draw(None)
 
-    def _light(self, stage: emulator.Stage) -> None:
-        """A button is lit when the stage left it on; the machine ignores the rest."""
-        self.keys["ok"].state(["!disabled"] if stage.controls.ok else ["disabled"])
-        self.keys["home"].state(["!disabled"] if stage.controls.home else ["disabled"])
-        wheel = ["!disabled"] if stage.controls.wheel else ["disabled"]
-        self.keys["up"].state(wheel)
-        self.keys["down"].state(wheel)
-        self.keys["stop"].state(["!disabled"] if self.player is not None else ["disabled"])
+    def _dark(self) -> None:
+        self._fade = None
+        self._draw(None)
+
+    def _cancel(self) -> None:
+        if self._fade is not None:
+            self.top.after_cancel(self._fade)
+            self._fade = None
+
+    def _draw(self, image: Path | None) -> None:
+        """The picture blown up by whole pixels and centred on the screen, which keeps
+        the card's own pixels square the way the machine's screen shows them."""
+        self.face.delete("picture")
+        self.photo = None
+        if image is None or not image.is_file():
+            return
+        photo = tk.PhotoImage(data=image.read_bytes())
+        step = max(1, min(self.SCREEN_WIDTH // photo.width(), self.SCREEN_HEIGHT // photo.height()))
+        self.photo = photo.zoom(step, step) if step > 1 else photo
+        self.face.create_image(
+            self.PAD + self.SCREEN_WIDTH // 2, self.PAD + self.SCREEN_HEIGHT // 2, image=self.photo, tags=("picture",)
+        )
+
+    def _light(self, stage: emulator.Stage | None) -> None:
+        """A key is lit when the stage left it on; the machine ignores the rest."""
+        if stage is None:
+            return
+        clip = self.sound is not None
+        wheel = (self.story.machine == "telmi" and clip) or stage.controls.wheel
+        self._paint("up", wheel)
+        self._paint("down", wheel)
+        self._paint("ok", stage.controls.ok)
+        self._paint("home", stage.controls.home)
+        self._paint("pause", clip, playing=self.player is not None)
+
+    def _paint(self, button: str, on: bool, playing: bool = False) -> None:
+        key = self.keys[button]
+        key["state"] = "playing" if on and playing else "on" if on else "off"
+        fill, edge, ink = {
+            "off": (OFF, OFF_EDGE, OFF_INK),
+            "on": (DIAL, DIAL_EDGE, DIAL_INK),
+            "playing": (ACCENT, ACCENT, "#ffffff"),
+        }[key["state"]]
+        if button == "home":
+            fill, ink = (SLOT, SLOT_INK) if on else (OFF, OFF_INK)
+            edge = fill
+        self.face.itemconfigure(key["dial"], fill=fill, outline=edge)
+        for icon in key["icons"]:
+            self.face.itemconfigure(icon, fill=ink, outline=ink)
+
+    def _play(self) -> None:
+        if self.sound is None:
+            return
+        try:
+            self.player = chapters.open_preview(self.sound, self.heard)
+        except chapters.ChapterError as exc:
+            self.status.configure(text=str(exc))
+            self.player = None
+        self.started = time.monotonic()
+        self.paused = False
+
+    def _pause(self) -> None:
+        if self.player is not None:
+            self.heard += time.monotonic() - self.started
+            self._stop()
+            self.paused = True
+        elif self.sound is not None:
+            self._play()
+        self._light(self.story.stages.get(self.current or ""))
+
+    def _seek(self, step: float) -> None:
+        if self.sound is None:
+            return
+        if self.player is not None:
+            self.heard += time.monotonic() - self.started
+            self._stop()
+        self.heard = max(0.0, self.heard + step)
+        self._play()
+        self._light(self.story.stages.get(self.current or ""))
 
     def _press(self, button: str) -> None:
         if self.current is None:
             return
-        if button == "stop":
-            self._stop()
+        stage = self.story.stages.get(self.current)
+        if stage is None or not self.lit(button):
+            return
+        self._cancel()
+        if button == "pause":
+            self._pause()
+            return
+        if self.story.machine == "telmi" and button in ("up", "down"):
+            self._seek(-self.SEEK if button == "up" else self.SEEK)
             return
         nxt = emulator.walk(self.story, self.current, button)
         if nxt and nxt != self.current:
             self._show(nxt)
+        else:
+            self._screen(stage)
 
     def _stop(self) -> None:
         chapters.stop_preview(self.player)
         self.player = None
+
+    def _silence(self) -> None:
+        self._stop()
+        self.sound = None
+        self.heard = 0.0
+        self.paused = False
 
     def _poll(self) -> None:
         """The clip ends on its own, and an autoplayed one forces the next stage."""
@@ -1903,14 +2130,17 @@ class Emulator:
             return
         if self.player is not None and self.player.poll() is not None:
             self.player = None
+            self.heard = 0.0
             stage = self.story.stages.get(self.current or "")
-            if stage is not None:
-                self._light(stage)
-                if stage.controls.autoplay:
-                    self._press("next")
+            self._light(stage)
+            if stage is not None and stage.controls.autoplay:
+                nxt = emulator.walk(self.story, self.current or "", "next")
+                if nxt and nxt != self.current:
+                    self._show(nxt)
         self.top.after(200, self._poll)
 
     def _close(self) -> None:
+        self._cancel()
         chapters.stop_preview(self.player)
         self.player = None
         self.top.destroy()

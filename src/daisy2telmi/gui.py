@@ -393,7 +393,7 @@ class App:
         self.format_var = tk.StringVar(value=self.options["format"])
         # The cover drawn at the frame's ratio: the file it came from, the player it
         # was drawn for, the zoom it was drawn at, then the picture and its size.
-        self._crop_cover: tuple[str, str, float, tuple[bytes, tuple[int, int]]] | None = None
+        self._crop_cover: tuple[str, str, float, bool, tuple[bytes, tuple[int, int]]] | None = None
         self._crop_photo: tk.PhotoImage | None = None
         self._crop_zoom_value = 1.0
         self._crop_focus: tuple[float, float] | None = None
@@ -896,6 +896,10 @@ class App:
     def _pick_negative(self) -> None:
         self.options["card_negative"] = self.negative_var.get()
         settings.save(self.options)
+        # The preview is the card's own picture, so turning the card inside out
+        # changes it too.
+        self._crop_cover = None
+        self._show_crop()
 
     def _pick_format(self) -> None:
         self.options["format"] = self.format_var.get()
@@ -918,15 +922,20 @@ class App:
         # A cover smaller than the frame leaves its room empty on the canvas, which
         # is the card's band colour and not the window's.
         style = "bw" if self.format_var.get() == "lunii" else "colour"
-        self.crop_frame.configure(width=size[0], height=size[1], background=images.band_colour(style))
+        # A colour card has nothing to invert, so the preview inverts with the card.
+        negative = self.negative_var.get() and style == "bw"
+        self.crop_frame.configure(width=size[0], height=size[1], background=images.band_colour(style, negative))
         source = self._typed_path(self.cover_var)
         if source is None or not source.is_file():
             self._clear_crop()
             return
-        key = (str(source), self.format_var.get(), self._crop_zoom_value)
-        if self._crop_cover is None or self._crop_cover[:3] != key:
+        key = (str(source), self.format_var.get(), self._crop_zoom_value, negative)
+        if self._crop_cover is None or self._crop_cover[:4] != key:
             try:
-                self._crop_cover = (*key, images.cover_fit(source, size, self._crop_zoom_value))
+                self._crop_cover = (
+                    *key,
+                    images.cover_fit(source, size, self._crop_zoom_value, style, negative),
+                )
             except images.ImageError as exc:
                 self._append(f"ERROR: {exc}")
                 self._clear_crop()
@@ -937,7 +946,7 @@ class App:
         """Slide the drawn cover under the frame until the frame sits at its focus."""
         if self._crop_cover is None:
             return
-        png, picture = self._crop_cover[3]
+        png, picture = self._crop_cover[4]
         frame = images.preview_size(self.format_var.get(), CROP_WIDTH)
         focus = self._crop_focus or images.CROP_FOCUS.get(self.crop_var.get(), images.CROP_FOCUS["center"])
         self._crop_photo = tk.PhotoImage(master=self.root, data=png)
@@ -981,7 +990,7 @@ class App:
         if self._crop_cover is None:
             return
         frame = images.preview_size(self.format_var.get(), CROP_WIDTH)
-        picture = self._crop_cover[3][1]
+        picture = self._crop_cover[4][1]
         focus = start or self._current_focus()
         room = (picture[0] - frame[0], picture[1] - frame[1])
         self._crop_focus = (

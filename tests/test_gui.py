@@ -923,6 +923,23 @@ def test_the_frame_is_drawn_before_a_cover_exists(app: gui.App) -> None:
     assert app.crop_frame.cget("background") == images.band_colour("bw")
 
 
+def test_the_negative_turns_the_preview_inside_out(app: gui.App) -> None:
+    """The preview is the card's own picture, so the room around it turns with it —
+    and a player that shows colours has nothing to turn."""
+    app.format_var.set("lunii")
+    app._pick_format()
+    plain = app.crop_frame.cget("background")
+
+    app.negative_var.set(True)
+    app._pick_negative()
+    assert app.crop_frame.cget("background") == images.band_colour("bw", True)
+    assert app.crop_frame.cget("background") != plain
+
+    app.format_var.set("merlin")
+    app._pick_format()
+    assert app.crop_frame.cget("background") == images.band_colour("colour"), "a colour card has nothing to invert"
+
+
 def test_the_zoom_and_a_moved_frame_reach_the_conversion(app: gui.App, monkeypatch, tmp_path) -> None:
     seen: list = []
     monkeypatch.setattr(gui, "convert", lambda *args, **kwargs: seen.append((args, kwargs)) or 0)

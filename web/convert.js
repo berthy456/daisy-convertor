@@ -70,7 +70,9 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
   const cover = options.cover ?? null;
   const view = { crop: options.crop ?? "center", zoom: options.zoom ?? 1, focus: options.focus ?? null };
   const style = options.style ?? "colour";
-  const negative = Boolean(options.negative);
+  // The negative belongs to the greys of a Lunii behind its plastic window; a
+  // colour card has nothing to invert.
+  const negative = Boolean(options.negative) && style === "bw";
   const [scene, coverSize] = screen(options.player ?? "telmi");
   const cardLabel = options.cardLabel ?? ((number, count) => `Chapter ${number}/${count}`);
   const say = options.t ?? ((key) => key);

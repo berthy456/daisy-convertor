@@ -3,8 +3,8 @@ import {
   CROP_FOCUS,
   MAX_ZOOM,
   MIN_ZOOM,
-  bandColour,
   cropRect,
+  drawPreview,
   loadCoverFile,
   loadCoverUrl,
   rle4Bitmap,
@@ -194,6 +194,7 @@ function startNegative() {
   negativeBox.addEventListener("change", () => {
     negative = negativeBox.checked;
     remember(STORED_NEGATIVE, negative ? "1" : "0");
+    drawCrop();
   });
 }
 
@@ -224,15 +225,15 @@ function drawCrop() {
     cropCanvas.width = width;
     cropCanvas.height = height;
   }
-  const ctx = cropCanvas.getContext("2d");
-  ctx.clearRect(0, 0, width, height);
-  // A cover shown whole leaves room in the frame; the card fills that room with its
-  // band colour, so the preview shows what the card will show.
-  ctx.fillStyle = bandColour(format === "lunii" ? "bw" : "colour");
-  ctx.fillRect(0, 0, width, height);
-  if (!cover) return;
-  const [x, y, drawnWidth, drawnHeight] = cropRect(cover, width, height, cropView());
-  ctx.drawImage(cover, x, y, drawnWidth, drawnHeight);
+  drawPreview(
+    cropCanvas.getContext("2d"),
+    cover,
+    width,
+    height,
+    cropView(),
+    format === "lunii" ? "bw" : "colour",
+    negative,
+  );
 }
 
 /** A drag moves the cover, so the frame's place moves the other way. The canvas

@@ -3,9 +3,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { FLATTENS, installCanvasStub } from "./canvas-stub.mjs";
+import { DRAWS, FILLS, FLATTENS, StubCanvas, installCanvasStub } from "./canvas-stub.mjs";
 
-const { GREY_LEVELS, cardPng, coverPng, greyLevel } = await import("../../web/cover.js");
+const { GREY_LEVELS, cardPng, coverPng, drawPreview, greyLevel } = await import("../../web/cover.js");
 
 // The desktop build's ffmpeg chain lands on the same sixteen: 255 in fifteen steps.
 const LEVELS = Array.from({ length: GREY_LEVELS }, (_, level) => level * 17);
@@ -48,6 +48,29 @@ test("a Lunii card is flattened, a colour card is left alone", async () => {
   FLATTENS.length = 0;
   await cardPng("Chapter 1/6", "once upon a time");
   assert.deepEqual(FLATTENS, [], "a Telmi card keeps its colour");
+});
+
+test("the crop preview is drawn in the card's own colours", async () => {
+  installCanvasStub();
+  const cover = { width: 600, height: 400, close: () => {} };
+  const frame = (width, height) => new StubCanvas(width, height).getContext();
+
+  FILLS.length = 0;
+  DRAWS.length = 0;
+  FLATTENS.length = 0;
+  drawPreview(frame(160, 120), cover, 160, 120, { crop: "center" }, "colour");
+  assert.deepEqual(FILLS, [[0, 0, 160, 120, 160, 120]], "the frame is painted over before the cover goes on it");
+  assert.equal(DRAWS.length, 1, "and the cover is drawn on top of it");
+  assert.deepEqual(FLATTENS, [], "a Telmi preview keeps the cover's colours");
+
+  FLATTENS.length = 0;
+  drawPreview(frame(160, 120), cover, 160, 120, { crop: "center" }, "bw");
+  assert.deepEqual(FLATTENS.map(([width, height]) => [width, height]), [[160, 120]], "the frame is flattened");
+  assert.ok(FLATTENS[0][3][0] < FLATTENS[0][3][119], "and it starts dark, like the card");
+
+  FLATTENS.length = 0;
+  drawPreview(frame(160, 120), cover, 160, 120, { crop: "center" }, "bw", true);
+  assert.ok(FLATTENS[0][3][0] > FLATTENS[0][3][119], "a negative preview starts light");
 });
 
 test("the Lunii cover is flattened too", async () => {

@@ -77,7 +77,7 @@ export function greyLevel(luminance, negative = false) {
 }
 
 /** Flatten a finished picture to the sixteen levels a plain Lunii shows. */
-function toGreys(ctx, width, height, negative = false) {
+export function toGreys(ctx, width, height, negative = false) {
   const image = ctx.getImageData(0, 0, width, height);
   for (let at = 0; at < image.data.length; at += 4) {
     // The weights are the ones the device's own converter uses, so the card
@@ -191,9 +191,20 @@ function drawCover(ctx, cover, left, top, width, height, view = {}, style = "col
   ctx.drawImage(cover, left + x, top + y, drawnWidth, drawnHeight);
 }
 
-/** The colour a card fills the frame's empty room with. */
-export function bandColour(style) {
-  return PALETTE[style].band;
+/**
+ * The cover as the card chosen will show it: the frame's empty room filled with the
+ * card's band, and a grey card's picture flattened to the greys its screen has.
+ *
+ * Drawn the way `coverPng` draws the picture this becomes, so what the crop frame
+ * shows is what the story will carry.
+ */
+export function drawPreview(ctx, cover, width, height, view = {}, style = "colour", negative = false) {
+  // The frame is painted over each time it is drawn, so the room the cover leaves
+  // takes the band and a cover with transparency has something of its own to sit on.
+  ctx.fillStyle = PALETTE[style].band;
+  ctx.fillRect(0, 0, width, height);
+  if (cover) drawCover(ctx, cover, 0, 0, width, height, view, style);
+  if (style === "bw") toGreys(ctx, width, height, negative);
 }
 
 /**

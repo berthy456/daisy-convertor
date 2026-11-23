@@ -392,9 +392,25 @@ def _hex(rgb: tuple[int, int, int] | int) -> str:
     return "0x%02x%02x%02x" % _rgb(rgb)
 
 
-def band_colour(style: str) -> str:
-    """The colour a card fills the frame's empty room with, spelled as Tk wants it."""
-    return "#%02x%02x%02x" % _rgb(_palette(style)["band"])
+def _grey_level(value: int, negative: bool = False) -> int:
+    """The grey one brightness lands on once `_grey_chain` has done with it.
+
+    The same three steps in Python as in the ffmpeg chain: the contrast first, then
+    the swap, then the levels. A preview fills its empty room with one solid colour
+    and cannot run it through ffmpeg, so this says where that colour ends up.
+    """
+    light = max(0, min(255, round((value - 128) * 1.6 + 128)))
+    return round((255 - light if negative else light) * (GREY_LEVELS - 1) / 255) * _GREY_STEP
+
+
+def band_colour(style: str, negative: bool = False) -> str:
+    """The colour a card fills the frame's empty room with, spelled as Tk wants it.
+
+    A grey card flattens the room with the rest of the picture, so the preview asks
+    `_grey_level` where that colour ends up rather than using the palette's own.
+    """
+    band = _palette(style)["band"]
+    return "#%02x%02x%02x" % _rgb(_grey_level(band, negative) if style == "bw" else band)
 
 
 def _grey_chain(negative: bool = False) -> str:
@@ -492,14 +508,26 @@ def preview_size(player: str, width: int = PREVIEW_SIZE[0]) -> tuple[int, int]:
     return width, round(width * scene[1] / scene[0])
 
 
-def cover_fit(source: Path, size: tuple[int, int], zoom: float = 1.0) -> tuple[bytes, tuple[int, int]]:
+def cover_fit(
+    source: Path,
+    size: tuple[int, int],
+    zoom: float = 1.0,
+    style: str = "colour",
+    negative: bool = False,
+) -> tuple[bytes, tuple[int, int]]:
     """The cover scaled to fill `size` and enlarged by `zoom`, and the picture's size.
 
     The crop frame sits on this picture and shows only what falls inside it, which
     is what the web page's canvas does; a desktop Canvas does the same with one
     image item. The picture is drawn once per zoom, so dragging stays instant.
+
+    `style` is the screen the preview is being read against: a grey one gets the
+    cover already flattened, so what the frame shows is what that card will carry.
     """
     ffmpeg = require_ffmpeg()
+    chain = _scale_chain(*size, clamp_zoom(zoom))
+    if style == "bw":
+        chain += f",{_grey_chain(negative)}"
     with tempfile.TemporaryDirectory(prefix="daisy2telmi-") as tmp:
         out = Path(tmp) / "fit.png"
         _run(
@@ -509,7 +537,7 @@ def cover_fit(source: Path, size: tuple[int, int], zoom: float = 1.0) -> tuple[b
                 "-i",
                 str(source),
                 "-vf",
-                _scale_chain(*size, clamp_zoom(zoom)),
+                chain,
                 "-frames:v",
                 "1",
                 str(out),
@@ -573,7 +601,9 @@ def write_cover(
     images = out_dir / "images"
     images.mkdir(parents=True, exist_ok=True)
     margin, thumb_size, _, _ = _layout(scene[0])
-    band = _palette(style, negative)["band"]
+    # The band is painted before the flattening, so a negative card inverts it with
+    # the rest of the picture: asking for the inverted colour here would flip it twice.
+    band = _palette(style)["band"]
 
     with tempfile.TemporaryDirectory(prefix="daisy2telmi-") as tmp:
         scratch = Path(tmp)

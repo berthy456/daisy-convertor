@@ -307,6 +307,53 @@ def test_the_zoom_enlarges_the_picture_the_frame_moves_over(tmp_path: Path) -> N
     assert clamped == (one[0] * images.MAX_ZOOM, one[1] * images.MAX_ZOOM), "no zoom past the ceiling"
 
 
+@NO_FFMPEG
+def test_the_preview_is_drawn_in_the_card_s_own_greys(tmp_path: Path) -> None:
+    """The frame is the card's own screen, so a Lunii preview cannot keep a colour
+    that screen has no grey for, and its negative is the same picture turned over."""
+    source = _sided_cover(tmp_path)
+    for name, style, negative in (("colour", "colour", False), ("grey", "bw", False), ("flat", "bw", True)):
+        png, _ = images.cover_fit(source, images.PREVIEW_SIZE, 1.0, style, negative)
+        (tmp_path / f"{name}.png").write_bytes(png)
+
+    colour, grey, flat = (tmp_path / f"{name}.png" for name in ("colour", "grey", "flat"))
+    assert _pixel(colour, 10, 60)[0] > 200 and _pixel(colour, 150, 60)[1] > 200, (
+        "a colour preview keeps the cover's own colours"
+    )
+    for png in (grey, flat):
+        for x in (10, 150):
+            red, green, blue = _pixel(png, x, 60)
+            assert red == green == blue, "a Lunii preview has no colour left"
+            assert red in images._GREY_LEVELS, "and every grey is one the screen keeps"
+    assert _pixel(grey, 10, 60)[0] < _pixel(grey, 150, 60)[0], "the cover's red side reads darker"
+    for x in (10, 150):
+        assert _pixel(flat, x, 60)[0] == 255 - _pixel(grey, x, 60)[0], "the negative is turned over"
+
+
+def test_the_frame_fills_its_room_where_the_flattening_puts_the_band() -> None:
+    """The frame's empty room is one solid colour that never goes through ffmpeg, so
+    it has to be asked where the flattening ends up putting the card's band."""
+    plain = int(images.band_colour("bw")[1:3], 16)
+    flipped = int(images.band_colour("bw", True)[1:3], 16)
+    assert plain in images._GREY_LEVELS and flipped in images._GREY_LEVELS
+    assert plain + flipped == 255, "the negative frame's room is the plain one turned over"
+    assert images.band_colour("colour") == "#%02x%02x%02x" % images.BAND, "a colour card is left alone"
+
+
+@NO_FFMPEG
+def test_the_card_paints_the_band_the_preview_shows(tmp_path: Path) -> None:
+    """A cover shown whole leaves the card's band on both sides of it, and the frame
+    paints the same room: the two colours have to be the one colour."""
+    source = _tall_cover(tmp_path)
+    view = images.crop_view("center", 0.0)
+    for negative in (False, True):
+        out = tmp_path / f"card{int(negative)}"
+        images.write_cover(source, out, ["1"], [""], "center", "bw", (320, 240), (256, 256), view, negative)
+        band = _pixel(out / "images/m0.png", 20, 10)
+        shown = tuple(int(images.band_colour("bw", negative)[at : at + 2], 16) for at in (1, 3, 5))
+        assert band == shown, "the preview shows the band the card ends up with"
+
+
 def test_crop_view_keeps_the_band_and_clamps_the_zoom() -> None:
     assert images.crop_view()["zoom"] == 1.0
     assert images.crop_view()["focus"] is None

@@ -195,6 +195,12 @@ input[type="file"] {
   border-top: 1px solid var(--line);
 }
 
+/* The question gets its own line, so the five players read as one row of choices
+   rather than as five answers to a sentence. */
+.format-row > .muted {
+  flex: 0 0 100%;
+}
+
 .cut-row label,
 .cards-row label,
 .format-row label {

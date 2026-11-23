@@ -13,6 +13,7 @@ import contextlib
 import logging
 import os
 import queue
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -59,6 +60,9 @@ LINE = "#5c5878"
 ACCENT = "#d24fc9"
 MUTED = "#b3aecb"
 ALERT = "#ff8978"
+# The colour of the work the app does on the user's behalf: the progress bar, and the
+# button that starts it. The icon's magenta stays on the mark and the selections.
+NAVY = "#2a5ec7"
 
 
 def theme(root: tk.Misc) -> None:
@@ -105,7 +109,23 @@ def theme(root: tk.Misc) -> None:
     style.map("Treeview", background=[("selected", ACCENT)], foreground=[("selected", "#ffffff")])
     style.configure("Treeview.Heading", background=FIELD, foreground=MUTED, relief="flat")
     style.configure("TScrollbar", background=FIELD, troughcolor=PAPER, bordercolor=LINE, arrowsize=12, relief="flat")
-    style.configure("TProgressbar", background=ACCENT, troughcolor=FIELD, bordercolor=LINE)
+    style.configure("TProgressbar", background=NAVY, troughcolor=FIELD, bordercolor=LINE)
+    # The button that starts the work is the one to find by eye, so it is the widest
+    # thing in its row and the only one carrying the work's own blue.
+    style.configure(
+        "Work.TButton",
+        padding=(16, 9),
+        background=NAVY,
+        bordercolor=NAVY,
+        foreground="#ffffff",
+        font=("TkDefaultFont", 11, "bold"),
+    )
+    style.map(
+        "Work.TButton",
+        background=[("active", "#3a70dd"), ("disabled", FIELD)],
+        foreground=[("disabled", MUTED)],
+        bordercolor=[("disabled", FIELD)],
+    )
     style.configure("TSeparator", background=LINE)
     style.configure("TSizegrip", background=PAPER)
     style.configure("TLabelframe", background=PAPER, bordercolor=LINE)
@@ -383,6 +403,11 @@ class App:
         self.language_var = tk.StringVar(value=self.options["language"])
         self.cut = self.options["cut"]
         self.dropped: set[int] = set()
+        # A test run writes the story into a folder the app made and keeps it, so the
+        # Save button can write that same pack without running the converter again.
+        self._test_folder: Path | None = None
+        self._test_key: tuple | None = None
+        self._on_done = None
         self._labels: dict[str, tk.Widget] = {}
         self._build()
         root.after(100, self._drain)
@@ -544,11 +569,11 @@ class App:
 
         controls = ttk.Frame(grid)
         controls.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(8, 8))
-        self.save_button = self._button(controls, "save", self._start)
+        self.save_button = self._button(controls, "save", self._start, style="Work.TButton")
         self.save_button.pack(side="left")
         self._button(controls, "options", self._open_options).pack(side="left", padx=12)
         self._button(controls, "chapters", self._open_chapters).pack(side="left")
-        self._button(controls, "emulator", self._open_emulator).pack(side="left", padx=12)
+        self._button(controls, "test_story", self._test_story).pack(side="left", padx=12)
         self.force_box = ttk.Checkbutton(
             controls, text=self.t("overwrite"), variable=self.force_var
         )
@@ -623,17 +648,75 @@ class App:
             return
         ChapterList(self, source)
 
-    def _open_emulator(self) -> None:
-        """Play the story the last run wrote. When the output folder holds none,
-        ask for a folder and read the story out of that."""
-        out = Path(self.out_var.get()).expanduser() if self.out_var.get().strip() else None
-        folder = emulator.find_story(out) if out is not None and out.is_dir() else None
-        if folder is None:
-            chosen = self._browse("emulator", self.out_var.get(), "folder")
-            if not chosen:
-                return
-            folder = Path(chosen)
-        self.emulator = Emulator(self, folder)
+    def _settings_key(self) -> tuple:
+        """Everything a run reads from the window. Two runs with the same key write
+        the same story, so the second one is not worth waiting for."""
+        announce = self.announce()
+        return (
+            str(self._typed_path(self.pack_var) or ""),
+            str(self._typed_path(self.cover_var) or ""),
+            self.cut,
+            self.format_var.get(),
+            self.crop_var.get() or "center",
+            self._crop_zoom_value,
+            self._crop_focus,
+            self.negative_var.get(),
+            ",".join(str(number) for number in sorted(self.dropped)),
+            announce.mode,
+            announce.language,
+            announce.autoplay,
+            announce.show_total,
+            announce.engine,
+            announce.voice,
+            announce.command,
+            announce.python,
+            announce.clip,
+            announce.device,
+        )
+
+    def _test_story(self) -> None:
+        """Convert into a folder the app made, play it there, and keep it for Save.
+
+        Nothing of the user's is touched: the output folder stays as it is until the
+        Save button is pressed.
+        """
+        picked = self._sources()
+        if picked is None:
+            return
+        source, cover = picked
+
+        if self._test_folder is not None:
+            shutil.rmtree(self._test_folder, ignore_errors=True)
+        self._test_folder = Path(tempfile.mkdtemp(prefix="daisy2telmi-test-"))
+        self._test_key = None
+        self._on_done = lambda code, folder=self._test_folder: self._tested(code, folder)
+        self._convert(source, self._test_folder, cover, True)
+
+    def _tested(self, code: int, folder: Path | None) -> None:
+        """Open the player on the story a test just wrote, and remember its settings."""
+        if code != 0 or folder is None or not folder.is_dir():
+            return
+        story = emulator.find_story(folder)
+        if story is None:
+            self._append("ERROR: the test wrote no story to play")
+            return
+        self._test_key = self._settings_key()
+        self.emulator = Emulator(self, story)
+
+    def _copy_tested(self, out_dir: Path) -> bool:
+        """Write the pack the player just showed into the output folder as it stands."""
+        for entry in sorted(self._test_folder.iterdir()):
+            target = out_dir / entry.name
+            if entry.is_dir():
+                if target.is_dir() and any(target.iterdir()) and not self.force_var.get():
+                    self._append(
+                        f"ERROR: {target} already holds a story: tick the overwrite box to replace it"
+                    )
+                    return False
+                shutil.copytree(entry, target, dirs_exist_ok=True)
+            else:
+                shutil.copy2(entry, target)
+        return True
 
     def announce(self) -> Announce:
         return Announce(
@@ -993,24 +1076,24 @@ class App:
         typed = var.get().strip()
         return Path(typed).expanduser() if typed else None
 
-    def _start(self) -> None:
+    def _sources(self) -> tuple[Path, Path | None] | None:
+        """The pack and the cover the window points at, refusing either when it is
+        not there. Both buttons start a run, so both read the same boxes."""
         source = self._typed_path(self.pack_var)
-        out_dir = self._typed_path(self.out_var)
         if source is None:
             self._append("ERROR: choose a DAISY pack first")
-            return
+            return None
         if not source.exists():
             self._append(f"ERROR: no such pack: {source}")
-            return
-        if out_dir is None:
-            self._append("ERROR: choose an output folder first")
-            return
+            return None
         cover = self._typed_path(self.cover_var)
         if cover is not None and not cover.exists():
             self._append(f"ERROR: no such image: {cover}")
-            return
-        out_dir.mkdir(parents=True, exist_ok=True)
+            return None
+        return source, cover
 
+    def _convert(self, source: Path, out_dir: Path, cover: Path | None, force: bool) -> None:
+        """Hand the conversion to a worker thread and let the window keep drawing."""
         self._clear_log()
         self.save_button.state(["disabled"])
         self.progress.start(12)
@@ -1022,7 +1105,7 @@ class App:
             args=(
                 source,
                 out_dir,
-                self.force_var.get(),
+                force,
                 announce,
                 install,
                 cover,
@@ -1036,6 +1119,33 @@ class App:
             ),
             daemon=True,
         ).start()
+
+    def _start(self) -> None:
+        picked = self._sources()
+        if picked is None:
+            return
+        source, cover = picked
+        out_dir = self._typed_path(self.out_var)
+        if out_dir is None:
+            self._append("ERROR: choose an output folder first")
+            return
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # A test that has not been changed since it was played needs no converter:
+        # the pack the player just showed is written as it stands.
+        if (
+            self._test_key is not None
+            and self._test_key == self._settings_key()
+            and self._test_folder is not None
+            and self._test_folder.is_dir()
+        ):
+            self._clear_log()
+            if self._copy_tested(out_dir):
+                self._append(self.t("test_reuse"))
+            return
+
+        self._test_key = None
+        self._convert(source, out_dir, cover, self.force_var.get())
 
     def _speech(self) -> tuple[str, bool]:
         """The engine this story's cards get, and whether Chatterbox goes in first.
@@ -1108,9 +1218,12 @@ class App:
             except queue.Empty:
                 break
             if item[0] == "code":
+                done, self._on_done = self._on_done, None
                 self.progress.stop()
                 self.save_button.state(["!disabled"])
                 self._report(item[1])
+                if done is not None:
+                    done(item[1])
             elif item[0] == "cover":
                 self._took_cover(*item[1:])
             else:
@@ -1675,7 +1788,7 @@ class Emulator:
             return
 
         self.top = tk.Toplevel(app.root)
-        self.top.title(f"{app.t('emulator')}: {self.story.title}")
+        self.top.title(f"{app.t('test_story')}: {self.story.title}")
         self.top.configure(background=PAPER)
         self.top.resizable(False, False)
         self.photo: tk.PhotoImage | None = None

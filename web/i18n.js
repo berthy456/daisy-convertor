@@ -93,6 +93,8 @@ export const UI = {
     emu_link_hint:
       "The story player opens a zip this converter wrote and walks it with the machine's own buttons, in your browser.",
     emu_link: "Open the story player",
+    test_story: "Test the story",
+    test_reuse: "saved the story the player just showed, without recomputing it",
     footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">source</a>',
     card_label: "Chapter {n}/{total}",
     cut_title: "Cut the book at",
@@ -199,6 +201,8 @@ export const UI = {
     emu_link_hint:
       "Le lecteur d'histoire ouvre un zip écrit par ce convertisseur et le parcourt avec les boutons de la machine, dans le navigateur.",
     emu_link: "Ouvrir le lecteur d'histoire",
+    test_story: "Tester l'histoire",
+    test_reuse: "l'histoire jouée par le lecteur a été enregistrée sans être recalculée",
     footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">source</a>',
     card_label: "Chapitre {n}/{total}",
     cut_title: "Couper le livre au",
@@ -299,6 +303,8 @@ export const UI = {
     emu_link_title: "先试听，再写卡",
     emu_link_hint: "故事播放器打开本转换器写出的 zip，用故事机自己的按键在浏览器里播放。",
     emu_link: "打开故事播放器",
+    test_story: "测试故事",
+    test_reuse: "已保存播放器刚展示的故事，没有重新计算",
     footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">源代码</a>',
     card_label: "第 {n}/{total} 章",
     cut_title: "切分层级",
@@ -398,6 +404,8 @@ export const UI = {
     emu_link_title: "استمع قبل أن تطبع",
     emu_link_hint: "يفتح مشغّل القصص ملف zip كتبه هذا المحوّل ويتنقّل فيه بأزرار الجهاز نفسها، داخل المتصفّح.",
     emu_link: "فتح مشغّل القصص",
+    test_story: "اختبار القصة",
+    test_reuse: "حُفظت القصة التي عرضها المشغّل دون إعادة حسابها",
     footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">المصدر</a>',
     card_label: "الفصل {n}/{total}",
     cut_title: "موضع القطع في الكتاب",
@@ -503,6 +511,8 @@ export const UI = {
     emu_link_hint:
       "Hikâye oynatıcısı, bu dönüştürücünün yazdığı bir zip'i açar ve makinenin kendi düğmeleriyle tarayıcıda gezinir.",
     emu_link: "Hikâye oynatıcısını aç",
+    test_story: "Hikâyeyi test et",
+    test_reuse: "oynatıcının gösterdiği hikâye yeniden hesaplanmadan kaydedildi",
     footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">kaynak</a>',
     card_label: "Bölüm {n}/{total}",
     cut_title: "Kitabı nerede kesin",
@@ -609,6 +619,8 @@ export const UI = {
     emu_link_hint:
       "Der Geschichtenspieler öffnet ein Zip dieses Konverters und folgt ihm mit den eigenen Tasten des Geräts, im Browser.",
     emu_link: "Geschichtenspieler öffnen",
+    test_story: "Geschichte testen",
+    test_reuse: "die Geschichte gespeichert, die der Spieler gerade zeigte, ohne Neuberechnung",
     footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">Quellcode</a>',
     card_label: "Kapitel {n}/{total}",
     cut_title: "Das Buch schneiden bei",
@@ -715,6 +727,8 @@ export const UI = {
     emu_link_hint:
       "Il lettore di storie apre uno zip scritto da questo convertitore e lo percorre con i tasti della macchina, nel browser.",
     emu_link: "Apri il lettore di storie",
+    test_story: "Prova la storia",
+    test_reuse: "salvata la storia appena mostrata dal lettore, senza ricalcolarla",
     footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">sorgente</a>',
     card_label: "Capitolo {n}/{total}",
     cut_title: "Taglia il libro a",
@@ -821,6 +835,8 @@ export const UI = {
     emu_link_hint:
       "El reproductor de historias abre un zip escrito por este conversor y lo recorre con los botones de la máquina, en el navegador.",
     emu_link: "Abrir el reproductor de historias",
+    test_story: "Probar la historia",
+    test_reuse: "guardada la historia que acaba de mostrar el reproductor, sin recalcularla",
     footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">código fuente</a>',
     card_label: "Capítulo {n}/{total}",
     cut_title: "Cortar el libro en",
@@ -927,6 +943,8 @@ export const UI = {
     emu_link_hint:
       "O leitor de histórias abre um zip escrito por este conversor e o percorre com os botões da máquina, no navegador.",
     emu_link: "Abrir o leitor de histórias",
+    test_story: "Testar a história",
+    test_reuse: "a história exibida pelo leitor foi salva sem ser recalculada",
     footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">código fonte</a>',
     card_label: "Capítulo {n}/{total}",
     cut_title: "Cortar o livro em",
@@ -1033,6 +1051,8 @@ export const UI = {
     emu_link_hint:
       "De verhaalsspeler opent een zip die deze omzetter schreef en loopt erdoor met de eigen knoppen van het apparaat, in de browser.",
     emu_link: "Verhaalsspeler openen",
+    test_story: "Verhaal testen",
+    test_reuse: "het verhaal opgeslagen dat de speler net toonde, zonder herberekening",
     footer_line: 'GPL-3.0-or-later &middot; <a href="https://github.com/berthy456/daisy-convertor">broncode</a>',
     card_label: "Hoofdstuk {n}/{total}",
     cut_title: "Het boek knippen bij",

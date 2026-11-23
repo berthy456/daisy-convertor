@@ -15,6 +15,8 @@ import pytest
 
 tk = pytest.importorskip("tkinter")
 
+from tkinter import ttk
+
 from daisy2telmi import gui, images
 from daisy2telmi.detector import DaisyPackError
 from daisy2telmi.extractor import AudioSegment, Book, Chapter
@@ -47,6 +49,15 @@ def test_the_window_is_given_the_app_icon(app: gui.App) -> None:
     assert gui.ICON.is_file()
     assert gui.ICON.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
     assert app.root._icon is not None
+
+
+def test_the_work_is_drawn_in_one_blue(app: gui.App) -> None:
+    """The progress bar and the button that starts the work share one colour, so the
+    eye finds the button by looking for the bar it fills."""
+    style = ttk.Style(app.root)
+    assert style.lookup("TProgressbar", "background") == gui.NAVY
+    assert app.save_button.cget("style") == "Work.TButton"
+    assert style.lookup("Work.TButton", "background") == gui.NAVY
 
 
 def test_each_mark_is_its_own_file(app: gui.App) -> None:
@@ -1017,29 +1028,68 @@ def test_the_emulator_buttons_are_words_not_keys(app: gui.App, tmp_path: Path) -
         window._close()
 
 
-def test_the_emulator_button_opens_the_newest_story(app: gui.App, tmp_path: Path) -> None:
-    """The output folder keeps every story written to it; the one just written is
-    the one the button plays, without asking."""
-    out = tmp_path / "out"
-    older, newer = _story_folder(out / "older"), _story_folder(out / "newer")
-    stamp = time.time()
-    os.utime(older, (stamp - 60, stamp - 60))
-    os.utime(newer, (stamp, stamp))
+def _played_app(app: gui.App, tmp_path: Path, monkeypatch) -> list[Path]:
+    """Give the app a converter that only writes a story where it is told to, press
+    Test the story, and return the folders it was asked to write into."""
+    written: list[Path] = []
 
-    app.out_var.set(str(out))
-    app._open_emulator()
-    assert app.emulator.story.folder == newer
+    def fake(_source, out_dir, *_rest, **_kwargs):
+        written.append(Path(out_dir))
+        _story_folder(Path(out_dir) / "the book")
+        return 0
+
+    monkeypatch.setattr(gui, "convert", fake)
+    (tmp_path / "pack.zip").write_bytes(b"PK")
+    app.pack_var.set(str(tmp_path / "pack.zip"))
+    app.out_var.set(str(tmp_path / "out"))
+    app._test_story()
+    for _ in range(100):
+        app._drain()
+        if getattr(app, "emulator", None) is not None:
+            break
+        time.sleep(0.05)
+    return written
+
+
+def test_the_test_button_writes_where_it_can_wreck_nothing(app: gui.App, tmp_path, monkeypatch) -> None:
+    """Testing a story is looking at it, not shipping it: the pack lands in a folder
+    the app made, the player opens on it, and the output folder is left as it was."""
+    written = _played_app(app, tmp_path, monkeypatch)
+    try:
+        assert len(written) == 1
+        assert written[0] != tmp_path / "out"
+        assert not written[0].is_relative_to(tmp_path), "the test wrote outside the run's folders"
+        assert app.emulator.story.title == "The book"
+        assert not (tmp_path / "out").exists(), "nothing was written to the output folder"
+    finally:
+        app.emulator._close()
+
+
+def test_save_writes_the_tested_pack_without_computing_it_again(app: gui.App, tmp_path, monkeypatch) -> None:
+    """Nothing changed since the player showed the pack, so Save writes that pack."""
+    written = _played_app(app, tmp_path, monkeypatch)
     app.emulator._close()
+    app._start()
+    app._drain()
+    assert len(written) == 1, "the converter ran once, for the test"
+    assert (tmp_path / "out" / "the book" / "nodes.json").is_file()
+    assert "saved the story the player just showed" in app.log_view.get("1.0", "end")
 
 
-def test_the_emulator_asks_for_a_folder_when_none_was_written(
-    app: gui.App, tmp_path: Path, monkeypatch
-) -> None:
-    monkeypatch.setattr(gui.Browser, "run", lambda self: str(_story_folder(tmp_path / "picked")))
-    app.out_var.set(str(tmp_path / "nothing written here"))
-    app._open_emulator()
-    assert app.emulator.story.title == "The book"
+def test_a_changed_setting_makes_save_compute_the_story_again(app: gui.App, tmp_path, monkeypatch) -> None:
+    """The pack the player showed was drawn for another player, so it is not what
+    the window now asks for."""
+    written = _played_app(app, tmp_path, monkeypatch)
     app.emulator._close()
+    app.format_var.set("lunii")
+    app._start()
+    for _ in range(100):
+        app._drain()
+        if len(written) > 1:
+            break
+        time.sleep(0.05)
+    assert len(written) == 2
+    assert "saved the story the player just showed" not in app.log_view.get("1.0", "end")
 
 
 def test_a_folder_that_holds_no_story_is_reported(app: gui.App, tmp_path: Path) -> None:
@@ -1053,9 +1103,9 @@ def test_a_folder_that_holds_no_story_is_reported(app: gui.App, tmp_path: Path) 
 def test_the_emulator_opens_the_lunii_archive_not_the_colour_folder(
     app: gui.App, tmp_path: Path
 ) -> None:
-    """A Lunii run leaves two stories in the output folder: the colour one in a
-    folder, and the archive holding the sixteen greys that machine's screen shows.
-    The archive is written last, so it is the one the button plays."""
+    """A Lunii run leaves two stories behind: the colour one in a folder, and the
+    archive holding the sixteen greys that machine's screen shows. The archive is
+    written last, so it is the one the player opens."""
     out = tmp_path / "out"
     _story_folder(out / "the book")
     archive = out / "the book-lunii.zip"
@@ -1081,12 +1131,11 @@ def test_the_emulator_opens_the_lunii_archive_not_the_colour_folder(
         )
         packed.writestr("assets/a1.png", images.placeholder_png(320, 240, style="bw"))
 
-    app.out_var.set(str(out))
-    app._open_emulator()
+    window = gui.Emulator(app, out)
     try:
-        assert app.emulator.story.machine == "lunii"
-        card = app.emulator.story.stages[app.emulator.story.start]
+        assert window.story.machine == "lunii"
+        card = window.story.stages[window.story.start]
         assert card.image.parts[-2:] == ("assets", "a1.png")
         assert card.image.is_file(), "the archive was let out so its cards can be drawn"
     finally:
-        app.emulator._close()
+        window._close()

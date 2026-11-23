@@ -170,18 +170,24 @@ function startMachine() {
   });
 }
 
-async function load(file) {
+async function loadBytes(bytes, name) {
   error.hidden = true;
   try {
-    const entries = await readZip(new Uint8Array(await file.arrayBuffer()));
+    const entries = await readZip(bytes);
     story = await readStory(entries);
+    // A story that arrived has an answer for the box that asked for one.
+    drop.hidden = true;
     player.hidden = false;
     player.classList.toggle("telmi", story.machine === "telmi");
-    title.textContent = story.title || file.name;
+    title.textContent = story.title || name;
     await show(story.start);
   } catch (cause) {
     fail(cause);
   }
+}
+
+async function load(file) {
+  await loadBytes(new Uint8Array(await file.arrayBuffer()), file.name);
 }
 
 startLanguage();
@@ -201,3 +207,13 @@ drop.addEventListener("drop", (event) => {
   const file = event.dataTransfer.files[0];
   if (file) load(file);
 });
+
+// Opened by the converter page to play a story it just built: that page holds the
+// pack, so this one asks for it instead of making the user save it and pick it again.
+if (window.opener && new URL(location.href).searchParams.get("test") === "1") {
+  window.addEventListener("message", (event) => {
+    if (event.origin !== location.origin || event.data?.type !== "daisy2telmi-story") return;
+    loadBytes(event.data.bytes, event.data.name);
+  });
+  window.opener.postMessage({ type: "daisy2telmi-ask" }, location.origin);
+}

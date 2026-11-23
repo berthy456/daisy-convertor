@@ -24,6 +24,7 @@ const drop = document.getElementById("drop");
 const picker = document.getElementById("picker");
 const folderPicker = document.getElementById("folder-picker");
 const saveButton = document.getElementById("save");
+const testButton = document.getElementById("test");
 const downloadLink = document.getElementById("download");
 const summary = document.getElementById("summary");
 const bar = document.getElementById("bar");
@@ -94,6 +95,14 @@ let dropped = new Set();
 // Counts the lookups in flight, so an answer about a pack that has been replaced
 // is thrown away instead of landing in the cover box.
 let coverJob = 0;
+// The pack a test just played, kept so Save can hand it over without building the
+// story a second time.
+let tested = null;
+// The player tab that asked for a pack, and the pack it asked for.
+let playing = null;
+// How many covers came and went: a bitmap cannot be compared to its earlier self,
+// so the settings key counts the changes instead.
+let coverStamp = 0;
 
 const t = (key, values) => text(lang, key, values);
 
@@ -328,6 +337,7 @@ function startCrop() {
 function setCover(bitmap) {
   if (cover) cover.close();
   cover = bitmap;
+  coverStamp += 1;
   coverClear.hidden = false;
   log(t("log_cover_set", { w: bitmap.width, h: bitmap.height }));
   drawCrop();
@@ -336,6 +346,7 @@ function setCover(bitmap) {
 function clearCover() {
   if (cover) cover.close();
   cover = null;
+  coverStamp += 1;
   coverClear.hidden = true;
   coverUrl.value = "";
   // The picture belongs to the cover that went away; the frame and the chosen band do not.
@@ -454,80 +465,110 @@ function clearResult() {
   downloadLink.removeAttribute("href");
 }
 
+/** Everything a build reads from the page. Two builds with the same key write the
+    same story, so the second one is not worth waiting for. */
+function settingsKey() {
+  return JSON.stringify([
+    coverStamp,
+    cut,
+    format,
+    crop,
+    zoom,
+    focus,
+    negative,
+    lang,
+    cards.total,
+    cards.word,
+    cards.count,
+    [...dropped].sort((a, b) => a - b),
+  ]);
+}
+
+/** The story and the archive the chosen player takes. */
+async function buildPack() {
+  bar.hidden = false;
+  bar.value = 0;
+
+  const entries = await packEntries();
+  log(t("log_files", { n: entries.length }));
+  const story = await buildStoryZip(
+    entries,
+    silentMp3,
+    (label, done, total) => {
+      bar.value = done / total;
+      log(label);
+    },
+    {
+      cover,
+      crop,
+      zoom,
+      focus,
+      cut,
+      drop: [...dropped],
+      player: format,
+      // The plain Lunii screen has no colour: its cards go to its own sixteen
+      // greys. A commercial `.pk` keeps each picture's own sixteen colours.
+      style: format === "lunii" ? "bw" : "colour",
+      negative,
+      t: (key) => t(key),
+      cardLabel: (number, total, worded) =>
+        t(cards.total ? (worded ? "card_label" : "card_number") : (worded ? "card_label_one" : "card_number_one"), {
+          n: number,
+          total,
+        }),
+      cardAudio: async (number, count) => {
+        const voice = await cardAudio(lang, number, {
+          word: cards.word,
+          count: cards.count ? count : null,
+        });
+        if (voice === null) log(t("log_card_silent", { n: number }));
+        return voice;
+      },
+    },
+  );
+
+  // One archive, for the player chosen: a Lunii takes the STUdio form of the same
+  // story, or the layout its card keeps itself; the Flam launcher imports the Telmi
+  // one; and a Merlin card holds no story graph at all — only the files and the
+  // playlist that names them.
+  let name = `${story.dirName}.zip`;
+  let bytes = story.zip;
+  if (format === "lunii") {
+    name = `${story.dirName}-lunii.zip`;
+    bytes = await buildStudioZip(story);
+  } else if (format === "lunii-pk") {
+    name = packName(story.metadata.title, story.metadata.uuid);
+    bytes = await buildPlainPk(story, { picture: rle4Bitmap });
+  } else if (format === "merlin") {
+    name = `${story.dirName}_merlin.zip`;
+    bytes = await writeZip(await buildMerlinFiles(story, { picture: squareJpeg }));
+    log(t("log_merlin_beta"));
+  }
+
+  showSummary(story);
+  return { name, bytes };
+}
+
+function offer(name, bytes) {
+  downloadLink.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
+  downloadLink.download = name;
+  downloadLink.hidden = false;
+  bar.value = 1;
+  log(t("log_ready", { name }));
+  // The button asked for the file, so it arrives without a second click. The
+  // link stays on screen in case the browser wants one.
+  downloadLink.click();
+}
+
 /** One action: build the story for the chosen player and hand the zip over. */
 async function saveStory() {
   if (!source) return;
   saveButton.disabled = true;
   clearResult();
-  bar.hidden = false;
-  bar.value = 0;
-
   try {
-    const entries = await packEntries();
-    log(t("log_files", { n: entries.length }));
-    const story = await buildStoryZip(
-      entries,
-      silentMp3,
-      (label, done, total) => {
-        bar.value = done / total;
-        log(label);
-      },
-      {
-        cover,
-        crop,
-        zoom,
-        focus,
-        cut,
-        drop: [...dropped],
-        player: format,
-        // The plain Lunii screen has no colour: its cards go to its own sixteen
-        // greys. A commercial `.pk` keeps each picture's own sixteen colours.
-        style: format === "lunii" ? "bw" : "colour",
-        negative,
-        t: (key) => t(key),
-        cardLabel: (number, total, worded) =>
-          t(cards.total ? (worded ? "card_label" : "card_number") : (worded ? "card_label_one" : "card_number_one"), {
-            n: number,
-            total,
-          }),
-        cardAudio: async (number, count) => {
-          const voice = await cardAudio(lang, number, {
-            word: cards.word,
-            count: cards.count ? count : null,
-          });
-          if (voice === null) log(t("log_card_silent", { n: number }));
-          return voice;
-        },
-      },
-    );
-
-    // One archive, for the player chosen: a Lunii takes the STUdio form of the same
-    // story, or the layout its card keeps itself; the Flam launcher imports the Telmi
-    // one; and a Merlin card holds no story graph at all — only the files and the
-    // playlist that names them.
-    let name = `${story.dirName}.zip`;
-    let bytes = story.zip;
-    if (format === "lunii") {
-      name = `${story.dirName}-lunii.zip`;
-      bytes = await buildStudioZip(story);
-    } else if (format === "lunii-pk") {
-      name = packName(story.metadata.title, story.metadata.uuid);
-      bytes = await buildPlainPk(story, { picture: rle4Bitmap });
-    } else if (format === "merlin") {
-      name = `${story.dirName}_merlin.zip`;
-      bytes = await writeZip(await buildMerlinFiles(story, { picture: squareJpeg }));
-      log(t("log_merlin_beta"));
-    }
-
-    showSummary(story);
-    downloadLink.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
-    downloadLink.download = name;
-    downloadLink.hidden = false;
-    bar.value = 1;
-    log(t("log_ready", { name }));
-    // The button asked for the file, so it arrives without a second click. The
-    // link stays on screen in case the browser wants one.
-    downloadLink.click();
+    const pack = tested && tested.key === settingsKey() ? tested : await buildPack();
+    if (pack === tested) log(t("test_reuse"));
+    offer(pack.name, pack.bytes);
   } catch (error) {
     log(t("log_error", { message: error.message ?? error }));
     bar.hidden = true;
@@ -535,6 +576,44 @@ async function saveStory() {
     saveButton.disabled = false;
   }
 }
+
+/** Build the story into memory, play it, and keep it for the Save button. */
+async function testStory() {
+  if (!source) return;
+  testButton.disabled = true;
+  clearResult();
+  try {
+    tested = { key: settingsKey(), ...(await buildPack()) };
+    play(tested);
+  } catch (error) {
+    log(t("log_error", { message: error.message ?? error }));
+    bar.hidden = true;
+  } finally {
+    testButton.disabled = false;
+  }
+}
+
+/** Open the story player in its own tab and hand it the pack, without a file. */
+function play(pack) {
+  const tab = window.open("./emulator.html?test=1", "_blank");
+  if (!tab) {
+    // A blocked popup still has the pack: hand it over as a file the player opens.
+    offer(pack.name, pack.bytes);
+    return;
+  }
+  playing = { tab, pack };
+}
+
+// The player tab asks for the pack it was opened to play, so nothing is uploaded
+// and nothing is saved to disk on the way.
+window.addEventListener("message", (event) => {
+  if (event.origin !== location.origin || !playing || event.source !== playing.tab) return;
+  if (event.data?.type !== "daisy2telmi-ask") return;
+  event.source.postMessage(
+    { type: "daisy2telmi-story", name: playing.pack.name, bytes: playing.pack.bytes },
+    location.origin,
+  );
+});
 
 /** The pack read once: the cut levels need its outline, and the conversion needs the same files. */
 function packEntries() {
@@ -569,7 +648,10 @@ async function openCutLevels() {
 
 function setSource(name, loader) {
   source = { name, loader, entries: null };
+  // A pack that is not the one a test played cannot be the story that test showed.
+  tested = null;
   saveButton.disabled = false;
+  testButton.disabled = false;
   clearResult();
   partsBox.hidden = true;
   logView.textContent = "";
@@ -640,6 +722,7 @@ coverAuthor.addEventListener("input", () => showCoverSearch());
 coverTitle.addEventListener("input", () => showCoverSearch());
 partsAll.addEventListener("click", keepAllParts);
 saveButton.addEventListener("click", saveStory);
+testButton.addEventListener("click", testStory);
 
 startLanguage();
 startFormat();

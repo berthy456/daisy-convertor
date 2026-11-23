@@ -238,6 +238,30 @@ input[type="file"] {
   font: inherit;
 }
 
+.cover-search label {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  color: var(--ink);
+}
+
+.cover-search input[type="text"] {
+  padding: 0.4rem 0.6rem;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+}
+
+.cover-search #cover-author {
+  width: 11rem;
+}
+
+.cover-search #cover-title {
+  width: 14rem;
+}
+
 /* The frame the chosen player shows. `touch-action: none` so a drag on a phone
    moves the cover instead of scrolling the page. */
 .crop-box {

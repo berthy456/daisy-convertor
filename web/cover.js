@@ -88,9 +88,14 @@ function toGreys(ctx, width, height, negative = false) {
   ctx.putImageData(image, 0, 0);
 }
 
-/** Where the user goes to find a cover; Google offers no keyless image API. */
-export function searchUrl(query) {
-  return `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}`;
+/** Where the user goes to look for a cover. Neither engine hands one back to the
+    page, so the picture is saved from the search and pasted into the URL box. */
+export function searchUrls(query) {
+  const words = encodeURIComponent(query);
+  return {
+    ddg: `https://duckduckgo.com/?q=${words}&iax=images&ia=images`,
+    google: `https://www.google.com/search?tbm=isch&q=${words}`,
+  };
 }
 
 /** Only http(s) links: a pasted file:, data: or javascript: is not a cover. */

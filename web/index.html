@@ -71,7 +71,6 @@
         <div class="cover">
           <div class="cover-head">
             <h2 data-i18n="cover_title"></h2>
-            <a id="cover-search" class="quiet" target="_blank" rel="noopener" data-i18n="cover_search"></a>
           </div>
           <p class="muted" data-i18n="cover_hint"></p>
           <div class="cover-row">
@@ -85,6 +84,21 @@
             <!-- The lookup asks three services in turn, so it can take a second or
                  two. The log says what it found; this says it is still working. -->
             <span id="cover-spinner" class="spinner" aria-hidden="true" hidden></span>
+          </div>
+          <!-- None of the three services had the book: the two words typed here are
+               the search, on either engine that answers without an account. -->
+          <div class="cover-row cover-search">
+            <label>
+              <span data-i18n="cover_author"></span>
+              <input id="cover-author" type="text" />
+            </label>
+            <label>
+              <span data-i18n="cover_book_title"></span>
+              <input id="cover-title" type="text" />
+            </label>
+            <span class="muted" data-i18n="cover_search_on"></span>
+            <a id="cover-search-ddg" class="quiet" target="_blank" rel="noopener" data-i18n="cover_search_ddg" hidden></a>
+            <a id="cover-search-google" class="quiet" target="_blank" rel="noopener" data-i18n="cover_search_google" hidden></a>
           </div>
           <!-- The frame the chosen player shows, drawn from the cover: drag it to move,
                zoom it to enlarge. What is on screen here is what the story will carry.

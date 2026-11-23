@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import queue
 import subprocess
 import sys
@@ -20,7 +21,7 @@ import tkinter as tk
 import webbrowser
 from dataclasses import replace
 from pathlib import Path
-from tkinter import filedialog, font as tkfont, messagebox, ttk
+from tkinter import font as tkfont, messagebox, ttk
 from urllib.parse import quote_plus
 
 from . import audio, chapters, covers, emulator, images, settings, tts
@@ -130,7 +131,9 @@ def set_icon(root: tk.Misc) -> None:
     """
     if not ICON.is_file():
         return
-    root._icon = tk.PhotoImage(file=str(ICON))
+    # The image belongs to the interpreter that draws it: a second window made from
+    # a second root cannot use one made for the first.
+    root._icon = tk.PhotoImage(master=root, file=str(ICON))
     root.iconphoto(True, root._icon)
 
 
@@ -153,6 +156,199 @@ def _tag(line: str) -> tuple[str, ...]:
     return ("report",) if head == "REPORT" else ()
 
 
+def _file_size(size: int) -> str:
+    """A size the eye can read, the same way a file manager writes one."""
+    for unit, scale in (("GB", 1024**3), ("MB", 1024**2), ("KB", 1024)):
+        if size >= scale:
+            return f"{size / scale:.1f} {unit}"
+    return f"{size} B"
+
+
+class Browser:
+    """The file list the app draws itself.
+
+    Tk's dialog is the system's own: its height, its single column of rows and the
+    folder it opens in are the system's business and none of them can be changed.
+    The app wants a window twice as tall, three columns, and the folder the last
+    one ended in.
+    """
+
+    WIDTH = 1100
+    HEIGHT = 680
+
+    def __init__(self, app: App, *, title: str, folder: Path, pick: str) -> None:
+        """`pick` says which of the two the window hands back: a file or a folder."""
+        self.app = app
+        self.pick = pick
+        self.current = folder
+        self.chosen: str | None = None
+        self.sort_column = "name"
+        self.descending = False
+
+        self.top = tk.Toplevel(app.root)
+        self.top.title(title)
+        self.top.configure(background=PAPER)
+        self.top.geometry(f"{self.WIDTH}x{self.HEIGHT}")
+        self.top.minsize(640, 360)
+        self.top.transient(app.root)
+        self.top.columnconfigure(0, weight=1)
+        self.top.rowconfigure(1, weight=1)
+        if hasattr(app.root, "_icon"):
+            self.top.iconphoto(False, app.root._icon)
+
+        nav = ttk.Frame(self.top, padding=(12, 10, 12, 0))
+        nav.grid(row=0, column=0, sticky="ew")
+        nav.columnconfigure(1, weight=1)
+        ttk.Button(nav, text=app.t("browser_up"), command=self._up).grid(row=0, column=0)
+        self.path = ttk.Entry(nav)
+        self.path.grid(row=0, column=1, sticky="ew", padx=8)
+        self.path.bind("<Return>", lambda _event: self._enter(self.path.get().strip()))
+        self.filter_var = tk.StringVar()
+        ttk.Label(nav, text=app.t("browser_filter")).grid(row=0, column=2)
+        box = ttk.Entry(nav, textvariable=self.filter_var, width=16)
+        box.grid(row=0, column=3, padx=(6, 0))
+        box.bind("<KeyRelease>", lambda _event: self._list())
+
+        style = ttk.Style(self.top)
+        style.configure("Browser.Treeview", rowheight=26, font=("TkDefaultFont", 11))
+        style.configure("Browser.Treeview.Heading", font=("TkDefaultFont", 11, "bold"))
+        listing = ttk.Frame(self.top)
+        listing.grid(row=1, column=0, sticky="nsew", padx=12, pady=8)
+        listing.columnconfigure(0, weight=1)
+        listing.rowconfigure(0, weight=1)
+        self.tree = ttk.Treeview(
+            listing,
+            columns=("name", "kind", "size"),
+            show="headings",
+            style="Browser.Treeview",
+            selectmode="browse",
+        )
+        for column, key, width in (("name", "browser_name", 620), ("kind", "browser_kind", 130), ("size", "browser_size", 110)):
+            self.tree.heading(column, text=app.t(key), command=lambda chosen=column: self._sort(chosen))
+            self.tree.column(column, width=width, minwidth=70, stretch=column == "name", anchor="w" if column == "name" else "e")
+        bar = ttk.Scrollbar(listing, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=bar.set)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        bar.grid(row=0, column=1, sticky="ns")
+        self.tree.bind("<Double-1>", lambda _event: self._pick_selected())
+        self.tree.bind("<Return>", lambda _event: self._pick_selected())
+        self.tree.bind("<<TreeviewSelect>>", lambda _event: self.choose.state(["!disabled"]))
+
+        foot = ttk.Frame(self.top, padding=(12, 0, 12, 12))
+        foot.grid(row=2, column=0, sticky="ew")
+        foot.columnconfigure(0, weight=1)
+        self.status = ttk.Label(foot, foreground=ALERT)
+        self.status.grid(row=0, column=0, sticky="w")
+        self.choose = ttk.Button(
+            foot,
+            text=app.t("browser_open" if pick == "file" else "browser_pick_folder"),
+            command=self._accept,
+        )
+        self.choose.grid(row=0, column=1, padx=(8, 0))
+        if pick == "folder":
+            self.choose.state(["!disabled"])
+        else:
+            self.choose.state(["disabled"])
+        ttk.Button(foot, text=app.t("browser_cancel"), command=self.top.destroy).grid(
+            row=0, column=2, padx=(6, 0)
+        )
+
+        self.top.bind("<Escape>", lambda _event: self.top.destroy())
+        self._show(folder)
+
+    def run(self) -> str:
+        """Wait for the window the way Tk's own dialogs do, and give the choice back."""
+        self.top.wait_window(self.top)
+        return self.chosen or ""
+
+    def _show(self, folder: Path) -> None:
+        self.current = folder
+        self.path.delete(0, "end")
+        self.path.insert(0, str(folder))
+        self.status.configure(text="")
+        self._list()
+
+    def _enter(self, typed: str) -> None:
+        folder = Path(typed).expanduser()
+        if not folder.is_dir():
+            self.status.configure(text=str(folder))
+            return
+        self._show(folder)
+
+    def _up(self) -> None:
+        self._show(self.current.parent)
+
+    def _sort(self, column: str) -> None:
+        if self.sort_column == column:
+            self.descending = not self.descending
+        else:
+            # The first click on the sizes asks for the biggest first; the other
+            # two columns read top to bottom the other way.
+            self.sort_column = column
+            self.descending = column == "size"
+        self._list()
+
+    def _list(self) -> None:
+        self.tree.delete(*self.tree.get_children())
+        needle = self.filter_var.get().strip().lower()
+        try:
+            scanned = list(os.scandir(self.current))
+        except OSError as exc:
+            self.status.configure(text=str(exc))
+            return
+        rows: list[tuple[str, bool, int]] = []
+        for entry in scanned:
+            if entry.name.startswith(".") and not needle:
+                continue
+            if needle and needle not in entry.name.lower():
+                continue
+            is_dir = entry.is_dir()
+            try:
+                size = 0 if is_dir else entry.stat().st_size
+            except OSError:
+                size = 0
+            rows.append((entry.name, is_dir, size))
+        keys = {
+            "name": lambda row: row[0].lower(),
+            "kind": lambda row: (not row[1], row[0].lower()),
+            "size": lambda row: (not row[1], -row[2], row[0].lower()),
+        }
+        rows.sort(key=keys[self.sort_column], reverse=self.descending)
+        for name, is_dir, size in rows:
+            self.tree.insert(
+                "",
+                "end",
+                values=(name, self.app.t("kind_folder" if is_dir else "kind_file"), "" if is_dir else _file_size(size)),
+            )
+
+    def _selected(self) -> Path | None:
+        chosen = self.tree.selection()
+        if not chosen:
+            return None
+        return self.current / self.tree.item(chosen[0], "values")[0]
+
+    def _pick_selected(self) -> None:
+        """A folder is walked into; a file ends the window when the app asked for one."""
+        path = self._selected()
+        if path is None:
+            return
+        if path.is_dir():
+            self._show(path)
+        elif self.pick == "file":
+            self.chosen = str(path)
+            self.top.destroy()
+
+    def _accept(self) -> None:
+        if self.pick == "folder":
+            self.chosen = str(self.current)
+            self.top.destroy()
+            return
+        path = self._selected()
+        if path is not None:
+            self.chosen = str(path)
+            self.top.destroy()
+
+
 class App:
     def __init__(self, root: tk.Misc, options: dict | None = None) -> None:
         self.root = root
@@ -161,16 +357,12 @@ class App:
         self.pack_var = tk.StringVar()
         self.out_var = tk.StringVar()
         self._auto_out = ""
-        # Tk's own file dialog draws its list 90 pixels tall, which is three rows
-        # and reads as unscrollable. The dialog's list is a canvas named "canvas"
-        # under a frame named "icons", so the option database can give it room
-        # without touching any other canvas in the app.
-        root.option_add("*icons.canvas.width", "460p", "widgetDefault")
-        root.option_add("*icons.canvas.height", "300p", "widgetDefault")
         theme(root)
         set_icon(root)
         self.pack_var.trace_add("write", self._follow_pack)
         self.cover_var = tk.StringVar()
+        self.author_var = tk.StringVar()
+        self.title_var = tk.StringVar()
         # A looked-up cover has to stay on disk while the cards are drawn, so the
         # session keeps one folder for them and each lookup replaces the last.
         self._cover_dir: Path | None = None
@@ -207,7 +399,7 @@ class App:
         """The mark at the size a frame asks for. Tk cannot scale a photo image, so
         tools/make_icons.py writes one PNG for each size the window draws."""
         path = ICON.parent / f"icon-{side}.png"
-        return tk.PhotoImage(file=str(path)) if path.is_file() else None
+        return tk.PhotoImage(master=self.root, file=str(path)) if path.is_file() else None
 
     def _button(self, parent: tk.Widget, key: str, command, **kwargs) -> ttk.Button:
         widget = ttk.Button(parent, text=self.t(key), command=command, **kwargs)
@@ -231,7 +423,7 @@ class App:
         grid = ttk.Frame(self.root, padding=(12, 0))
         grid.grid(row=1, column=0, sticky="nsew")
         grid.columnconfigure(1, weight=1)
-        grid.rowconfigure(6, weight=1)
+        grid.rowconfigure(7, weight=1)
 
         self._label(grid, "pack_label").grid(row=0, column=0, sticky="w")
         ttk.Entry(grid, textvariable=self.pack_var).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 8))
@@ -268,16 +460,30 @@ class App:
         cover_row = ttk.Frame(grid)
         cover_row.grid(row=5, column=2, sticky="e", padx=(6, 0))
         self._button(cover_row, "browse_cover", self._pick_cover).pack(side="left")
-        self._button(cover_row, "cover_search", self._search_cover).pack(side="left", padx=(4, 0))
         # A lookup takes a second or two on its own thread, and three services are
         # asked before the answer says there is nothing: the window has to show it
         # is waiting. An indeterminate bar is the closest Tk comes to a spinner.
         self.cover_spin = ttk.Progressbar(cover_row, mode="indeterminate", length=44)
 
+        # When none of those services has the book, the two words the user types
+        # are the search: an image search on the author and the title, on either
+        # of the two engines that answer without an account.
+        search = ttk.Frame(grid)
+        search.grid(row=6, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        self._label(search, "cover_author").pack(side="left")
+        ttk.Entry(search, textvariable=self.author_var, width=18).pack(side="left", padx=(6, 12))
+        self._label(search, "cover_book_title").pack(side="left")
+        ttk.Entry(search, textvariable=self.title_var, width=24).pack(side="left", padx=(6, 12))
+        self._label(search, "cover_search_on").pack(side="left", padx=(0, 6))
+        self._button(search, "cover_search_ddg", lambda: self._search_cover("ddg")).pack(side="left")
+        self._button(search, "cover_search_google", lambda: self._search_cover("google")).pack(
+            side="left", padx=(4, 0)
+        )
+
         # The frame and the log share a row: a frame this wide would push the log
         # below the bottom of a laptop screen.
         crop_row = ttk.Frame(grid)
-        crop_row.grid(row=6, column=0, sticky="nw", pady=(6, 0))
+        crop_row.grid(row=7, column=0, sticky="nw", pady=(6, 0))
         tools = ttk.Frame(crop_row)
         tools.pack(anchor="w")
         self._label(tools, "cover_crop_label").pack(side="left", padx=(0, 10))
@@ -329,7 +535,7 @@ class App:
         self._show_crop()
 
         controls = ttk.Frame(grid)
-        controls.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(8, 8))
+        controls.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(8, 8))
         self.save_button = self._button(controls, "save", self._start)
         self.save_button.pack(side="left")
         self._button(controls, "options", self._open_options).pack(side="left", padx=12)
@@ -344,7 +550,7 @@ class App:
         self.progress.pack(side="right")
 
         log_frame = ttk.Frame(grid)
-        log_frame.grid(row=6, column=1, columnspan=2, sticky="nsew", padx=(12, 0))
+        log_frame.grid(row=7, column=1, columnspan=2, sticky="nsew", padx=(12, 0))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
         self.log_view = tk.Text(
@@ -414,9 +620,7 @@ class App:
         out = Path(self.out_var.get()).expanduser() if self.out_var.get().strip() else None
         folder = emulator.find_story(out) if out is not None and out.is_dir() else None
         if folder is None:
-            chosen = filedialog.askdirectory(
-                title=self.t("emulator"), initialdir=self._start_dir(), mustexist=True
-            )
+            chosen = self._browse("emulator", self.out_var.get(), "folder")
             if not chosen:
                 return
             folder = Path(chosen)
@@ -448,24 +652,44 @@ class App:
             self._auto_out = folder
             self.out_var.set(folder)
 
-    def _start_dir(self) -> str:
-        """Where a dialog opens. Tk uses the process's working directory, which for
-        an AppImage started from a file manager is the filesystem root."""
-        pack = self._typed_path(self.pack_var)
-        if pack is not None and pack.parent.is_dir():
-            return str(pack.parent)
+    def _start_dir(self, current: str = "") -> str:
+        """Where a file list opens: the folder the field already names, then the
+        folder the last one ended in, then home."""
+        typed = current.strip()
+        if typed:
+            named = Path(typed).expanduser()
+            folder = named if named.is_dir() else named.parent
+            if folder.is_dir():
+                return str(folder)
+        remembered = self.options.get("last_dir")
+        if remembered and Path(remembered).is_dir():
+            return str(remembered)
         return str(Path.home())
 
+    def _browse(self, key: str, current: str, pick: str) -> str:
+        """Open the app's own file list and wait for it, as Tk's dialogs do.
+
+        The folder it was last showing is kept, whether or not something was
+        chosen: the next one opens where the user was looking.
+        """
+        window = Browser(self, title=self.t(key), folder=Path(self._start_dir(current)), pick=pick)
+        chosen = window.run()
+        self._remember_dir(window.current)
+        return chosen
+
+    def _remember_dir(self, folder: Path) -> None:
+        if folder.is_dir():
+            self.options["last_dir"] = str(folder)
+            settings.save(self.options)
+
     def _pick_pack_file(self) -> None:
-        path = filedialog.askopenfilename(
-            initialdir=self._start_dir(), filetypes=[("DAISY packs", "*.zip"), ("all files", "*.*")]
-        )
+        path = self._browse("browse_zip", self.pack_var.get(), "file")
         if path:
             self.pack_var.set(path)
             self._find_cover()
 
     def _pick_pack_dir(self) -> None:
-        path = filedialog.askdirectory(initialdir=self._start_dir())
+        path = self._browse("browse_folder", self.pack_var.get(), "folder")
         if path:
             self.pack_var.set(path)
             self._find_cover()
@@ -516,30 +740,35 @@ class App:
             with open_pack(pack) as opened:
                 book = extract(opened, "chapter")
             found = covers.find(book, dest)
-            title = book.title
+            title, author = book.title, book.author or ""
         except Exception as exc:  # a suggestion is worth nothing here: it must never break the window
             log.warning("no cover lookup for %s: %s", pack.name, exc)
-            found, title = None, ""
-        self.events.put(("cover", job, "" if found is None else str(found), title))
+            found, title, author = None, "", ""
+        self.events.put(("cover", job, "" if found is None else str(found), title, author))
 
-    def _search_cover(self) -> None:
-        """Open an image search for the book: the pack has no picture of its own."""
-        pack = self._typed_path(self.pack_var)
-        if pack is None:
+    def _search_cover(self, engine: str) -> None:
+        """Open an image search on the two words the boxes hold: the book's author
+        and its title. Neither engine gives a picture back to the app, so the user
+        saves one and points the Image box at it."""
+        words = " ".join(part for part in (self.author_var.get(), self.title_var.get()) if part.strip())
+        if not words:
+            pack = self._typed_path(self.pack_var)
+            words = self._pack_title or (pack.stem if pack is not None else "")
+        if not words.strip():
             return
-        query = self._pack_title or pack.stem
-        webbrowser.open(f"https://www.google.com/search?tbm=isch&q={quote_plus(query)}")
+        query = quote_plus(words.strip())
+        if engine == "ddg":
+            webbrowser.open(f"https://duckduckgo.com/?q={query}&iax=images&ia=images")
+        else:
+            webbrowser.open(f"https://www.google.com/search?tbm=isch&q={query}")
 
     def _pick_out_dir(self) -> None:
-        path = filedialog.askdirectory(initialdir=self._start_dir())
+        path = self._browse("browse_output", self.out_var.get(), "folder")
         if path:
             self.out_var.set(path)
 
     def _pick_cover(self) -> None:
-        path = filedialog.askopenfilename(
-            initialdir=self._start_dir(),
-            filetypes=[("images", "*.png *.jpg *.jpeg *.gif *.bmp *.webp"), ("all files", "*.*")],
-        )
+        path = self._browse("browse_cover", self.cover_var.get(), "file")
         if path:
             self.cover_var.set(path)
 
@@ -619,7 +848,7 @@ class App:
         png, picture = self._crop_cover[3]
         frame = images.preview_size(self.format_var.get(), CROP_WIDTH)
         focus = self._crop_focus or images.CROP_FOCUS.get(self.crop_var.get(), images.CROP_FOCUS["center"])
-        self._crop_photo = tk.PhotoImage(data=png)
+        self._crop_photo = tk.PhotoImage(master=self.root, data=png)
         self.crop_frame.itemconfigure(self._crop_item, image=self._crop_photo)
         self.crop_frame.coords(
             self._crop_item,
@@ -880,16 +1109,22 @@ class App:
 
         self.root.after(100, self._drain)
 
-    def _took_cover(self, job: int, path: str, title: str) -> None:
+    def _took_cover(self, job: int, path: str, title: str, author: str) -> None:
         """Put a looked-up cover in the Image box.
 
         Only the lookup the newest pack asked for counts, and a cover the user
-        typed or picked themselves is never replaced by a suggestion.
+        typed or picked themselves is never replaced by a suggestion. The author
+        and the title the pack's own metadata gave go into the search boxes, so
+        the search is ready to make even when none of the services had the book.
         """
         if job != self._cover_job:
             return
         self._spin_off()
         self._pack_title = title
+        if author and not self.author_var.get().strip():
+            self.author_var.set(author)
+        if title and not self.title_var.get().strip():
+            self.title_var.set(title)
         if self.cover_var.get().strip():
             return
         if path:
@@ -1329,10 +1564,7 @@ class Options:
         self.voice_box.set(self._label_text(None))
 
     def _pick_clip(self) -> None:
-        path = filedialog.askopenfilename(
-            initialdir=self.app._start_dir(),
-            filetypes=[("audio", "*.wav *.mp3 *.flac *.m4a"), ("all files", "*.*")],
-        )
+        path = self.app._browse("opt_clip", self.clip_box.get(), "file")
         if path:
             self.clip_box.delete(0, "end")
             self.clip_box.insert(0, path)

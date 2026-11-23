@@ -73,22 +73,118 @@ def test_an_output_folder_the_user_chose_is_left_alone(app: gui.App, tmp_path: P
 
 
 def test_a_dialog_opens_where_the_pack_is(app: gui.App, tmp_path: Path, monkeypatch) -> None:
-    opened: list[dict] = []
-    monkeypatch.setattr(gui.filedialog, "askopenfilename", lambda **kw: opened.append(kw) or "")
+    opened: list[str] = []
+    monkeypatch.setattr(gui.Browser, "run", lambda self: opened.append(str(self.current)) or "")
 
     app._pick_pack_file()
-    assert opened[0]["initialdir"] == str(Path.home())
+    assert opened[0] == str(Path.home())
 
     app.pack_var.set(str(tmp_path / "Wesh.zip"))
     app._pick_pack_file()
-    assert opened[1]["initialdir"] == str(tmp_path)
+    assert opened[1] == str(tmp_path)
 
 
-def test_the_file_dialog_list_is_given_room(app: gui.App) -> None:
-    """Tk draws that list 90 pixels tall: three rows, which reads as unscrollable."""
-    icons = tk.Frame(app.root, name="icons")
-    listing = tk.Canvas(icons, name="canvas")
-    assert listing.winfo_reqheight() > 200
+def test_the_next_dialog_opens_where_the_last_one_ended(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    """The folder a file list was left in is kept in the config file, so a window
+    reopened tomorrow starts where the user was looking."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    seen: list[str] = []
+
+    def stub(self: gui.Browser) -> str:
+        seen.append(str(self.current))
+        self.current = elsewhere  # the list was left showing that folder
+        return str(elsewhere / "pack.zip")
+
+    monkeypatch.setattr(gui.Browser, "run", stub)
+
+    app._pick_pack_file()
+    assert seen == [str(Path.home())]
+
+    app.pack_var.set("")
+    app._pick_pack_file()
+    assert seen[1] == str(elsewhere)
+
+    reopened = gui.App(gui.make_root())
+    try:
+        reopened._pick_pack_file()
+    finally:
+        reopened.root.destroy()
+    assert seen[2] == str(elsewhere), "the folder outlived the window that opened it"
+
+
+def test_a_folder_that_went_away_is_not_reopened(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    gone = tmp_path / "moved-away"
+    gone.mkdir()
+    app.options["last_dir"] = str(gone)
+    gone.rmdir()
+    seen: list[str] = []
+    monkeypatch.setattr(gui.Browser, "run", lambda self: seen.append(str(self.current)) or "")
+
+    app._pick_pack_file()
+    assert seen == [str(Path.home())]
+
+
+@pytest.fixture()
+def browser(app: gui.App, tmp_path: Path) -> gui.Browser:
+    (tmp_path / "chapters").mkdir()
+    (tmp_path / "pack.zip").write_bytes(b"PK")
+    (tmp_path / ".hidden").write_bytes(b"x")
+    window = gui.Browser(app, title="test", folder=tmp_path, pick="file")
+    try:
+        yield window
+    finally:
+        if window.top.winfo_exists():
+            window.top.destroy()
+
+
+def _rows(window: gui.Browser) -> list[tuple[str, str]]:
+    return [tuple(window.tree.item(row, "values")[:2]) for row in window.tree.get_children()]
+
+
+def test_the_browser_lists_folders_before_files(browser: gui.Browser) -> None:
+    assert _rows(browser) == [
+        ("chapters", browser.app.t("kind_folder")),
+        ("pack.zip", browser.app.t("kind_file")),
+    ]
+
+
+def test_a_filter_brings_the_hidden_ones_back(browser: gui.Browser) -> None:
+    browser.filter_var.set("hidden")
+    browser._list()
+    assert [name for name, _kind in _rows(browser)] == [".hidden"]
+
+
+def test_the_list_is_a_window_of_its_own_not_three_rows(browser: gui.Browser) -> None:
+    """Tk's own dialog drew its list 90 pixels tall; the app asks for a window and
+    gives the whole of it to the list."""
+    assert browser.WIDTH >= 1000 and browser.HEIGHT >= 600
+    assert browser.top.grid_rowconfigure(1)["weight"] == 1
+    assert set(browser.tree.grid_info()["sticky"]) == set("nsew")
+
+
+def test_a_folder_is_walked_into_and_a_file_ends_the_window(browser: gui.Browser, tmp_path: Path) -> None:
+    (tmp_path / "chapters" / "part.mp3").write_bytes(b"x")
+
+    browser.tree.selection_set(browser.tree.get_children()[0])
+    browser._pick_selected()
+    assert browser.current == tmp_path / "chapters"
+    assert browser.chosen is None, "walking into a folder is not a choice"
+
+    browser.tree.selection_set(browser.tree.get_children()[0])
+    browser._pick_selected()
+    assert browser.chosen == str(tmp_path / "chapters" / "part.mp3")
+    assert not browser.top.winfo_exists()
+
+
+def test_the_folder_button_hands_back_the_folder_being_shown(app: gui.App, tmp_path: Path) -> None:
+    window = gui.Browser(app, title="test", folder=tmp_path, pick="folder")
+    try:
+        window._accept()
+        assert window.chosen == str(tmp_path)
+    finally:
+        if window.top.winfo_exists():
+            window.top.destroy()
 
 
 def test_the_player_is_chosen_before_the_cover(app: gui.App) -> None:
@@ -927,9 +1023,7 @@ def test_the_emulator_button_opens_the_newest_story(app: gui.App, tmp_path: Path
 def test_the_emulator_asks_for_a_folder_when_none_was_written(
     app: gui.App, tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setattr(
-        gui.filedialog, "askdirectory", lambda **_kwargs: str(_story_folder(tmp_path / "picked"))
-    )
+    monkeypatch.setattr(gui.Browser, "run", lambda self: str(_story_folder(tmp_path / "picked")))
     app.out_var.set(str(tmp_path / "nothing written here"))
     app._open_emulator()
     assert app.emulator.story.title == "The book"

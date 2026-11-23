@@ -23,6 +23,8 @@ log = logging.getLogger(__name__)
 DEFAULTS: dict = {
     "cut": "chapter",
     "cover_crop": "center",
+    # The folder the last file list was left in, so the next one opens there.
+    "last_dir": None,
     "language": "en",
     "announce": "prompt",
     "autoplay": False,

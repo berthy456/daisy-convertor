@@ -50,6 +50,12 @@ def test_round_trip(tmp_path, monkeypatch) -> None:
     assert json.loads(path.read_text(encoding="utf-8"))["language"] == "tr"
 
 
+def test_the_folder_the_last_file_list_ended_in_is_kept(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    settings.save(dict(settings.DEFAULTS, last_dir=str(tmp_path / "books")))
+    assert settings.load()["last_dir"] == str(tmp_path / "books")
+
+
 def test_unknown_keys_are_ignored(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     settings.save(dict(settings.DEFAULTS, language="de", cover="nope"))

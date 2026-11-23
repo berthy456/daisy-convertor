@@ -9,7 +9,7 @@ import {
   loadCoverUrl,
   rle4Bitmap,
   screen,
-  searchUrl,
+  searchUrls,
   squareJpeg,
 } from "./cover.js";
 import { findCover } from "./covers.js";
@@ -33,7 +33,10 @@ const coverPicker = document.getElementById("cover-picker");
 const coverUrl = document.getElementById("cover-url");
 const coverUse = document.getElementById("cover-use");
 const coverClear = document.getElementById("cover-clear");
-const coverSearch = document.getElementById("cover-search");
+const coverAuthor = document.getElementById("cover-author");
+const coverTitle = document.getElementById("cover-title");
+const searchDdg = document.getElementById("cover-search-ddg");
+const searchGoogle = document.getElementById("cover-search-google");
 const coverSpinner = document.getElementById("cover-spinner");
 const cutInputs = [...document.querySelectorAll('input[name="cut"]')];
 const cropCanvas = document.getElementById("crop-canvas");
@@ -424,14 +427,26 @@ function keepAllParts() {
   partsAll.hidden = true;
 }
 
+/** The two search links carry the author and the title typed in the boxes; with
+    nothing typed, they carry the name the pack was uploaded under. */
+function showCoverSearch(fallback = "") {
+  const words = [coverAuthor.value.trim(), coverTitle.value.trim()].filter(Boolean).join(" ") || fallback;
+  const links = searchUrls(words);
+  searchDdg.href = links.ddg;
+  searchGoogle.href = links.google;
+  searchDdg.hidden = !words;
+  searchGoogle.hidden = !words;
+}
+
 function showSummary(story) {
   const parts = story.book.chapters;
   const listed = parts.slice(0, LISTED_PARTS).map((part, index) => `${index + 1}. ${part.title}`).join("\n");
   const more = parts.length > LISTED_PARTS ? `\n${t("summary_more", { n: parts.length - LISTED_PARTS })}` : "";
   summary.textContent = `${story.dirName}\n${t("log_chapters", { n: parts.length })}\n${listed}${more}`;
   summary.hidden = false;
-  coverSearch.href = searchUrl(story.book.title);
-  coverSearch.hidden = false;
+  if (!coverTitle.value.trim()) coverTitle.value = story.book.title || "";
+  if (!coverAuthor.value.trim() && story.book.author) coverAuthor.value = story.book.author;
+  showCoverSearch();
 }
 
 function clearResult() {
@@ -558,8 +573,7 @@ function setSource(name, loader) {
   clearResult();
   partsBox.hidden = true;
   logView.textContent = "";
-  coverSearch.href = searchUrl(name.replace(/\.[^.]+$/, ""));
-  coverSearch.hidden = false;
+  showCoverSearch(name.replace(/\.[^.]+$/, ""));
   log(t("log_loaded", { name }));
   openCutLevels();
   suggestCover();
@@ -622,6 +636,8 @@ coverUse.addEventListener("click", async () => {
 });
 
 coverClear.addEventListener("click", clearCover);
+coverAuthor.addEventListener("input", () => showCoverSearch());
+coverTitle.addEventListener("input", () => showCoverSearch());
 partsAll.addEventListener("click", keepAllParts);
 saveButton.addEventListener("click", saveStory);
 

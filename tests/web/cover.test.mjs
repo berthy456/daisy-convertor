@@ -3,13 +3,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-const { COVER_SIZE, IMAGE_SIZE, isReadableUrl, screen, searchUrl } = await import("../../web/cover.js");
+const { COVER_SIZE, IMAGE_SIZE, isReadableUrl, screen, searchUrls } = await import("../../web/cover.js");
 
-test("the search link is a Google image search for the title", () => {
-  const url = new URL(searchUrl("ごんぎつね Ruby"));
-  assert.equal(url.host, "www.google.com");
-  assert.equal(url.searchParams.get("tbm"), "isch");
-  assert.equal(url.searchParams.get("q"), "ごんぎつね Ruby");
+test("the two search links are image searches on the same words", () => {
+  const google = new URL(searchUrls("Helen Grant Ruby").google);
+  assert.equal(google.host, "www.google.com");
+  assert.equal(google.searchParams.get("tbm"), "isch");
+  assert.equal(google.searchParams.get("q"), "Helen Grant Ruby");
+
+  const ddg = new URL(searchUrls("Helen Grant Ruby").ddg);
+  assert.equal(ddg.host, "duckduckgo.com");
+  assert.equal(ddg.searchParams.get("ia"), "images");
+  assert.equal(ddg.searchParams.get("q"), "Helen Grant Ruby");
 });
 
 test("only http(s) links are fetched", () => {

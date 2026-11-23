@@ -19,8 +19,9 @@ test("every language translates every key", () => {
 // keys may match English; `card_number` is digits around a slash in every language,
 // and `card_number_one` is the digits alone;
 // Telmi, Lunii, the Flam and the Merlin are the players' names, which no language
-// translates, and "beta" and "Zoom" are the words the Latin-script languages all
-// borrow as is; so do the machine's "OK" and "Pause", which French and German write
+// translates, and so are the two search engines; "beta" and "Zoom" are the words
+// the Latin-script languages all borrow as is; so do the machine's "OK" and
+// "Pause", which French and German write
 // the English way while Italian, Spanish, Portuguese and Dutch write their own, and
 // its "Home", which Italian and Dutch leave English where French and the Iberian
 // languages translate it.
@@ -36,6 +37,8 @@ test("no language is left in English by accident", () => {
     "fmt_lunii_pk",
     "fmt_flam",
     "fmt_merlin",
+    "cover_search_ddg",
+    "cover_search_google",
     "crop_zoom",
     "emu_ok",
     "emu_pause",

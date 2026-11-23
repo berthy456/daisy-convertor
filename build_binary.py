@@ -9,9 +9,9 @@ a binary for the machine it runs on. On Windows:
     pip install -e .[dev]
     python build_binary.py
 
-The result is dist/daisy-convertor-<version>-<os>-<arch>.exe on Windows, and
-dist/daisy-convertor on macOS and Linux, where the packaging steps name the file
-the user downloads.
+The result is dist/daisy-convertor-<version>-windows-<arch>.zip, holding the
+folder the exe lives in, and dist/daisy-convertor on macOS and Linux, where the
+packaging steps name the file the user downloads.
 """
 
 from __future__ import annotations
@@ -175,10 +175,16 @@ def _speech_options() -> list[str]:
 
 
 def _ffplay(ffmpeg: str) -> Path | None:
-    """The player next to the ffmpeg being bundled, wherever it came from."""
-    companion = Path(ffmpeg).with_name("ffplay")
-    if companion.is_file():
-        return companion
+    """The player next to the ffmpeg being bundled, wherever it came from.
+
+    Windows names it `ffplay.exe`, and the app looks for that name too, so the
+    one that travels has to be found the same way.
+    """
+    here = Path(ffmpeg).parent
+    for name in ("ffplay", "ffplay.exe"):
+        companion = here / name
+        if companion.is_file():
+            return companion
     found = shutil.which("ffplay")
     return Path(found) if found else None
 
@@ -254,14 +260,31 @@ def _artifact_name() -> str:
     return f"daisy-convertor-{version}-{_OS_NAMES[sys.platform]}-{_ARCH_NAMES.get(platform.machine(), platform.machine())}"
 
 
-def _name_windows_exe(dist: Path, name: str) -> Path:
-    """Move the built exe to `dist/<name>.exe`, dropping the ones an earlier build left."""
-    for stale in dist.glob("daisy-convertor-*.exe"):
+def _zip_windows_folder(dist: Path, name: str) -> Path:
+    """Zip the folder the exe lives in, under the name the download should carry.
+
+    The folder is what makes the exe start at once: a one-file exe unpacks its
+    whole payload, ffmpeg included, into a temporary folder on every start.
+    """
+    for stale in dist.glob("daisy-convertor-*windows*.zip"):
         stale.unlink()
-    built = dist / "daisy-convertor.exe"
-    named = built.with_name(f"{name}.exe")
-    built.replace(named)
-    return named
+    folder = dist / "daisy-convertor"
+    archive = shutil.make_archive(str(dist / name), "zip", root_dir=dist, base_dir=folder.name)
+    shutil.rmtree(folder)
+    return Path(archive)
+
+
+def _mode_options() -> list[str]:
+    """Windows gets a folder and no console; everywhere else stays a single file.
+
+    A one-file exe unpacks its whole payload — ffmpeg is most of it — into a
+    temporary folder on every start, which took half a minute on a slow machine
+    before the window appeared. A console build opens a terminal the GUI never
+    uses, and a windowed build still writes to the terminal it was started from.
+    """
+    if sys.platform == "win32":
+        return ["--onedir", "--windowed"]
+    return ["--onefile", "--console"]
 
 
 def main() -> int:
@@ -280,10 +303,19 @@ def main() -> int:
         "-m",
         "PyInstaller",
         "--clean",
-        "--onefile",
-        "--console",
+        *_mode_options(),
         "--name",
         "daisy-convertor",
+        # UPX rewrites the binaries it is given, and a rewritten ffmpeg is a ffmpeg
+        # that exits before it can say anything.
+        "--upx-exclude",
+        "ffmpeg",
+        "--upx-exclude",
+        "ffmpeg.exe",
+        "--upx-exclude",
+        "ffplay",
+        "--upx-exclude",
+        "ffplay.exe",
         # Without this, a machine where the package was never pip-installed builds
         # a binary that starts and then says there is no daisy2telmi module.
         "--paths",
@@ -307,10 +339,10 @@ def main() -> int:
     if code != 0:
         return code
 
-    # On Windows the exe is the file a user downloads, so it names itself. On Linux
-    # and macOS it is an input to the packaging steps, which name the download.
+    # On Windows the zip is the file a user downloads, so it names itself. On Linux
+    # and macOS the binary is an input to the packaging steps, which name the download.
     if sys.platform == "win32":
-        print(f"built {_name_windows_exe(ROOT / 'dist', _artifact_name())}")
+        print(f"built {_zip_windows_folder(ROOT / 'dist', _artifact_name())}")
     return 0
 
 

@@ -36,7 +36,9 @@ def app(tmp_path, monkeypatch):
     try:
         yield instance
     finally:
-        root.destroy()
+        # A test that closes the window leaves nothing to destroy.
+        with contextlib.suppress(tk.TclError):
+            root.destroy()
 
 
 def test_the_window_builds(app: gui.App) -> None:
@@ -63,10 +65,117 @@ def test_the_work_is_drawn_in_one_blue(app: gui.App) -> None:
 def test_each_mark_is_its_own_file(app: gui.App) -> None:
     """Tk cannot scale a photo image, so a size the window asks for has to be
     shipped as its own PNG; a missing one draws nothing at all."""
-    for side in (64, 16):
+    for side in (gui.BAR_MARK, 16):
         photo = app._mark_photo(side)
         assert photo is not None, f"no {side}-pixel mark"
         assert (photo.width(), photo.height()) == (side, side)
+
+
+def _bar_items(app: gui.App, kind: str) -> list[int]:
+    return [item for item in app.bar.find_all() if app.bar.type(item) == kind]
+
+
+def _bar_boxes(app: gui.App) -> dict[str, float]:
+    """The left edge of each control the bar drew, by its name."""
+    boxes = {}
+    for item in _bar_items(app, "polygon"):
+        for tag in app.bar.gettags(item):
+            if tag.startswith("bar-"):
+                boxes[tag[4:]] = app.bar.coords(item)[0]
+    return boxes
+
+
+def test_the_window_draws_its_own_bar(app: gui.App) -> None:
+    """The bar is the app's own, so its controls are there on every platform and in a
+    frameless window too: a rounded card, the mark, its two lines of words, the controls."""
+    app.root.update()
+    bar = app.bar
+    kinds = [bar.type(item) for item in bar.find_all()]
+    assert kinds.count("polygon") == 4, "the card and the three control boxes"
+    assert kinds.count("image") == 1, "the mark"
+    card = next(item for item in _bar_items(app, "polygon") if not bar.gettags(item))
+    assert bar.itemcget(card, "smooth") == "true", "the card is rounded, not squared"
+    assert {bar.itemcget(item, "text") for item in _bar_items(app, "text")} == {
+        app.t("app_title"),
+        app.t("app_headline"),
+    }
+
+
+def test_the_bar_controls_stand_at_its_right_edge(app: gui.App) -> None:
+    app.root.update()
+    boxes = _bar_boxes(app)
+    assert boxes["hide"] < boxes["zoom"] < boxes["close"]
+    assert boxes["close"] + gui.BAR_BUTTON < app.bar.winfo_width()
+
+
+def test_the_bar_moves_its_controls_when_the_window_widens(app: gui.App) -> None:
+    app.root.geometry("700x600")
+    app.root.update()
+    narrow = _bar_boxes(app)["close"]
+    app.root.geometry("1100x600")
+    app.root.update()
+    assert _bar_boxes(app)["close"] > narrow, "the controls follow the edge they belong to"
+
+
+def test_the_bar_enlarges_the_window_and_puts_it_back(app: gui.App) -> None:
+    app.root.geometry("700x600")
+    app.root.update()
+    before = app.root.geometry()
+    app.bar_action("zoom")
+    app.root.update()
+    assert app.root.geometry() != before
+    app.bar_action("zoom")
+    app.root.update()
+    assert app.root.geometry() == before
+
+
+def test_the_bar_hides_the_window(app: gui.App) -> None:
+    app.root.update()
+    app.bar_action("hide")
+    assert app.root.state() in ("iconic", "withdrawn")
+
+
+def test_the_bar_closes_the_window(app: gui.App) -> None:
+    app.bar_action("close")
+    try:
+        exists = bool(app.root.winfo_exists())
+    except tk.TclError:  # the window is gone, which is the point
+        exists = False
+    assert not exists
+
+
+def test_the_bar_follows_the_language(app: gui.App) -> None:
+    english = app.t("app_headline")
+    app.language_var.set("fr")
+    app._relabel()
+    texts = {app.bar.itemcget(item, "text") for item in _bar_items(app, "text")}
+    assert app.t("app_headline") in texts
+    assert english not in texts
+
+
+def test_a_frameless_window_drops_the_control_it_cannot_honour(app: gui.App) -> None:
+    """`overrideredirect` unmanages the window, and the window manager that would have
+    minimised it goes with it; the bar draws only what it can still do."""
+    app.set_frameless(True)
+    try:
+        if app.windowingsystem != "aqua":
+            assert app.root.overrideredirect(), "the system bar is gone"
+        boxes = set(_bar_boxes(app))
+        assert {"zoom", "close"} <= boxes
+        if app.windowingsystem == "x11":
+            assert "hide" not in boxes
+    finally:
+        app.set_frameless(False)
+    assert not app.root.overrideredirect()
+    assert "hide" in _bar_boxes(app)
+
+
+def test_the_options_page_carries_the_bar_choice(app: gui.App) -> None:
+    page = gui.Options(app)
+    page.frameless_var.set(True)
+    page._close()
+    assert app.options["frameless"] is True
+    assert app.frameless is True
 
 
 def test_the_output_folder_follows_the_pack(app: gui.App, tmp_path: Path) -> None:

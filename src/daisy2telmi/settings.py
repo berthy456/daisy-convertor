@@ -30,6 +30,7 @@ DEFAULTS: dict = {
     "autoplay": False,
     "card_total": True,
     "card_negative": False,
+    "frameless": False,
     "format": "telmi",
     "tts": "chatterbox",
     "voice": None,

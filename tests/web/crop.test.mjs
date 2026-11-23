@@ -7,7 +7,7 @@ import { DRAWS, FILLS, TEXTS, installCanvasStub } from "./canvas-stub.mjs";
 
 installCanvasStub();
 
-const { CARD_MARGIN, CROP_MODES, IMAGE_SIZE, coverPng } = await import("../../web/cover.js");
+const { CROP_MODES, IMAGE_SIZE, coverPng } = await import("../../web/cover.js");
 
 // A tall cover: a centre-crop cuts its title off, which is the whole point of the choice.
 const cover = { width: 1000, height: 1500, close: () => {} };

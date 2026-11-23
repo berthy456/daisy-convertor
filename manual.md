@@ -176,7 +176,9 @@ The built binaries carry espeak-ng, its shared libraries and its language data, 
 
 `daisy-convertor` with no arguments opens a Tkinter window: pick or drop a pack, pick an output folder and an optional cover, watch the same log the CLI writes. The conversion runs on a worker thread; each run starts on an empty log and ends with a report repeating its errors.
 
-**Options** holds the interface language, what the cards say, whether the drawn card counts the parts, autoplay, the speech engine and the voice, and the Chatterbox rows: which Python runs it, which device, the voice clip, and whether the package is in that Python. Closing it writes `~/.config/daisy2telmi/config.json` (`%APPDATA%\daisy2telmi\config.json` on Windows), which the CLI reads too, so a flag only overrides what is already saved.
+The window draws its own bar along the top: the mark, its name, and the hide, enlarge and close controls. **Options → Draw the window's own bar instead of the system one** takes the system bar away; the window then moves by dragging that bar. On Linux and Windows that also leaves the window unmanaged, so it cannot be minimised or resized by its edges and the hide control is left out.
+
+**Options** holds the interface language, what the cards say, whether the drawn card counts the parts, autoplay, the speech engine, the voice, the window bar, and the Chatterbox rows: which Python runs it, which device, the voice clip, and whether the package is in that Python. Closing it writes `~/.config/daisy2telmi/config.json` (`%APPDATA%\daisy2telmi\config.json` on Windows), which the CLI reads too, so a flag only overrides what is already saved.
 
 Drag-and-drop needs the optional `tkinterdnd2`; without it the browse buttons work and the window says so. `build_binary.py` passes `--collect-all tkinterdnd2` when it is installed.
 

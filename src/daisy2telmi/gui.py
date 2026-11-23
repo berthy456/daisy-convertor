@@ -172,6 +172,166 @@ def set_icon(root: tk.Misc) -> None:
     root.iconphoto(True, root._icon)
 
 
+# The window's own bar: the mark, what the window is for, and the three controls that
+# stand in for a system bar's. Tk cannot round the corners of a window it does not
+# draw, so the bar draws a rounded card of its own and sets its controls in it.
+BAR_HEIGHT = 104
+BAR_WIDTH = 900
+BAR_INSET = 10
+BAR_RADIUS = 14
+BAR_MARK = 96
+BAR_BUTTON = 30
+BAR_BUTTON_RADIUS = 9
+BAR_GAP = 8
+BAR_HOVER = "#565274"
+BAR_CLOSE_HOVER = "#8f3b34"
+
+
+class TitleBar(tk.Canvas):
+    """The window's own bar: the mark, its name, and its three controls.
+
+    The controls call Tk's own window commands, so they work whether or not the
+    system bar is there. `hide` is left out where there is no window manager left to
+    iconify the window: a frameless window on X11 has none.
+    """
+
+    def __init__(self, app: App) -> None:
+        super().__init__(
+            app.root,
+            width=BAR_WIDTH,
+            height=BAR_HEIGHT,
+            background=PAPER,
+            highlightthickness=0,
+            borderwidth=0,
+        )
+        self.app = app
+        self.mark = app._mark_photo(BAR_MARK)
+        self.frameless = app.frameless
+        self._boxes: dict[str, int] = {}
+        self._words: dict[str, int] = {}
+        self._press: tuple[int, int] | None = None
+        self.bind("<Configure>", lambda _event: self.redraw())
+        self.redraw()
+
+    def redraw(self) -> None:
+        width = self.winfo_width()
+        if width <= 1:
+            width = int(self.cget("width"))
+        height = self.winfo_height()
+        if width <= 2 * (BAR_INSET + BAR_RADIUS):
+            return
+        self.delete("all")
+        self._boxes.clear()
+        self._words.clear()
+        card = self._rounded(
+            BAR_INSET, BAR_INSET, width - BAR_INSET, height - BAR_INSET, BAR_RADIUS, SUNK
+        )
+        if self.mark:
+            self.create_image(BAR_INSET + BAR_RADIUS, height // 2, image=self.mark, anchor="w")
+        left = BAR_INSET + BAR_RADIUS + BAR_MARK + 16
+        self._words["title"] = self.create_text(
+            left,
+            height // 2 - 11,
+            anchor="w",
+            text=self.app.t("app_title"),
+            fill=INK,
+            font=("TkDefaultFont", 15, "bold"),
+        )
+        self._words["headline"] = self.create_text(
+            left,
+            height // 2 + 11,
+            anchor="w",
+            text=self.app.t("app_headline"),
+            fill=MUTED,
+            font=("TkDefaultFont", 10),
+        )
+        self._controls(width, height)
+        if self.frameless:
+            # With no system bar to pull on, the bar's own card and words move the window.
+            for item in (card, *self._words.values()):
+                self.tag_bind(item, "<ButtonPress-1>", self._press_bar)
+                self.tag_bind(item, "<B1-Motion>", self._drag_bar)
+
+    def relabel(self) -> None:
+        self.itemconfigure(self._words["title"], text=self.app.t("app_title"))
+        self.itemconfigure(self._words["headline"], text=self.app.t("app_headline"))
+
+    def _controls(self, width: int, height: int) -> None:
+        keys = ["hide", "zoom", "close"] if self.app.can_hide() else ["zoom", "close"]
+        right = width - BAR_INSET - BAR_RADIUS
+        middle = height // 2
+        for index, key in enumerate(reversed(keys)):
+            x = right - BAR_BUTTON - index * (BAR_BUTTON + BAR_GAP)
+            tag = f"bar-{key}"
+            self._boxes[key] = self._rounded(
+                x,
+                middle - BAR_BUTTON // 2,
+                x + BAR_BUTTON,
+                middle + BAR_BUTTON // 2,
+                BAR_BUTTON_RADIUS,
+                FIELD,
+                tag,
+            )
+            self._glyph(key, x, middle, tag)
+            self.tag_bind(tag, "<Button-1>", lambda _event, name=key: self.app.bar_action(name))
+            self.tag_bind(tag, "<Enter>", lambda _event, name=key: self._hover(name, True))
+            self.tag_bind(tag, "<Leave>", lambda _event, name=key: self._hover(name, False))
+
+    def _glyph(self, key: str, x: int, middle: int, tag: str) -> None:
+        left, right = x + 9, x + BAR_BUTTON - 9
+        top, bottom = middle - 7, middle + 7
+        if key == "hide":
+            self.create_line(left, bottom, right, bottom, fill=INK, width=2, tags=tag)
+        elif key == "zoom":
+            self.create_rectangle(left, top, right, bottom, outline=INK, width=2, tags=tag)
+        else:
+            self.create_line(left, top, right, bottom, fill=INK, width=2, tags=tag)
+            self.create_line(right, top, left, bottom, fill=INK, width=2, tags=tag)
+
+    def _hover(self, key: str, on: bool) -> None:
+        if not self.winfo_exists():
+            return
+        colour = (BAR_CLOSE_HOVER if key == "close" else BAR_HOVER) if on else FIELD
+        self.itemconfigure(self._boxes[key], fill=colour)
+
+    def _press_bar(self, event: tk.Event) -> None:
+        root = self.app.root
+        self._press = (event.x_root - root.winfo_rootx(), event.y_root - root.winfo_rooty())
+
+    def _drag_bar(self, event: tk.Event) -> None:
+        if self._press is None:
+            return
+        x = max(0, event.x_root - self._press[0])
+        y = max(0, event.y_root - self._press[1])
+        self.app.root.geometry(f"+{x}+{y}")
+
+    def _rounded(
+        self, x0: int, y0: int, x1: int, y1: int, radius: int, fill: str, tag: str = ""
+    ) -> int:
+        return self.create_polygon(
+            x0 + radius,
+            y0,
+            x1 - radius,
+            y0,
+            x1,
+            y0 + radius,
+            x1,
+            y1 - radius,
+            x1 - radius,
+            y1,
+            x0 + radius,
+            y1,
+            x0,
+            y1 - radius,
+            x0,
+            y0 + radius,
+            smooth=True,
+            fill=fill,
+            outline="",
+            tags=tag,
+        )
+
+
 class _QueueHandler(logging.Handler):
     """Ship log records to the Tk thread; widgets are only touched from the main thread."""
 
@@ -389,6 +549,10 @@ class App:
         self.root = root
         self.events: queue.Queue = queue.Queue()
         self.options = dict(settings.DEFAULTS, **(options or settings.load()))
+        self.windowingsystem = root.tk.call("tk", "windowingsystem")
+        self.frameless = bool(self.options.get("frameless"))
+        self._maximised = False
+        self._restore_geometry = ""
         self.pack_var = tk.StringVar()
         self.out_var = tk.StringVar()
         self._auto_out = ""
@@ -425,6 +589,8 @@ class App:
         self._on_done = None
         self._labels: dict[str, tk.Widget] = {}
         self._build()
+        if self.frameless:
+            self._take_system_bar()
         root.after(100, self._drain)
 
     def t(self, key: str) -> str:
@@ -450,15 +616,10 @@ class App:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(1, weight=1)
 
-        # The mark and what the window is for, centred along the top, and the name
-        # along the bottom: the work itself sits between them.
-        brand = ttk.Frame(self.root)
-        brand.grid(row=0, column=0, sticky="ew", pady=(4, 10))
-        brand.columnconfigure(0, weight=1)
-        self._logo = self._mark_photo(64)
-        if self._logo:
-            ttk.Label(brand, image=self._logo).grid(row=0, column=0)
-        self._label(brand, "app_headline", style="Headline.TLabel").grid(row=1, column=0, pady=(6, 0))
+        # The window's own bar along the top — the mark, its name and its controls —
+        # and the name again along the bottom: the work itself sits between them.
+        self.bar = TitleBar(self)
+        self.bar.grid(row=0, column=0, sticky="ew")
 
         grid = ttk.Frame(self.root, padding=(12, 0))
         grid.grid(row=1, column=0, sticky="nsew")
@@ -649,9 +810,97 @@ class App:
         self.root.title(self.t("app_title"))
         for key, widget in self._labels.items():
             widget.configure(text=self.t(key))
+        self.bar.relabel()
         self._show_formats()
         if not DND_FILES:
             self._append(self.t("drop_unavailable"))
+
+    def can_hide(self) -> bool:
+        """Whether anything is left that could iconify the window.
+
+        `overrideredirect` hands the window back to the app, and the window manager
+        that would have minimised it with it.
+        """
+        return not (self.frameless and self.windowingsystem == "x11")
+
+    def bar_action(self, key: str) -> None:
+        {"hide": self._hide_window, "zoom": self._zoom_window, "close": self._close_window}[key]()
+
+    def _hide_window(self) -> None:
+        try:
+            self.root.state("iconic")
+        except tk.TclError:
+            self.root.withdraw()
+
+    def _zoom_window(self) -> None:
+        """Maximise, or put back the size the window had before it was maximised.
+
+        Tk has no one way to do it. Windows and macOS have a `zoomed` state; X11 takes
+        a `-zoomed` attribute but no window manager is bound to honour it, so there the
+        window is sized to the screen by hand.
+        """
+        if self._maximised:
+            self._maximised = False
+            for undo in (
+                lambda: self.root.state("normal"),
+                lambda: self.root.attributes("-zoomed", False),
+            ):
+                with contextlib.suppress(tk.TclError):
+                    undo()
+            self.root.geometry(self._restore_geometry)
+            return
+        self._restore_geometry = self.root.geometry()
+        self._maximised = True
+        if self.windowingsystem == "x11":
+            self.root.geometry(
+                f"{self.root.winfo_screenwidth()}x{self.root.winfo_screenheight()}+0+0"
+            )
+            return
+        try:
+            self.root.state("zoomed")
+        except tk.TclError:
+            with contextlib.suppress(tk.TclError):
+                self.root.attributes("-zoomed", True)
+
+    def _close_window(self) -> None:
+        self.root.destroy()
+
+    def set_frameless(self, on: bool) -> None:
+        if on == self.frameless:
+            return
+        self.frameless = on
+        if on:
+            self._take_system_bar()
+        else:
+            self._give_system_bar()
+        # A window manager decides what decorations a window gets when it maps it, so
+        # the change only shows once the window has been mapped again.
+        self.root.withdraw()
+        self.root.update()
+        self.root.deiconify()
+        self.bar.frameless = on
+        self.bar.redraw()
+
+    def _take_system_bar(self) -> None:
+        """Take the system bar away.
+
+        On macOS Tk can hide the title bar and leave the window managed. On Windows
+        and X11 the only way Tk has is `overrideredirect`, which unmanages the window:
+        no iconify, no resize borders, and on X11 no place in the taskbar either.
+        """
+        if sys.platform == "darwin":
+            try:
+                self.root.attributes("-titlebar", False)
+                return
+            except tk.TclError:
+                pass
+        self.root.overrideredirect(True)
+
+    def _give_system_bar(self) -> None:
+        if sys.platform == "darwin":
+            with contextlib.suppress(tk.TclError):
+                self.root.attributes("-titlebar", True)
+        self.root.overrideredirect(False)
 
     def _open_options(self) -> None:
         Options(self)
@@ -1608,6 +1857,7 @@ class Options:
         self.voice_box = self._combo(grid, [None], app.options["voice"])
         self.card_total_var = tk.BooleanVar(value=bool(app.options["card_total"]))
         self.autoplay_var = tk.BooleanVar(value=bool(app.options["autoplay"]))
+        self.frameless_var = tk.BooleanVar(value=bool(app.options["frameless"]))
 
         self._row(grid, "opt_language", 0, self.language_box)
         self._row(grid, "opt_announce", 1, self.announce_box)
@@ -1615,11 +1865,17 @@ class Options:
         self._check(grid, "opt_autoplay", 3, self.autoplay_var)
         self._row(grid, "opt_engine", 4, self.engine_box)
         self._row(grid, "opt_voice", 5, self.voice_box)
+        self._check(grid, "opt_frameless", 6, self.frameless_var)
+        # The bar is drawn either way; what the tick changes is whether the system's
+        # own bar is left above it, and what that bar was doing for the window.
+        ttk.Label(grid, text=app.t("opt_frameless_hint"), style="Brand.TLabel").grid(
+            row=7, column=0, columnspan=2, sticky="w"
+        )
 
         # Chatterbox is a package that goes into the Python named below, not part of
         # the app, so its rows sit behind their own border.
         chatterbox = ttk.Labelframe(grid, text=app.t("opt_section_chatterbox"), padding=(10, 6))
-        chatterbox.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        chatterbox.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(14, 0))
         chatterbox.columnconfigure(1, weight=1)
         self.device_box = self._combo(chatterbox, self.device_keys, app.options["device"])
         self.python_box = ttk.Entry(chatterbox, width=28)
@@ -1645,7 +1901,7 @@ class Options:
         self._row(chatterbox, "opt_clip", 4, clip_row)
 
         ttk.Button(grid, text=app.t("opt_close"), command=self._close).grid(
-            row=7, column=0, columnspan=2, sticky="e", pady=(12, 0)
+            row=9, column=0, columnspan=2, sticky="e", pady=(12, 0)
         )
 
         self.engine_box.bind("<<ComboboxSelected>>", lambda _e: self._fill_voices())
@@ -1768,9 +2024,11 @@ class Options:
                 "python": self.python_box.get().strip() or None,
                 "clip": self.clip_box.get().strip() or None,
                 "device": self._chosen(self.device_box, self.device_keys),
+                "frameless": self.frameless_var.get(),
             }
         )
         self.app.language_var.set(self.app.options["language"])
+        self.app.set_frameless(self.app.options["frameless"])
         self.app._relabel()
         try:
             settings.save(self.app.options)

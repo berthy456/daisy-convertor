@@ -423,8 +423,14 @@ def build_story(
         # a Lunii behind its plastic window. A colour card has nothing to invert.
         grey = negative and style == "bw"
         if cover is not None:
-            images.write_cover(cover, target, cards, texts, crop, style, scene, cover_size, view, grey)
-            return
+            try:
+                images.write_cover(cover, target, cards, texts, crop, style, scene, cover_size, view, grey)
+                return
+            except images.ImageError as exc:
+                # The audio is already rendered by now, and a picture the machine
+                # cannot read is no reason to throw it away: the cards fall back to
+                # the placeholder and the pack still plays.
+                log.error("drawing without the cover %s: %s", cover, exc)
         (target / "images").mkdir(parents=True, exist_ok=True)
         for index, text in enumerate(texts):
             (target / "images" / f"m{index}.png").write_bytes(

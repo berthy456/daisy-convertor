@@ -16,7 +16,7 @@ import zlib
 from pathlib import Path
 from typing import Sequence
 
-from .audio import require_ffmpeg
+from .audio import ffmpeg_failure, require_ffmpeg
 from .i18n import language
 
 TITLE_IMAGE = "title.png"
@@ -359,7 +359,9 @@ def flat_png(width: int = IMAGE_SIZE[0], height: int = IMAGE_SIZE[1], style: str
 def _run(args: list[str], description: str) -> None:
     result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode != 0:
-        raise ImageError(f"{description}: {result.stderr.strip().splitlines()[-1] if result.stderr.strip() else 'ffmpeg failed'}")
+        raise ImageError(
+            f"{description}: {ffmpeg_failure(args, result.returncode, result.stderr or result.stdout)}"
+        )
 
 
 # A tall cover loses its title to a centre-crop, so which band survives is the

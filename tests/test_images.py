@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import struct
 import subprocess
@@ -9,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from daisy2telmi import images
+from daisy2telmi import audio, images
 from daisy2telmi.cli import FORMATS
 from daisy2telmi.i18n import LANGUAGES
 
@@ -161,8 +162,41 @@ def test_write_cover_crops_the_picture_and_numbers_every_card(tmp_path: Path) ->
 def test_write_cover_reports_an_image_ffmpeg_cannot_read(tmp_path: Path) -> None:
     broken = tmp_path / "broken.png"
     broken.write_bytes(b"not a png")
-    with pytest.raises(images.ImageError, match="could not crop"):
+    with pytest.raises(images.ImageError) as failure:
         images.write_cover(broken, tmp_path / "story", [images.card_label("en", 1, 1)], [""])
+    message = str(failure.value)
+    assert "could not crop" in message
+    assert re.search(r"ffmpeg exited \d+", message), "which binary failed, and with what code"
+    assert "Conversion failed" in message, "ffmpeg's own words about the picture"
+
+
+def test_a_failed_run_names_the_binary_its_exit_code_and_its_own_words() -> None:
+    message = audio.ffmpeg_failure(
+        [r"C:\app\ffmpeg.exe", "-y", "-i", "cover.jpg", "out.png"],
+        1,
+        "bogus filter expression\nError opening output file out.png.\n",
+    )
+    assert r"C:\app\ffmpeg.exe" in message, "the copy inside the app and the one on PATH are different problems"
+    assert "exited 1" in message
+    assert "Error opening output file out.png." in message
+
+
+def test_a_run_that_wrote_nothing_says_that_instead_of_guessing() -> None:
+    silent = audio.ffmpeg_failure(["ffmpeg"], 1, "")
+    assert "without writing a word" in silent
+
+    # Windows stops a binary whose libraries are missing, before it can write anything.
+    loader = audio.ffmpeg_failure(["ffmpeg"], -1073741515, "")
+    assert "0xc0000135" in loader
+    assert "library" in loader
+
+
+def test_a_picture_ffmpeg_refuses_is_reported_as_that(tmp_path: Path) -> None:
+    silent = shutil.which("false")
+    if silent is None:
+        pytest.skip("no `false` on this machine")
+    with pytest.raises(images.ImageError, match="without writing a word"):
+        images._run([silent], "could not read cover-1.jpg")
 
 
 BANDS = {"top": "red", "center": "green", "bottom": "blue"}

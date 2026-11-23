@@ -48,8 +48,9 @@ def _ffmpeg(args: list[str], what: str) -> bytes:
     """Run ffmpeg, and say which picture failed when it does not."""
     result = subprocess.run(args, capture_output=True)
     if result.returncode != 0:
-        tail = result.stderr.decode("utf-8", "replace").strip().splitlines()
-        raise LuniiError(f"{what}: {tail[-1] if tail else 'ffmpeg failed'}")
+        raise LuniiError(
+            f"{what}: {audio.ffmpeg_failure(args, result.returncode, result.stderr.decode('utf-8', 'replace'))}"
+        )
     return result.stdout
 
 

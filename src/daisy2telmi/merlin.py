@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-from .audio import require_ffmpeg
+from .audio import ffmpeg_failure, require_ffmpeg
 
 PLAYLIST = "playlist.bin"
 RECORD_SIZE = 152
@@ -211,8 +211,9 @@ the editor.
 def _run(args: list[str], description: str) -> None:
     result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode != 0:
-        detail = result.stderr.strip().splitlines()
-        raise MerlinError(f"{description}: {detail[-1] if detail else 'ffmpeg failed'}")
+        raise MerlinError(
+            f"{description}: {ffmpeg_failure(args, result.returncode, result.stderr or result.stdout)}"
+        )
 
 
 def _encode(ffmpeg: str, clips: Sequence[Path], dest: Path) -> None:

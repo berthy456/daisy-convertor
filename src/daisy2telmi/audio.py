@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from .extractor import AudioSegment
@@ -47,20 +48,46 @@ def ffmpeg_executable() -> str | None:
 def require_ffmpeg() -> str:
     exe = ffmpeg_executable()
     if exe is None:
+        looked = "the folder inside this app" if getattr(sys, "frozen", False) else "its own folder"
         raise AudioError(
-            "ffmpeg is required but was not found on PATH. "
+            f"ffmpeg is required but was not found (looked in {looked} and on PATH). "
             "Install it (Windows: `winget install Gyan.FFmpeg`, macOS: `brew install ffmpeg`)."
         )
     return exe
+
+
+# Windows codes for "the program never got as far as running": the loader stopped it.
+# Both leave stderr empty, which is why a failure of this kind used to read as just
+# "ffmpeg failed" — and it is a different problem from a picture ffmpeg refused.
+_START_FAILURES = {
+    0xC0000135: "a library the binary needs is missing",
+    0xC000007B: "the binary does not match this Windows (32-bit / 64-bit)",
+    0xC0000022: "Windows refused it access it needs",
+}
+
+
+def ffmpeg_failure(args: Sequence[str], returncode: int, stderr: str) -> str:
+    """What an ffmpeg run reported: which binary ran, what it exited with, what it wrote.
+
+    The name of the binary matters when the app carries its own copy: "ffmpeg failed"
+    could have meant the picture, the command line, or a bundled ffmpeg that cannot
+    start at all.
+    """
+    exe = args[0] if args else "ffmpeg"
+    said = [line.strip() for line in (stderr or "").strip().splitlines() if line.strip()]
+    reason = _START_FAILURES.get(returncode & 0xFFFFFFFF)
+    if reason:
+        return f"{exe} exited 0x{returncode & 0xFFFFFFFF:08x} ({reason}) without writing a word"
+    if not said:
+        return f"{exe} exited {returncode} without writing a word"
+    return f"{exe} exited {returncode}: {' / '.join(said[-3:])}"
 
 
 def _run(args: list[str], description: str) -> None:
     log.debug("running: %s", " ".join(args))
     result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "").strip().splitlines()
-        tail = detail[-1] if detail else f"exit code {result.returncode}"
-        raise AudioError(f"{description}: {tail}")
+        raise AudioError(f"{description}: {ffmpeg_failure(args, result.returncode, result.stderr or result.stdout)}")
 
 
 _DURATION = re.compile(r"Duration:\s*(\d+):(\d{2}):(\d{2})\.(\d+)")

@@ -206,6 +206,23 @@ def test_a_missing_cover_is_refused_before_the_audio_runs(tmp_path: Path) -> Non
 
 @requires_pack
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_a_cover_that_will_not_decode_does_not_stop_the_conversion(tmp_path: Path, caplog) -> None:
+    """The audio is the work; a picture that will not decode is not worth losing it."""
+    broken = tmp_path / "cover.jpg"
+    broken.write_bytes(b"not a jpeg")
+    out = tmp_path / "out"
+    with caplog.at_level(logging.ERROR):
+        assert main([str(PACK), str(out), "--cover", str(broken)]) == 0
+
+    pack = next(entry for entry in out.iterdir() if entry.is_dir())
+    assert validate_story_dir(pack) == []
+    assert len(list((pack / "audios").glob("c*.mp3"))) == EXPECTED_CHAPTERS
+    assert (pack / images.TITLE_IMAGE).read_bytes() == images.placeholder_png(*images.screen("telmi")[0])
+    assert "drawing without the cover" in caplog.text
+
+
+@requires_pack
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
 def test_a_cover_replaces_every_generated_image(tmp_path: Path, story: Path) -> None:
     cover = tmp_path / "cover.png"
     cover.write_bytes(images.placeholder_png(300, 200))

@@ -7,11 +7,16 @@ lets flags override it.
 
 from __future__ import annotations
 
+import ctypes
 import json
 import logging
 import os
+import re
+import subprocess
 import sys
 from pathlib import Path
+
+from .i18n import LANGUAGES
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +36,51 @@ DEFAULTS: dict = {
     "clip": None,
     "device": "auto",
 }
+
+
+# The Windows primary language of each language the app has words for.
+_WINDOWS_LANGUAGES = {
+    0x01: "ar",
+    0x04: "zh",
+    0x05: "nl",
+    0x07: "de",
+    0x09: "en",
+    0x0A: "es",
+    0x0C: "fr",
+    0x0F: "it",
+    0x16: "pt",
+    0x1F: "tr",
+}
+
+
+def _apple_languages() -> str:
+    try:
+        return subprocess.run(
+            ["defaults", "read", "-g", "AppleLanguages"], capture_output=True, text=True
+        ).stdout
+    except OSError:
+        return ""
+
+
+def system_language() -> str:
+    """The language the machine itself is set to, when the app has words for it.
+
+    A window opened from a terminal sees LANG; one opened from the desktop does not,
+    so each system is asked its own way.
+    """
+    for name in ("LC_ALL", "LC_MESSAGES", "LANGUAGE", "LANG"):
+        found = re.match(r"([a-z][a-z])", (os.environ.get(name) or "").lower())
+        if found and found.group(1) in LANGUAGES:
+            return found.group(1)
+    if sys.platform == "win32":
+        return _WINDOWS_LANGUAGES.get(ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3F, "en")
+    if sys.platform == "darwin":
+        # Finder starts an app from launchd, which knows the user's language but
+        # leaves it out of the environment.
+        found = re.search(r'"([a-z][a-z])', _apple_languages().lower())
+        if found and found.group(1) in LANGUAGES:
+            return found.group(1)
+    return "en"
 
 
 def config_dir() -> Path:
@@ -62,7 +112,8 @@ def chatterbox_env() -> Path:
 
 
 def load() -> dict:
-    options = dict(DEFAULTS)
+    """The saved options, with the machine's own language where nothing was saved."""
+    options = dict(DEFAULTS, language=system_language())
     try:
         stored = json.loads(config_path().read_text(encoding="utf-8"))
     except FileNotFoundError:

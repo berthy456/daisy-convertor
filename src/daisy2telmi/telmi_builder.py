@@ -526,14 +526,16 @@ def build_story(
     )
 
 
-def write_story_zip(story_dir: Path, parent: Path) -> Path:
+def write_story_zip(story_dir: Path, parent: Path, player: str = "telmi") -> Path:
     """Package the story folder for Telmi-Sync's zip import.
 
     `findDirectory` in ConvertZip.js counts the Telmi marker files per zip
     directory and needs exactly four, so the folder goes in nested one level
-    rather than unpacked at the archive root.
+    rather than unpacked at the archive root. The archive is named after the
+    machine the story was drawn for, so the file in the download folder says
+    which player it is for.
     """
-    zip_path = parent / f"{story_dir.name}.zip"
+    zip_path = parent / f"{story_dir.name}-{player}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
         for entry in sorted(story_dir.rglob("*")):
             if entry.is_file():

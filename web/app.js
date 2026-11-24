@@ -636,7 +636,7 @@ async function buildPack() {
   // story, or the layout its card keeps itself; the Flam launcher imports the Telmi
   // one; and a Merlin card holds no story graph at all — only the files and the
   // playlist that names them.
-  let name = `${story.dirName}.zip`;
+  let name = `${story.dirName}-${format}.zip`;
   let bytes = story.zip;
   if (format === "lunii") {
     name = `${story.dirName}-lunii.zip`;
@@ -731,7 +731,8 @@ async function saveTarget() {
   const base = source.name.replace(/\.[^.]+$/, "") || "story";
   try {
     return await window.showSaveFilePicker({
-      suggestedName: `${base}.${format === "lunii-pk" ? "pk" : "zip"}`,
+      suggestedName:
+        format === "lunii-pk" ? `${base}.pk` : `${base}-${format}.zip`,
     });
   } catch (error) {
     if (error.name === "AbortError") return null;

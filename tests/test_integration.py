@@ -71,7 +71,7 @@ def test_the_folder_passes_telmis_own_import_checks(story: Path) -> None:
 
 @requires_pack
 def test_the_zip_passes_telmis_zip_import_checks(story: Path) -> None:
-    zip_path = story.with_name(story.name + ".zip")
+    zip_path = story.with_name(story.name + "-telmi.zip")
     assert zip_path.is_file(), f"no zip next to {story}"
     assert validate_story_zip(zip_path) == []
     with zipfile.ZipFile(zip_path) as archive:
@@ -435,6 +435,30 @@ def test_no_lunii_archive_is_written_unless_asked(tmp_path, monkeypatch) -> None
     out = tmp_path / "out"
     assert main([str(PACK), str(out)]) == 0
     assert not list(out.glob("*-lunii.zip"))
+
+
+# The name each format writes its archive under, as manual.md's table says.
+ARCHIVE_SUFFIX = {
+    "telmi": "-telmi.zip",
+    "lunii": "-lunii.zip",
+    "lunii-pk": ".plain.pk",
+    "flam": "-flam.zip",
+    "merlin": "_merlin.zip",
+    "mp3": "-mp3.zip",
+}
+
+
+@requires_pack
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_each_archive_is_named_after_the_format_it_holds(tmp_path, monkeypatch) -> None:
+    """A download folder holding six books in six formats has to say which is which."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    for fmt, suffix in ARCHIVE_SUFFIX.items():
+        out = tmp_path / f"out-{fmt}"
+        assert main([str(PACK), str(out), "--format", fmt]) == 0
+        packed = sorted(entry.name for entry in out.iterdir() if entry.suffix in (".zip", ".pk"))
+        assert len(packed) == 1, f"{fmt}: {packed}"
+        assert packed[0].endswith(suffix), f"{fmt} wrote {packed[0]}"
 
 
 CHAPTER_TITLES = ["一", "二", "三", "四", "五", "六"]

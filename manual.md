@@ -83,12 +83,12 @@ Cards get a spoken number only when the cut is by chapter. At paragraph or sente
 
 | `--format` | Archive written | |
 | :--- | :--- | :--- |
-| `telmi` | `<story folder>.zip` | for Telmi Sync's **Import → zip** |
+| `telmi` | `<story>-telmi.zip` | for Telmi Sync's **Import → zip** |
 | `lunii` | `<story>-lunii.zip` | Lunii STUdio; cards drawn in the screen's sixteen greys |
 | `lunii-pk` | `<Title>.<8 hex>.plain.pk` | the layout a Lunii story card keeps itself; Lunii.QT or open-story-teller writes it onto a card |
-| `flam` | `<story folder>.zip` | the Telmi archive, at the Flam's own screen sizes (320×212 scene, 104×136 thumbnail) |
+| `flam` | `<story>-flam.zip` | the Telmi archive, at the Flam's own screen sizes (320×212 scene, 104×136 thumbnail) |
 | `merlin` | `<story>_merlin.zip` | beta |
-| `mp3` | `<Book title>.zip` | one folder of MP3s and playlists, for a player that is not a story-teller |
+| `mp3` | `<Book title>-mp3.zip` | one folder of MP3s and playlists, for a player that is not a story-teller |
 
 The Telmi story folder is always written as well; the archive is made from it.
 

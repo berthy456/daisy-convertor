@@ -1209,7 +1209,7 @@ def test_the_window_offers_every_player(app: gui.App) -> None:
         [
             "Telmi",
             "Lunii (B/W)",
-            "Commercial PK",
+            "Commercial PK (.pk)",
             "Flam",
             "Merlin (beta)",
             "MP3 playlist",

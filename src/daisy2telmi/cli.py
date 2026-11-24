@@ -413,7 +413,9 @@ def convert(
             if fmt == "mp3":
                 # No cards, no story graph: the pack is the chapters themselves.
                 written = playlist.export(book, announce, target, input_path, pack.root)
-                archive = shutil.make_archive(str(target), "zip", target.parent, base_dir=target.name)
+                archive = shutil.make_archive(
+                    str(target.parent / f"{target.name}-mp3"), "zip", target.parent, base_dir=target.name
+                )
                 log.info("wrote %d file(s) to %s", len(written), target)
             else:
                 # The Merlin has no story graph to write: its card is made from the
@@ -445,7 +447,7 @@ def convert(
                         archive = shutil.make_archive(str(card), "zip", card)
                         log.info("wrote %d card file(s) and a %s to %s", len(names), merlin.PLAYLIST, card)
                     else:
-                        archive = write_story_zip(target, target.parent)
+                        archive = write_story_zip(target, target.parent, fmt)
     except ChapterError as exc:
         log.error("%s", exc)
         return 2

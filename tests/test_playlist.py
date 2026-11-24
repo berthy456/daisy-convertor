@@ -284,7 +284,7 @@ def test_the_mp3_pack_is_the_book_named_folder_the_player_opens(tmp_path: Path) 
     assert text.startswith("001  一\n"), "the pack's own SMIL text travels with the audio"
     assert "そのあくる日もごんは" in text
     assert not list(folder.glob("*.png")), "an mp3 pack carries no cards"
-    archive = tmp_path / "ごんぎつね.zip"
+    archive = tmp_path / "ごんぎつね-mp3.zip"
     assert archive.is_file()
     with zipfile.ZipFile(archive) as reader:
         assert all(name.startswith("ごんぎつね/") for name in reader.namelist())

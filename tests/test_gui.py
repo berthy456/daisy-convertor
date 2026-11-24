@@ -87,7 +87,8 @@ def _bar_boxes(app: gui.App) -> dict[str, float]:
 
 def test_the_window_draws_its_own_bar(app: gui.App) -> None:
     """The bar is the app's own, so its controls are there on every platform and in a
-    frameless window too: a rounded card, the mark, its two lines of words, the controls."""
+    frameless window too: a rounded card, the mark, its two lines of words with the
+    version beside the name, the controls."""
     app.root.update()
     bar = app.bar
     kinds = [bar.type(item) for item in bar.find_all()]
@@ -97,8 +98,19 @@ def test_the_window_draws_its_own_bar(app: gui.App) -> None:
     assert bar.itemcget(card, "smooth") == "true", "the card is rounded, not squared"
     assert {bar.itemcget(item, "text") for item in _bar_items(app, "text")} == {
         app.t("app_title"),
+        gui.__version__,
         app.t("app_headline"),
     }
+
+
+def test_the_version_sits_beside_the_name_it_versions(app: gui.App) -> None:
+    app.root.update()
+    bar = app.bar
+    items = {bar.itemcget(item, "text"): item for item in _bar_items(app, "text")}
+    name = bar.coords(items[app.t("app_title")])
+    version = bar.coords(items[gui.__version__])
+    assert version[0] > name[0], "the version follows the name"
+    assert version[1] == name[1], "on the name's own line"
 
 
 def test_the_bar_controls_stand_at_its_right_edge(app: gui.App) -> None:

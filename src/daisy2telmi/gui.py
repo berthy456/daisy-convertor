@@ -26,7 +26,7 @@ from pathlib import Path
 from tkinter import font as tkfont, messagebox, ttk
 from urllib.parse import quote_plus
 
-from . import audio, chapters, covers, emulator, images, settings, tts
+from . import __version__, audio, chapters, covers, emulator, images, settings, tts
 from .cli import CAPTION_FORMATS, CARD_FORMATS, FORMATS, convert
 from .detector import DaisyPackError, open_pack
 from .extractor import CUT_LEVELS, extract
@@ -215,6 +215,7 @@ class TitleBar(tk.Canvas):
         self.frameless = app.frameless
         self._boxes: dict[str, int] = {}
         self._words: dict[str, int] = {}
+        self._title_y = 0
         self._press: tuple[int, int] | None = None
         self.bind("<Configure>", lambda _event: self.redraw())
         self.redraw()
@@ -235,13 +236,23 @@ class TitleBar(tk.Canvas):
         if self.mark:
             self.create_image(BAR_INSET + BAR_RADIUS, height // 2, image=self.mark, anchor="w")
         left = BAR_INSET + BAR_RADIUS + BAR_MARK + 16
+        self._title_y = height // 2 - 11
         self._words["title"] = self.create_text(
             left,
-            height // 2 - 11,
+            self._title_y,
             anchor="w",
             text=self.app.t("app_title"),
             fill=INK,
             font=("TkDefaultFont", 15, "bold"),
+        )
+        title = self.bbox(self._words["title"])
+        self._words["version"] = self.create_text(
+            (title[2] if title else left) + 10,
+            self._title_y,
+            anchor="w",
+            text=__version__,
+            fill=MUTED,
+            font=("TkDefaultFont", 11),
         )
         self._words["headline"] = self.create_text(
             left,
@@ -261,6 +272,9 @@ class TitleBar(tk.Canvas):
     def relabel(self) -> None:
         self.itemconfigure(self._words["title"], text=self.app.t("app_title"))
         self.itemconfigure(self._words["headline"], text=self.app.t("app_headline"))
+        title = self.bbox(self._words["title"])
+        if title:
+            self.coords(self._words["version"], title[2] + 10, self._title_y)
 
     def _controls(self, width: int, height: int) -> None:
         keys = ["hide", "zoom", "close"] if self.app.can_hide() else ["zoom", "close"]
@@ -851,7 +865,7 @@ class App:
             self.root.dnd_bind("<<Drop>>", self._on_drop)
 
     def _relabel(self) -> None:
-        self.root.title(self.t("app_title"))
+        self.root.title(f"{self.t('app_title')} {__version__}")
         for key, widget in self._labels.items():
             widget.configure(text=self.t(key))
         self.bar.relabel()
@@ -2773,7 +2787,7 @@ def make_root() -> tk.Misc:
 def run_gui() -> int:
     root = make_root()
     app = App(root)
-    root.title(app.t("app_title"))
+    root.title(f"{app.t('app_title')} {__version__}")
     handler = attach_log_handler(app)
     try:
         root.mainloop()

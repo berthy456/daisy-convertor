@@ -14,7 +14,10 @@
   <body>
     <main>
       <header>
-        <h1><img src="./icon.svg" alt="" class="mark" />daisy-convertor</h1>
+        <h1>
+          <img src="./icon.svg" alt="" class="mark" />daisy-convertor
+          <span class="version">1.5</span>
+        </h1>
         <p class="tagline" data-i18n="tagline"></p>
         <label class="lang">
           <span data-i18n="language"></span>
@@ -105,6 +108,7 @@
                It is drawn before a cover exists: its shape is what a cover is fitted to. -->
           <div id="crop-box" class="crop-box">
             <canvas id="crop-canvas" tabindex="0"></canvas>
+            <p class="muted crop-note" data-i18n="crop_hint"></p>
             <div class="crop-tools">
               <span class="muted" data-i18n="cover_crop_label"></span>
               <label class="crop">
@@ -135,7 +139,6 @@
               </label>
               <p id="captions-note" class="muted captions-note" data-i18n="captions_note" hidden></p>
             </div>
-            <p class="muted crop-note" data-i18n="crop_hint"></p>
           </div>
         </div>
 

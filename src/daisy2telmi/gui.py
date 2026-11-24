@@ -182,11 +182,13 @@ def set_icon(root: tk.Misc) -> None:
 # The window's own bar: the mark, what the window is for, and the three controls that
 # stand in for a system bar's. Tk cannot round the corners of a window it does not
 # draw, so the bar draws a rounded card of its own and sets its controls in it.
-BAR_HEIGHT = 120
 BAR_WIDTH = 900
 BAR_INSET = 10
 BAR_RADIUS = 14
 BAR_MARK = 112
+# The card has to be taller than the mark it holds, or the mark spills past its
+# rounded edge: 140 - 2 * 10 = 120 against a 112 mark.
+BAR_HEIGHT = 140
 BAR_BUTTON = 30
 BAR_BUTTON_RADIUS = 9
 BAR_GAP = 8

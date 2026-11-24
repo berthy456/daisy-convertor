@@ -111,6 +111,18 @@ def test_the_window_draws_its_own_bar(app: gui.App) -> None:
     }
 
 
+def test_the_bar_card_holds_its_mark(app: gui.App) -> None:
+    """The mark is the biggest thing in the bar, so the card has to be taller than it:
+    a mark spilling past the card's rounded edge reads as a drawing error."""
+    app.root.update()
+    bar = app.bar
+    card = next(item for item in _bar_items(app, "polygon") if not bar.gettags(item))
+    mark = next(item for item in _bar_items(app, "image"))
+    _, top, _, bottom = bar.bbox(mark)
+    _, card_top, _, card_bottom = bar.bbox(card)
+    assert card_top <= top and bottom <= card_bottom, "the mark stands inside the card"
+
+
 def test_the_version_sits_beside_the_name_it_versions(app: gui.App) -> None:
     app.root.update()
     bar = app.bar

@@ -66,8 +66,8 @@ jobs:
           if ($LASTEXITCODE) { Write-Error "the exe did not run"; exit 1 }
           cmd /c "`"$exe`" gon-ruby-mp3.zip C:\smoke\story --announce off --cover src\daisy2telmi\assets\icon.png"
           if ($LASTEXITCODE) { Write-Error "the exe could not convert the pack"; exit 1 }
-          $count = (Get-ChildItem C:\smoke\story\*\audios\c*.mp3).Count
-          if ($count -ne 6) { Write-Error "expected 6 chapter clips, found $count"; exit 1 }
+          $count = (Get-ChildItem C:\smoke\story\*\audios\s*.mp3).Count
+          if ($count -ne 6) { Write-Error "expected 6 scene clips, found $count"; exit 1 }
       - uses: actions/upload-artifact@v4
         with:
           name: daisy-convertor-windows

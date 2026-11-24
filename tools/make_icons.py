@@ -2,7 +2,7 @@
 
     python tools/make_icons.py
 
-Writes the PNGs the window draws — `icon.png` for the window itself, `icon-96.png`
+Writes the PNGs the window draws — `icon.png` for the window itself, `icon-112.png`
 for its bar, `icon-64.png` for the AppImage and `icon-16.png` for its status line —
 into
 `src/daisy2telmi/assets`, where they travel inside the binaries, plus
@@ -31,7 +31,7 @@ SVG = ROOT / "assets" / "icon.svg"
 # binary unpacks them next to the module that reads them; the two container formats
 # are only ever read by PyInstaller, so they stay at the top.
 ASSETS = ROOT / "src" / "daisy2telmi" / "assets"
-PNGS = (("icon.png", 128), ("icon-96.png", 96), ("icon-64.png", 64), ("icon-16.png", 16))
+PNGS = (("icon.png", 128), ("icon-112.png", 112), ("icon-64.png", 64), ("icon-16.png", 16))
 OUT = ROOT / "assets"
 
 # The .ico keeps small sizes as raw bitmaps, which every Windows shell reads, and

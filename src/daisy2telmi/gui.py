@@ -67,8 +67,9 @@ LINE = "#5c5878"
 ACCENT = "#d24fc9"
 MUTED = "#b3aecb"
 ALERT = "#ff8978"
-# The colour of the work the app does on the user's behalf: the progress bar, and the
-# button that starts it. The icon's magenta stays on the mark and the selections.
+# The colour of the work the app does on the user's behalf: the progress bar, the
+# button that starts it, and whatever the window marks as picked. The icon's magenta
+# stays on the mark.
 NAVY = "#2a5ec7"
 
 # The emulator's machine, drawn by hand: Tk's buttons are rectangles and the
@@ -127,7 +128,7 @@ def theme(root: tk.Misc) -> None:
         selectforeground=[("readonly", INK)],
     )
     style.configure("Treeview", background=SUNK, fieldbackground=SUNK, bordercolor=LINE, rowheight=22)
-    style.map("Treeview", background=[("selected", ACCENT)], foreground=[("selected", "#ffffff")])
+    style.map("Treeview", background=[("selected", NAVY)], foreground=[("selected", "#ffffff")])
     style.configure("Treeview.Heading", background=FIELD, foreground=MUTED, relief="flat")
     style.configure("TScrollbar", background=FIELD, troughcolor=PAPER, bordercolor=LINE, arrowsize=12, relief="flat")
     style.configure("TProgressbar", background=NAVY, troughcolor=FIELD, bordercolor=LINE)
@@ -181,11 +182,11 @@ def set_icon(root: tk.Misc) -> None:
 # The window's own bar: the mark, what the window is for, and the three controls that
 # stand in for a system bar's. Tk cannot round the corners of a window it does not
 # draw, so the bar draws a rounded card of its own and sets its controls in it.
-BAR_HEIGHT = 104
+BAR_HEIGHT = 120
 BAR_WIDTH = 900
 BAR_INSET = 10
 BAR_RADIUS = 14
-BAR_MARK = 96
+BAR_MARK = 112
 BAR_BUTTON = 30
 BAR_BUTTON_RADIUS = 9
 BAR_GAP = 8
@@ -831,6 +832,8 @@ class App:
             wrap="word",
             background=SUNK,
             foreground=INK,
+            selectbackground=NAVY,
+            selectforeground="#ffffff",
             relief="flat",
             highlightthickness=1,
             highlightbackground=LINE,

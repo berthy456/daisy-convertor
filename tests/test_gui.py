@@ -53,13 +53,15 @@ def test_the_window_is_given_the_app_icon(app: gui.App) -> None:
     assert app.root._icon is not None
 
 
-def test_the_work_is_drawn_in_one_blue(app: gui.App) -> None:
-    """The progress bar and the button that starts the work share one colour, so the
-    eye finds the button by looking for the bar it fills."""
+def test_the_work_and_the_picked_row_share_one_blue(app: gui.App) -> None:
+    """The progress bar, the button that starts the work and what the window marks as
+    picked share one colour, so the eye finds them by the same blue."""
     style = ttk.Style(app.root)
     assert style.lookup("TProgressbar", "background") == gui.NAVY
     assert app.save_button.cget("style") == "Work.TButton"
     assert style.lookup("Work.TButton", "background") == gui.NAVY
+    assert style.map("Treeview", "background") == [("selected", gui.NAVY)], "a picked row"
+    assert app.log_view.cget("selectbackground") == gui.NAVY
 
 
 def test_each_mark_is_its_own_file(app: gui.App) -> None:
@@ -85,6 +87,12 @@ def _bar_boxes(app: gui.App) -> dict[str, float]:
     return boxes
 
 
+def _controls(app: gui.App) -> list[str]:
+    """The controls the bar draws here, left to right. A frameless window on X11 has
+    no window manager left to iconify it, so it is drawn without the hide button."""
+    return ["hide", "zoom", "close"] if app.can_hide() else ["zoom", "close"]
+
+
 def test_the_window_draws_its_own_bar(app: gui.App) -> None:
     """The bar is the app's own, so its controls are there on every platform and in a
     frameless window too: a rounded card, the mark, its two lines of words with the
@@ -92,7 +100,7 @@ def test_the_window_draws_its_own_bar(app: gui.App) -> None:
     app.root.update()
     bar = app.bar
     kinds = [bar.type(item) for item in bar.find_all()]
-    assert kinds.count("polygon") == 4, "the card and the three control boxes"
+    assert kinds.count("polygon") == 1 + len(_controls(app)), "the card and its control boxes"
     assert kinds.count("image") == 1, "the mark"
     card = next(item for item in _bar_items(app, "polygon") if not bar.gettags(item))
     assert bar.itemcget(card, "smooth") == "true", "the card is rounded, not squared"
@@ -116,7 +124,7 @@ def test_the_version_sits_beside_the_name_it_versions(app: gui.App) -> None:
 def test_the_bar_controls_stand_at_its_right_edge(app: gui.App) -> None:
     app.root.update()
     boxes = _bar_boxes(app)
-    assert boxes["hide"] < boxes["zoom"] < boxes["close"]
+    assert sorted(boxes, key=lambda key: boxes[key]) == _controls(app), "the controls, left to right"
     assert boxes["close"] + gui.BAR_BUTTON < app.bar.winfo_width()
 
 

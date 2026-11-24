@@ -55,11 +55,20 @@ def safe_name(value: str) -> str:
     return cleaned or "story"
 
 
-def chapter_name(number: int, title: str, book_title: str) -> str:
+def digits(total: int) -> int:
+    """How many digits the part numbers need: three, or as many as the book has parts.
+
+    A book cut at sentences runs past a thousand parts, and `999` sorts after `1000`:
+    the padding has to cover the largest number the pack will write.
+    """
+    return max(3, len(str(total)))
+
+
+def chapter_name(number: int, title: str, book_title: str, total: int = 0) -> str:
     """`001 - Chapter title - Book title`: the number leads so a player that sorts
     by name still plays the book in order, and the `-intro` interlude sorts in
     front of the chapter it introduces."""
-    parts = [f"{number:03d}"] + ([title] if title else []) + [book_title]
+    parts = [f"{number:0{digits(total)}}"] + ([title] if title else []) + [book_title]
     return safe_name(" - ".join(parts))
 
 
@@ -137,7 +146,7 @@ def details(book: Book, chapters: list[Track]) -> str:
     lines.append(f"Length: {clock(sum(known)) if all(known) else clock(None)}")
     lines.append("")
     for index, track in enumerate(chapters, start=1):
-        lines.append(f"{index:03d}  {clock(track.duration)}  {track.title}")
+        lines.append(f"{index:0{digits(len(chapters))}}  {clock(track.duration)}  {track.title}")
     return "\n".join(lines) + "\n"
 
 
@@ -149,7 +158,7 @@ def book_text(book: Book) -> str:
         if not body:
             continue
         heading = chapter.title or f"{index}"
-        blocks.append(f"{index:03d}  {heading}\n{'-' * 40}\n{body}")
+        blocks.append(f"{index:0{digits(len(book.chapters))}}  {heading}\n{'-' * 40}\n{body}")
     return "\n\n".join(blocks) + "\n" if blocks else ""
 
 
@@ -323,7 +332,7 @@ def export(
     byline = book.author or book.narrator or ""
     chapters: list[Track] = []
     for index, chapter in enumerate(book.chapters, start=1):
-        name = chapter_name(index, chapter.title, title)
+        name = chapter_name(index, chapter.title, title, len(book.chapters))
         dest = folder / f"{name}.mp3"
         if chapter.segments:
             log.info("rendering %s (%d audio clip group(s)) <- %s", name, len(chapter.segments), chapter.title)

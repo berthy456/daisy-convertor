@@ -33,6 +33,11 @@ test("the chapter name leads with its number and ends with the book", () => {
   assert.equal(chapterName(7, "", "Book"), "007 - Book");
 });
 
+test("a book past a thousand parts numbers its chapters wide enough to sort", () => {
+  const names = [1, 999, 1000, 1001].map((n) => `${chapterName(n, "Suite", "Book", 1001)}.mp3`);
+  assert.deepEqual([...names].sort(), names);
+});
+
 test("the clock drops the hours it does not need", () => {
   assert.equal(clock(75), "1:15");
   assert.equal(clock(3735), "1:02:15");

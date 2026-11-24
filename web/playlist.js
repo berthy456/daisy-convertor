@@ -25,12 +25,19 @@ export function safeName(value) {
 }
 
 /**
+ * How many digits the part numbers need: three, or as many as the book has parts.
+ *
+ * A book cut at sentences runs past a thousand parts, and `999` sorts after `1000`.
+ */
+export const digits = (total) => Math.max(3, String(total).length);
+
+/**
  * `001 - Chapter title - Book title`: the number leads so a player that sorts by
  * name still plays the book in order, and the `-intro` interlude sorts in front
  * of the chapter it introduces.
  */
-export function chapterName(number, title, bookTitle) {
-  const parts = [String(number).padStart(3, "0")];
+export function chapterName(number, title, bookTitle, total = 0) {
+  const parts = [String(number).padStart(digits(total), "0")];
   if (title) parts.push(title);
   parts.push(bookTitle);
   return safeName(parts.join(" - "));
@@ -112,7 +119,7 @@ export function details(book, chapters) {
   lines.push(`Length: ${known.every((d) => d) ? clock(known.reduce((a, b) => a + b, 0)) : clock(null)}`);
   lines.push("");
   chapters.forEach((track, index) => {
-    lines.push(`${String(index + 1).padStart(3, "0")}  ${clock(track.duration)}  ${track.title}`);
+    lines.push(`${String(index + 1).padStart(digits(chapters.length), "0")}  ${clock(track.duration)}  ${track.title}`);
   });
   return `${lines.join("\n")}\n`;
 }
@@ -124,7 +131,7 @@ export function bookText(book) {
     const body = (chapter.body || chapter.text).trim();
     if (!body) return;
     const heading = chapter.title || String(index + 1);
-    blocks.push(`${String(index + 1).padStart(3, "0")}  ${heading}\n${"-".repeat(40)}\n${body}`);
+    blocks.push(`${String(index + 1).padStart(digits(book.chapters.length), "0")}  ${heading}\n${"-".repeat(40)}\n${body}`);
   });
   return blocks.length ? `${blocks.join("\n\n")}\n` : "";
 }
@@ -238,7 +245,7 @@ export async function buildPlaylistFiles(entries, onProgress = () => {}, options
 
   const chapters = [];
   for (const [k, chapter] of book.chapters.entries()) {
-    const name = chapterName(k + 1, chapter.title, folder);
+    const name = chapterName(k + 1, chapter.title, folder, book.chapters.length);
     const audio = concatSegments(chapter.segments.map(bytesOf));
     const length = mp3Duration(audio);
     files.push({ name: `${folder}/${name}.mp3`, data: audio });

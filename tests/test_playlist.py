@@ -60,6 +60,13 @@ def test_the_interlude_sorts_in_front_of_the_chapter_it_introduces() -> None:
     assert sorted([f"{chapter}.mp3", f"{chapter}-intro.mp3"])[0].endswith("-intro.mp3")
 
 
+def test_a_book_past_a_thousand_parts_numbers_its_parts_wide_enough_to_sort() -> None:
+    """`999` sorts after `1000`, and the playlist order is the name order."""
+    names = [playlist.chapter_name(n, "Suite", "Book", 1001) for n in (1, 999, 1000, 1001)]
+    assert [name.split(" - ")[0] for name in names] == ["0001", "0999", "1000", "1001"]
+    assert sorted(f"{name}.mp3" for name in names) == [f"{name}.mp3" for name in names]
+
+
 @pytest.mark.parametrize(
     "seconds,written",
     [(None, "?"), (0, "0:00"), (5.4, "0:05"), (75, "1:15"), (3723.5, "1:02:04")],

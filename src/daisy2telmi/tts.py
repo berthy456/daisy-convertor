@@ -163,7 +163,7 @@ def _espeak_env() -> dict[str, str]:
     Without this the binary finds no voices and says nothing at all, which looks
     like a working engine that produces silence.
     """
-    env = dict(os.environ)
+    env = _external_env()
     bundled = audio.bundled_executable("espeak-ng")
     if bundled is None:
         return env
@@ -177,6 +177,56 @@ def _espeak_env() -> dict[str, str]:
         env["LD_LIBRARY_PATH"] = os.pathsep.join([str(bundled.parent), env.get("LD_LIBRARY_PATH", "")]).rstrip(
             os.pathsep
         )
+    return env
+
+
+def _bundle_roots() -> set[Path]:
+    """The directories a frozen app unpacked itself into."""
+    roots: set[Path] = set()
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        roots.add(Path(meipass).resolve())
+    if appdir := os.environ.get("APPDIR"):
+        roots.add(Path(appdir).resolve())
+    # An AppImage mounts itself at /tmp/.mount_XXXX and runs from there, and every
+    # library it ships sits under that mount.
+    for parent in Path(sys.executable).resolve().parents:
+        if parent.name.startswith(".mount_"):
+            roots.add(parent)
+            break
+    return roots
+
+
+def _external_env() -> dict[str, str]:
+    """The machine's environment with what a frozen app set for its own Python taken out.
+
+    A bundled app points PYTHONHOME, PYTHONPATH and LD_LIBRARY_PATH at the trimmed
+    Python and the OpenSSL it unpacked to run itself. A system Python handed those
+    values reads that trimmed standard library and links the build machine's OpenSSL
+    instead of its own, so it has no ssl module and pip reaches PyPI over no HTTPS
+    at all: every engine install fails with "the ssl module in Python is not
+    available". The interpreter the app builds an environment with is a machine
+    Python, so it gets the machine's environment.
+    """
+    env = dict(os.environ)
+    roots = _bundle_roots()
+    if not roots:
+        return env
+    for name in ("PYTHONHOME", "PYTHONPATH", "PYINSTALLER_CONFIG_DIR"):
+        env.pop(name, None)
+    for name in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH"):
+        kept = []
+        for entry in env.get(name, "").split(os.pathsep):
+            if not entry:
+                continue
+            path = Path(entry).resolve()
+            if any(path == root or path.is_relative_to(root) for root in roots):
+                continue
+            kept.append(entry)
+        if kept:
+            env[name] = os.pathsep.join(kept)
+        else:
+            env.pop(name, None)
     return env
 
 
@@ -224,7 +274,9 @@ def _has_package(engine: str, exe: str | None) -> bool:
         # find_spec only looks the package up: importing any of them pulls torch
         # or onnxruntime in, which is what asking costs.
         probe = f"import importlib.util as u; print(u.find_spec({MODULES[engine]!r}) is not None)"
-        result = subprocess.run([exe, "-I", "-c", probe], capture_output=True, text=True)
+        result = subprocess.run(
+            [exe, "-I", "-c", probe], capture_output=True, text=True, env=_external_env()
+        )
         _package_cache[key] = result.stdout.strip() == "True"
     return _package_cache[key]
 
@@ -296,7 +348,7 @@ def make_speech_env(engine: str) -> str:
         )
     env.parent.mkdir(parents=True, exist_ok=True)
     log.info("making a %s environment in %s", LABELS[engine], env)
-    result = subprocess.run([base, "-m", "venv", str(env)], capture_output=True, text=True)
+    result = subprocess.run([base, "-m", "venv", str(env)], capture_output=True, text=True, env=_external_env())
     if result.returncode == 0 and _has_pip(exe):
         return exe
     # Half an environment is worse than none: the retry has to start clean. A
@@ -307,7 +359,10 @@ def make_speech_env(engine: str) -> str:
         _reason(result) if result.returncode else "the environment it made has no pip",
     )
     result = subprocess.run(
-        [base, "-m", "venv", "--without-pip", str(env)], capture_output=True, text=True
+        [base, "-m", "venv", "--without-pip", str(env)],
+        capture_output=True,
+        text=True,
+        env=_external_env(),
     )
     if result.returncode:
         raise TtsError(f"could not make a Python environment: {_reason(result)}")
@@ -339,6 +394,7 @@ def _shared_pip(base: str, env: Path) -> bool:
         [base, "-m", "venv", "--without-pip", "--system-site-packages", str(env)],
         capture_output=True,
         text=True,
+        env=_external_env(),
     )
     if result.returncode:
         return False
@@ -351,7 +407,7 @@ def _shared_pip(base: str, env: Path) -> bool:
 
 def _has_pip(exe: str) -> bool:
     """Whether that interpreter can run pip as a module."""
-    return subprocess.run([exe, "-m", "pip", "--version"], capture_output=True).returncode == 0
+    return subprocess.run([exe, "-m", "pip", "--version"], capture_output=True, env=_external_env()).returncode == 0
 
 
 def _bootstrap_pip(exe: str) -> None:
@@ -364,7 +420,7 @@ def _bootstrap_pip(exe: str) -> None:
     except OSError as exc:
         raise TtsError(f"could not reach {GET_PIP}: {exc}") from exc
     try:
-        result = subprocess.run([exe, str(script)], capture_output=True, text=True)
+        result = subprocess.run([exe, str(script)], capture_output=True, text=True, env=_external_env())
     finally:
         script.unlink(missing_ok=True)
     if result.returncode:
@@ -378,7 +434,9 @@ def _stream(exe: str, args: list[str], label: str) -> None:
     minute and a half.
     """
     log.info("%s: %s", label, " ".join(args[:4]))
-    process = subprocess.Popen([exe, *args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    process = subprocess.Popen(
+        [exe, *args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=_external_env()
+    )
     assert process.stdout is not None
     for line in process.stdout:
         if line.strip():
@@ -699,7 +757,7 @@ def _speak_batch(
         manifest["outs"] = [str(path) for path in raw]
         manifest_path = folder / "manifest.json"
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        result = _check([exe, "-I", str(_speak_script(engine)), str(manifest_path)], engine)
+        result = _check([exe, "-I", str(_speak_script(engine)), str(manifest_path)], engine, _external_env())
         # The script reports the device it settled on, so a run that silently
         # stayed on the CPU is visible in the log.
         for line in result.stdout.splitlines():

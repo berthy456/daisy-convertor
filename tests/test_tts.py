@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import wave
@@ -393,6 +394,66 @@ def test_a_package_cannot_be_installed_without_a_python(monkeypatch) -> None:
         tts.install_engine(tts.PIPER, "/opt/python")
 
 
+def _bundled_app(tmp_path, monkeypatch) -> Path:
+    """Pretend to be the AppImage: mounted under /tmp/.mount_XXX, unpacked, and
+    pointing its own Python at what it unpacked."""
+    mount = tmp_path / ".mount_ABC123"
+    monkeypatch.setattr(tts.sys, "executable", str(mount / "usr" / "bin" / "daisy-convertor"))
+    monkeypatch.setattr(tts.sys, "_MEIPASS", str(mount / "_MEIxyz"), raising=False)
+    monkeypatch.setenv("APPDIR", str(mount / "usr"))
+    monkeypatch.setenv("PYTHONHOME", str(mount / "_MEIxyz"))
+    monkeypatch.setenv("PYTHONPATH", str(mount / "_MEIxyz"))
+    monkeypatch.setenv(
+        "LD_LIBRARY_PATH", os.pathsep.join([str(mount / "usr" / "lib"), str(mount / "_MEIxyz"), "/opt/mylibs/lib"])
+    )
+    return mount
+
+
+def test_a_bundled_app_hands_the_machines_environment_to_the_python_it_installs_into(tmp_path, monkeypatch) -> None:
+    """The bundle carries the build machine's Python and OpenSSL. A machine Python
+    handed those paths reads a trimmed standard library and links the wrong OpenSSL,
+    so it has no ssl module and pip reaches PyPI over no HTTPS at all."""
+    _bundled_app(tmp_path, monkeypatch)
+    started: list[tuple[list[str], dict[str, str]]] = []
+
+    def fake_run(argv, **kwargs):
+        started.append((argv, kwargs.get("env") or {}))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(tts.subprocess, "run", fake_run)
+    monkeypatch.setattr(tts, "_python", lambda python=None: "/usr/bin/python3")
+    monkeypatch.setattr(tts.settings, "speech_env", lambda engine: tmp_path / "piper")
+
+    tts.make_speech_env(tts.PIPER)
+
+    assert [argv[1:3] for argv, _ in started] == [["-m", "venv"], ["-m", "pip"]]
+    for argv, env in started:
+        assert "PYTHONHOME" not in env and "PYTHONPATH" not in env, argv
+        assert env["LD_LIBRARY_PATH"] == "/opt/mylibs/lib", argv
+
+
+def test_a_bundled_app_keeps_the_libraries_its_own_espeak_needs(tmp_path, monkeypatch) -> None:
+    """The scrub is for the machine's Python; the copied espeak-ng still has to find
+    the libraries sitting next to it, or it speaks silence."""
+    mount = _bundled_app(tmp_path, monkeypatch)
+    monkeypatch.setattr(tts.sys, "platform", "linux")
+    monkeypatch.setattr(tts.audio, "bundled_executable", lambda name: mount / "_MEIxyz" / name)
+    env = tts._espeak_env()
+    assert env["LD_LIBRARY_PATH"].startswith(str(mount / "_MEIxyz"))
+    assert env["LD_LIBRARY_PATH"].endswith("/opt/mylibs/lib")
+    assert "PYTHONHOME" not in env
+
+
+def test_a_run_from_the_sources_leaves_the_environment_alone(monkeypatch) -> None:
+    monkeypatch.delattr(tts.sys, "_MEIPASS", raising=False)
+    monkeypatch.delenv("APPDIR", raising=False)
+    monkeypatch.setenv("PYTHONPATH", "/opt/mylibs")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/opt/mylibs/lib")
+    env = tts._external_env()
+    assert env["PYTHONPATH"] == "/opt/mylibs"
+    assert env["LD_LIBRARY_PATH"] == "/opt/mylibs/lib"
+
+
 def test_a_run_without_a_neural_engine_still_makes_its_cards(monkeypatch) -> None:
     """A neural engine is the one a user picks for its voice, but it is not inside
     the app, so a machine that lacks it must convert with its own voice instead of
@@ -414,7 +475,7 @@ def test_a_package_engine_is_only_offered_when_its_package_is_installed(monkeypa
     tts._package_cache.clear()
     seen: list[str] = []
 
-    def fake_run(argv, capture_output, text):
+    def fake_run(argv, **kwargs):
         seen.extend(argv)
         return subprocess.CompletedProcess(argv, 0, stdout="False\n", stderr="")
 

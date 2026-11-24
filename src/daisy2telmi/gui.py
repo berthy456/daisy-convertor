@@ -594,6 +594,7 @@ class App:
         self.language_var = tk.StringVar(value=self.options["language"])
         self.cut = self.options["cut"]
         self.dropped: set[int] = set()
+        self._pack_path: Path | None = None
         # The chapters window lists the parts at its own cut, so it has to follow a
         # cut the main window changes under it.
         self.chapter_list: ChapterList | None = None
@@ -1050,6 +1051,11 @@ class App:
         user typed or picked themselves is never overwritten.
         """
         pack = self._typed_path(self.pack_var)
+        if pack != self._pack_path:
+            # A different book: the part numbers the last one's dropped parts point at
+            # mean nothing here, the same as a different cut level.
+            self.dropped.clear()
+            self._pack_path = pack
         folder = self.options.get("output_dir") or ("" if pack is None else str(pack.parent))
         if self.out_var.get() in ("", self._auto_out):
             self._auto_out = folder

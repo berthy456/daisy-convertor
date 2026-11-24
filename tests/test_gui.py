@@ -224,6 +224,21 @@ def test_a_second_pack_loses_the_cover_the_app_found(app: gui.App, tmp_path: Pat
     assert app.author_var.get() == "Corenblit", "words the user typed are kept"
 
 
+def test_a_second_pack_loses_the_parts_dropped_from_the_first(app: gui.App, tmp_path: Path) -> None:
+    """A dropped part is a number in one book's part list. The next pack has its own
+    list, and the same numbers would cut its opening away in silence."""
+    for name in ("wesh.zip", "aiguille.zip"):
+        (tmp_path / name).write_bytes(b"PK")
+    app.pack_var.set(str(tmp_path / "wesh.zip"))
+    app.dropped = {1, 2, 3}
+    app.pack_var.set(str(tmp_path / "aiguille.zip"))
+    assert app.dropped == set(), "a different book, different part numbers"
+
+    app.dropped = {4}
+    app.format_var.set("flam")
+    assert app.dropped == {4}, "the same pack keeps what was dropped from it"
+
+
 def test_a_dialog_opens_where_the_pack_is(app: gui.App, tmp_path: Path, monkeypatch) -> None:
     opened: list[str] = []
     monkeypatch.setattr(gui.Browser, "run", lambda self: opened.append(str(self.current)) or "")
@@ -1043,14 +1058,15 @@ def test_unchecking_a_chapter_leaves_it_out_of_the_story(
     seen: list = []
     monkeypatch.setattr(gui, "convert", lambda *args, **kwargs: seen.append(args) or 0)
 
-    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
-    page.keep[1].set(False)
-    page._close()
-    assert app.dropped == {2}
-
     (tmp_path / "pack.zip").write_bytes(b"PK")
     app.pack_var.set(str(tmp_path / "pack.zip"))
     app.out_var.set(str(tmp_path / "out"))
+
+    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
+    page.keep[1].set(False)
+    page._close()
+    assert app.dropped == {2}, "the pack being chosen does not undo what was dropped from it"
+
     app._start()
     app._drain()
     assert seen[0][5] == "2"

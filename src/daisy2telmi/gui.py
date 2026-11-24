@@ -195,13 +195,22 @@ BAR_GAP = 8
 BAR_HOVER = "#565274"
 BAR_CLOSE_HOVER = "#8f3b34"
 
+# The window opens at a size of its own: Tk asks each widget how big it wants to be,
+# hands the total to the window manager and lets it decide, and a window the manager
+# does not manage is only as big as it is told. The floor is the size the window needs
+# to show its bar and the three columns of work under it.
+MIN_WIDTH = 900
+MIN_HEIGHT = 560
+WINDOW_MARGIN = 40
+
 
 class TitleBar(tk.Canvas):
-    """The window's own bar: the mark, its name, and its three controls.
+    """The window's own bar: the mark, its name, and the controls it needs.
 
-    The controls call Tk's own window commands, so they work whether or not the
-    system bar is there. `hide` is left out where there is no window manager left to
-    iconify the window: a frameless window on X11 has none.
+    The controls call Tk's own window commands, so they work whether or not the system
+    bar is there. They are only drawn when the bar has to stand in for that bar: with
+    the system bar in place the window already has its buttons, and this one is the
+    mark and the name.
     """
 
     def __init__(self, app: App) -> None:
@@ -280,7 +289,7 @@ class TitleBar(tk.Canvas):
             self.coords(self._words["version"], title[2] + 10, self._title_y)
 
     def _controls(self, width: int, height: int) -> None:
-        keys = ["hide", "zoom", "close"] if self.app.can_hide() else ["zoom", "close"]
+        keys = self.app.bar_controls()
         right = width - BAR_INSET - BAR_RADIUS
         middle = height // 2
         for index, key in enumerate(reversed(keys)):
@@ -622,6 +631,7 @@ class App:
         self._on_done = None
         self._labels: dict[str, tk.Widget] = {}
         self._build()
+        self._size_window()
         if not self.options.get("input_dir") and not self.options.get("output_dir"):
             self._append(self.t("log_folders_missing"))
         if self.frameless:
@@ -879,13 +889,20 @@ class App:
         if not DND_FILES:
             self._append(self.t("drop_unavailable"))
 
-    def can_hide(self) -> bool:
-        """Whether anything is left that could iconify the window.
+    def bar_controls(self) -> list[str]:
+        """The buttons the window's own band has to draw.
 
-        `overrideredirect` hands the window back to the app, and the window manager
-        that would have minimised it with it.
+        With the system bar there the window has its buttons already, so the band is
+        the mark and the name. Without it the band is all the window has, and
+        `overrideredirect` hands the window back to the app: the window manager that
+        would have minimised it goes with it, so a frameless window on X11 has no hide
+        button to draw.
         """
-        return not (self.frameless and self.windowingsystem == "x11")
+        if not self.frameless:
+            return []
+        if self.windowingsystem == "x11":
+            return ["zoom", "close"]
+        return ["hide", "zoom", "close"]
 
     def bar_action(self, key: str) -> None:
         {"hide": self._hide_window, "zoom": self._zoom_window, "close": self._close_window}[key]()
@@ -944,6 +961,23 @@ class App:
         self.root.deiconify()
         self.bar.frameless = on
         self.bar.redraw()
+
+    def _size_window(self) -> None:
+        """Open the window at a size of its own, in the middle of the screen.
+
+        Tk hands the window manager the size its widgets asked for and lets it decide
+        what to do with it. A window the manager does not manage — the frameless one on
+        Linux and Windows — is only as big as it is told, and left untold the AppImage's
+        window came up a small square.
+        """
+        self.root.update_idletasks()
+        screen = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        width = min(self.root.winfo_reqwidth(), screen[0] - 2 * WINDOW_MARGIN)
+        height = min(self.root.winfo_reqheight(), screen[1] - 2 * WINDOW_MARGIN)
+        x = max(0, (screen[0] - width) // 2)
+        y = max(0, (screen[1] - height) // 2)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        self.root.minsize(min(MIN_WIDTH, width), min(MIN_HEIGHT, height))
 
     def _take_system_bar(self) -> None:
         """Take the system bar away.

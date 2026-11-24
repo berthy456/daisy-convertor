@@ -88,9 +88,9 @@ def _bar_boxes(app: gui.App) -> dict[str, float]:
 
 
 def _controls(app: gui.App) -> list[str]:
-    """The controls the bar draws here, left to right. A frameless window on X11 has
-    no window manager left to iconify it, so it is drawn without the hide button."""
-    return ["hide", "zoom", "close"] if app.can_hide() else ["zoom", "close"]
+    """The controls the bar draws here, left to right. Nothing when the system bar is
+    there, and no hide button when there is no window manager left to iconify it."""
+    return app.bar_controls()
 
 
 def test_the_window_draws_its_own_bar(app: gui.App) -> None:
@@ -188,18 +188,33 @@ def test_the_bar_follows_the_language(app: gui.App) -> None:
 def test_a_frameless_window_drops_the_control_it_cannot_honour(app: gui.App) -> None:
     """`overrideredirect` unmanages the window, and the window manager that would have
     minimised it goes with it; the bar draws only what it can still do."""
-    app.set_frameless(True)
+    assert app.frameless is True, "the window opens without the system bar"
+    if app.windowingsystem != "aqua":
+        assert app.root.overrideredirect(), "the system bar is gone"
+    boxes = set(_bar_boxes(app))
+    assert {"zoom", "close"} <= boxes
+    assert ("hide" in boxes) == (app.windowingsystem != "x11")
+
+
+def test_the_band_draws_no_buttons_under_the_system_bar(app: gui.App) -> None:
+    """The system bar has the window's buttons. Drawing them again in the band gives
+    the window two sets of them, so the band keeps only its mark and its name."""
+    app.set_frameless(False)
     try:
-        if app.windowingsystem != "aqua":
-            assert app.root.overrideredirect(), "the system bar is gone"
-        boxes = set(_bar_boxes(app))
-        assert {"zoom", "close"} <= boxes
-        if app.windowingsystem == "x11":
-            assert "hide" not in boxes
+        app.root.update()
+        assert app.bar_controls() == []
+        assert _bar_boxes(app) == {}
+        assert len(_bar_items(app, "polygon")) == 1, "the card, and nothing else"
     finally:
-        app.set_frameless(False)
-    assert not app.root.overrideredirect()
-    assert "hide" in _bar_boxes(app)
+        app.set_frameless(True)
+
+
+def test_the_window_opens_at_a_size_of_its_own(app: gui.App) -> None:
+    """Tk leaves the size to the window manager, and a window the manager does not
+    manage is only as big as it is told: untold, the AppImage's came up a small square."""
+    app.root.update()
+    assert app.root.winfo_width() >= min(gui.MIN_WIDTH, app.root.winfo_screenwidth())
+    assert app.root.winfo_height() >= min(gui.MIN_HEIGHT, app.root.winfo_screenheight())
 
 
 def test_the_options_page_carries_the_bar_choice(app: gui.App) -> None:

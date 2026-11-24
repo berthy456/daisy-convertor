@@ -71,7 +71,7 @@ The app can read the cards in a real voice. On the first conversion it offers to
 
 ### 9. Play it first
 
-**Test the story** converts to a folder of its own and plays the pack on a drawn machine: the screen, the wheel's ring, and five keys — the side pair, OK, Pause and Home. Pause holds the clip that is playing, and the same key picks it up where it stopped; on a Telmi the two side keys step ten seconds back and forward. A chapter keeps the card it is read for four seconds, then the screen goes dark. A Lunii story is opened from its archive, so its cards show the greys that screen keeps. The same emulator runs in a browser tab at <https://berthy456.github.io/daisy-convertor/emulator.html>, where it also reads a `.pk` card.
+**Test the story** converts to a folder of its own and plays the pack on a drawn machine: the screen, the wheel's ring, and five keys — the side pair, OK, Pause and Home. Pause holds the clip that is playing, and the same key picks it up where it stopped; on a Telmi the two side keys step ten seconds back and forward. A chapter keeps the card it is read for four seconds, then the screen goes dark. A Lunii story is opened from its archive, so its cards show the greys that screen keeps. On the web page, **Test the story** asks where the story should go before it builds one, writes it there, and plays it over the page; a browser that cannot be asked puts the zip in the download folder instead. The same emulator runs in a browser tab at <https://berthy456.github.io/daisy-convertor/emulator.html>, where it also reads a `.pk` card.
 
 ### 10. Put it on the machine
 

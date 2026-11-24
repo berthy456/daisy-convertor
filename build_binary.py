@@ -238,19 +238,24 @@ def _gui_options() -> list[str]:
     return ["--collect-all", "tkinterdnd2"]
 
 
-def _icon_options() -> list[str]:
-    """The binary's own icon, and the PNG the window draws.
+def _asset_options() -> list[str]:
+    """The binary's own icon, and the files the window and the pictures draw with.
 
     PyInstaller takes .icns on macOS and .ico on Windows only; on Linux the icon
-    belongs to the AppImage's desktop file instead. The PNG is not Python data, so
-    PyInstaller leaves it behind unless it is named: the window looks for it next
-    to its own module, which is where this unpacks it.
+    belongs to the AppImage's desktop file instead. None of these are Python data,
+    so PyInstaller leaves them behind unless they are named: the window looks for
+    them next to its own module, which is where this unpacks them. The caption
+    font's licence travels with the font.
     """
     icon = {"darwin": "icon.icns", "win32": "icon.ico"}.get(sys.platform)
+    assets = ROOT / "src" / "daisy2telmi" / "assets"
     return [
         *(["--icon", str(ROOT / "assets" / icon)] if icon else []),
-        "--add-data",
-        f"{ROOT / 'src' / 'daisy2telmi' / 'assets' / 'icon.png'}{os.pathsep}daisy2telmi/assets",
+        *(
+            option
+            for name in ("icon.png", "Arimo.ttf", "Arimo-OFL.txt")
+            for option in ("--add-data", f"{assets / name}{os.pathsep}daisy2telmi/assets")
+        ),
     ]
 
 
@@ -334,7 +339,7 @@ def main() -> int:
         ],
         *_speech_options(),
         *_gui_options(),
-        *_icon_options(),
+        *_asset_options(),
         str(ROOT / "launcher.py"),
     ]
     print(" ".join(command))

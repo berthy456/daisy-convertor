@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import re
 import shutil
 import struct
@@ -9,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from daisy2telmi import audio, images
 from daisy2telmi.cli import CAPTION_FORMATS, CARD_FORMATS
@@ -111,25 +113,41 @@ CAPTION = "you will need to assess the unique set of potential hazards in your a
 
 
 def test_a_caption_is_lettered_at_the_largest_size_the_screen_holds() -> None:
-    scale, lines = images._caption_fit(CAPTION, 640, 480)
+    size, lines = images._caption_fit(CAPTION, 640, 480)
     margin = images._layout(640)[0]
+    font = images._typeface(size)
     assert len(lines) > 1
-    assert all(len(line) * scale * 6 <= 640 - 2 * margin for line in lines)
-    assert (len(lines) - 1) * images.line_rows(scale) + 7 * scale <= 480 - 2 * margin
+    assert all(font.getlength(line) <= 640 - 2 * margin for line in lines)
+    assert images._block(lines, font) <= 480 - 2 * margin
     # A shorter sentence of the same words is drawn bigger, not in more lines.
     bigger, fewer = images._caption_fit("prepare for one", 640, 480)
-    assert bigger > scale
+    assert bigger > size
     assert len(fewer) < len(lines)
 
 
 def test_a_caption_keeps_every_word_of_the_sentence() -> None:
-    assert " ".join(images.caption_lines(CAPTION, 320, 212)) == CAPTION.upper()
+    assert " ".join(images.caption_lines(CAPTION, 320, 212)) == CAPTION
+
+
+def test_a_caption_is_written_in_the_words_the_book_used() -> None:
+    """A card's grid font has no lower case and no accents; a sentence is read at a
+    size where that is not enough, so it keeps both."""
+    lines = images.caption_lines("Elle ouvrit la porte et découvrit une salle immense.", 320, 212)
+    assert " ".join(lines) == "Elle ouvrit la porte et découvrit une salle immense."
+    assert any(character.islower() for line in lines for character in line)
+
+
+def test_the_caption_font_letters_every_language_the_app_offers() -> None:
+    font = images._typeface(24)
+    for text in ("é è à ç œ « ’ —", "ü ö ß ñ ¿ ¡", "ş ı ğ ç", "0123456789"):
+        assert images._letterable(font, text) == text, text
 
 
 def test_a_sentence_too_long_for_the_screen_keeps_the_lines_it_has_room_for() -> None:
     lines = images.caption_lines("you can prepare for one by making a first aid kit. " * 40, 320, 212)
     assert lines
-    assert len(lines) <= (212 - 2 * images._layout(320)[0]) // images.line_rows(1)
+    font = images._typeface(images.CAPTION_MIN_SIZE)
+    assert images._block(lines, font) <= 212 - 2 * images._layout(320)[0]
 
 
 def test_a_sentence_the_font_cannot_write_gets_no_caption() -> None:
@@ -137,8 +155,12 @@ def test_a_sentence_the_font_cannot_write_gets_no_caption() -> None:
     assert images.caption_lines("", 640, 480) == []
 
 
-def test_wrap_lines_cuts_a_word_too_long_for_the_line() -> None:
-    assert images.wrap_lines("ANTIDISESTABLISHMENTARIANISM", 10) == ["ANTIDISEST", "ABLISHMENT", "ARIANISM"]
+def test_the_wrap_cuts_a_word_wider_than_the_line() -> None:
+    font = images._typeface(20)
+    lines = images._wrap("antidisestablishmentarianism", font, 60)
+    assert "".join(lines) == "antidisestablishmentarianism"
+    assert len(lines) > 1
+    assert all(font.getlength(line) <= 60 for line in lines)
 
 
 def test_the_caption_picture_is_the_screen_it_shows_the_sentence_on() -> None:
@@ -150,22 +172,44 @@ def test_the_caption_picture_is_the_screen_it_shows_the_sentence_on() -> None:
 def test_a_caption_fits_the_screen_of_every_machine_that_gets_one() -> None:
     for player in CAPTION_FORMATS:
         scene, _ = images.screen(player)
-        scale, lines = images._caption_fit(CAPTION, *scene)
+        size, lines = images._caption_fit(CAPTION, *scene)
         assert lines, player
-        assert (len(lines) - 1) * images.line_rows(scale) + 7 * scale <= scene[1] - 2 * images._layout(scene[0])[0], player
+        assert images._block(lines, images._typeface(size)) <= scene[1] - 2 * images._layout(scene[0])[0], player
 
 
 def test_the_lines_of_a_small_caption_stay_apart() -> None:
     """Big lettering has its own height of air under it; small lettering gets a floor,
     or a tall sentence reads as one solid block of words."""
-    assert images.line_rows(8) == 7 * 8 + 8
-    assert images.line_rows(2) == 7 * 2 + images.CAPTION_LINE_GAP
+    big, small = images._typeface(64), images._typeface(10)
+    assert images.line_pitch(big) == sum(big.getmetrics()) + 8
+    assert images.line_pitch(small) == sum(small.getmetrics()) + images.CAPTION_LINE_GAP
 
 
-def test_the_caption_grid_draws_the_words_and_nothing_else() -> None:
+def test_the_caption_picture_is_the_words_on_the_card_ground() -> None:
     """A caption is the sentence on the card's own ground: no cover, no number."""
-    assert {cell for line in images._caption_grid("prepare for one", 640, 480) for cell in line} == {0, 1, 2}
-    assert images._caption_grid("これは", 640, 480)[0] == bytearray(640)
+    ground = images._rgb(images._palette("colour")["background"])
+    ink = images._rgb(images._palette("colour")["ink"])
+    drawn = Image.open(io.BytesIO(images.caption_png("prepare for one", 640, 480)))
+    assert drawn.mode == "RGB"
+    assert {colour for _, colour in drawn.getcolors(maxcolors=100000)} == {ground, ink}
+
+    blank = Image.open(io.BytesIO(images.caption_png("これは", 640, 480)))
+    assert blank.getcolors(maxcolors=100000) == [(640 * 480, ground)]
+
+
+def test_a_caption_picture_is_light_enough_for_a_thousand_of_them() -> None:
+    """A book cut at sentences writes one picture per sentence, and the machine
+    carries every one of them beside the audio."""
+    for player in CAPTION_FORMATS:
+        scene, _ = images.screen(player)
+        assert len(images.caption_png(CAPTION, *scene)) < 20_000, player
+
+
+def test_the_caption_font_travels_inside_the_package() -> None:
+    """The sentence pictures are drawn with it, and a binary that lost it would draw
+    nothing at all."""
+    assert images.FONT_FILE.read_bytes()[:4] in (b"\x00\x01\x00\x00", b"true", b"ttcf")
+    assert "SIL Open Font License" in (images.FONT_FILE.parent / "Arimo-OFL.txt").read_text(encoding="utf-8")
 
 
 def test_the_crop_preview_keeps_the_players_ratio() -> None:

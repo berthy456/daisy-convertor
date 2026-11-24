@@ -129,9 +129,11 @@ A Telmi story has no night-mode flag: the player's night mode takes the story al
 
 `--captions` draws each part's own words as its picture and puts it on that part's stage, so the screen reads the sentence while its audio plays. The card keeps the cover; only the playing part goes plain.
 
-The whole sentence is drawn, at the largest lettering the screen still holds: the size is found by trying the largest and stepping down until every line fits. The air between two lines grows with the lettering but never below 4 pixels, so a tall sentence at small lettering does not read as one solid block. A sentence too tall even at the smallest lettering keeps the lines the screen has room for. Each picture is a PNG of 2.4–6.2 KB: a 569-sentence book's whole `images/` folder, cards included, is 6.3 MB.
+The whole sentence is drawn, at the largest lettering the screen still holds: the size is found by trying the largest and stepping down until every line fits. The air between two lines grows with the lettering but never below 4 pixels, so a tall sentence at small lettering does not read as one solid block. A sentence too tall even at the smallest lettering keeps the lines the screen has room for. Each picture is a PNG of 0.6–3.7 KB on Flam and 1.6–10.3 KB on Telmi: a 569-sentence book's whole `images/` folder, cards included, is 4.4 MB on Flam and 6.4 MB on Telmi.
 
-Only a Telmi or a Flam screen is big enough to read a sentence on — a Lunii's is not, and a Merlin card has none — and the cut must be at sentences, because one picture per part is only worth drawing when each part is one sentence. Asking for captions on another format or another cut stops the run rather than writing a story that shows nothing. The desktop draws the words with the same 5x7 bitmap font as the cards, so a Chinese or Arabic pack gets no caption pictures there; the web page letters them with the browser's own font.
+Only a Telmi or a Flam screen is big enough to read a sentence on — a Lunii's is not, and a Merlin card has none — and the cut must be at sentences, because one picture per part is only worth drawing when each part is one sentence. Asking for captions on another format or another cut stops the run rather than writing a story that shows nothing.
+
+The desktop letters the words with Arimo, a TrueType font bundled in `src/daisy2telmi/assets` under the SIL Open Font Licence: it has lower case as well as upper, and the accents the Latin-script languages write with. The card number keeps the 5x7 bitmap font. Arimo is Latin too, so a Chinese or Arabic pack gets no caption pictures; the web page letters them with the browser's own font and draws them.
 
 ### Lunii `.plain.pk`
 
@@ -196,7 +198,7 @@ The web page writes the same folder, with the same four playlists and the same l
 
 ## Cover
 
-ffmpeg crops the cover to `640x480` for `title.png` and every card, and to `512x512` for `cover.png`. The card text is drawn by the converter, not by ffmpeg: Homebrew's ffmpeg has no `drawtext`, so `src/daisy2telmi/images.py` carries a 5x7 bitmap font and ffmpeg only composites the result. The font is Latin, so Chinese and Arabic cards show the number alone; the spoken card still says the word.
+ffmpeg crops the cover to `640x480` for `title.png` and every card, and to `512x512` for `cover.png`. The card text is drawn by the converter, not by ffmpeg: Homebrew's ffmpeg has no `drawtext`, so `src/daisy2telmi/images.py` draws the cards with a 5x7 bitmap font and the sentence pictures with the bundled Arimo, and ffmpeg only composites the result. The font is Latin, so Chinese and Arabic cards show the number alone; the spoken card still says the word.
 
 The GUI looks a cover up by itself as soon as a pack is picked or dropped, and never replaces one already typed. The web page does the same once it has read the pack. Both keep a link that opens a Google image search for the pack's title, and both take a cover from a file or from a link. Both draw one frame at the chosen player's ratio over the cover, moved by dragging, by the slider, the wheel or the arrow keys. The frame's place travels with the conversion: `images.crop_view` carries it as a focus point, and the desktop keeps it until the cover, the player or the zoom changes. Open Library is asked rather than isbndb.com because it needs no key and answers browser requests.
 

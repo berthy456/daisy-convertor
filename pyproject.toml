@@ -5,7 +5,7 @@ description = "Convert a DAISY 2.02, DAISY 3, text-only DAISY or EPUB book into 
 requires-python = ">=3.11"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
-dependencies = ["lxml>=4.9"]
+dependencies = ["lxml>=4.9", "pillow>=10"]
 
 [project.optional-dependencies]
 gui = ["tkinterdnd2>=0.4"]
@@ -22,8 +22,9 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-# The window draws this; PyInstaller unpacks the same file next to the module.
-daisy2telmi = ["assets/*.png"]
+# The window draws the icons and the caption font; PyInstaller unpacks the same
+# files next to the module. The font's own licence travels with it.
+daisy2telmi = ["assets/*.png", "assets/*.ttf", "assets/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

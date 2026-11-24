@@ -1,13 +1,15 @@
 """Scene images: placeholders, and a user's cover cropped into Telmi's sizes.
 
-ffmpeg scales, crops and composites; the chapter number is drawn here with a 5x7
-font, so the converter needs no image library and no font file. Languages whose
-script the font cannot write (Chinese, Arabic) get the number on its own, which
-needs no letters to be legible.
+ffmpeg scales, crops and composites. A card's number is drawn here with a 5x7 grid
+font, so a card needs no image library; a sentence is drawn with a real typeface
+bundled in assets, because a small screen forces a size at which a grid font is no
+longer readable. Languages whose script neither font can write (Chinese, Arabic)
+get the number on its own, which needs no letters to be legible.
 """
 
 from __future__ import annotations
 
+import io
 import shutil
 import struct
 import subprocess
@@ -15,6 +17,8 @@ import tempfile
 import zlib
 from pathlib import Path
 from typing import Sequence
+
+from PIL import Image, ImageDraw, ImageFont
 
 from .audio import ffmpeg_failure, require_ffmpeg
 from .i18n import language
@@ -365,83 +369,132 @@ def card_layer_png(
 # A sentence's own picture: the whole of it, at the largest lettering the screen
 # still holds. The screen is small, so the size is found by trying the largest and
 # stepping down until every line of the sentence fits on it.
-CAPTION_MAX_SCALE = 8
-CAPTION_MIN_COLUMNS = 8
+CAPTION_MAX_SIZE = 64
+CAPTION_MIN_SIZE = 10
 # The air between two lines of a caption grows with the lettering, but never below
 # a few pixels: at the small lettering a tall sentence needs, one pixel of air reads
 # as one solid block of words.
 CAPTION_LINE_GAP = 4
 
+# A sentence needs letterforms of its own width, and lower case as well as upper,
+# to be read at the size a small screen forces on it. Arimo is metric compatible
+# with Arial and carries the SIL Open Font Licence, whose text sits beside it in
+# assets; that licence lets the font travel inside the binaries.
+FONT_FILE = Path(__file__).resolve().parent / "assets" / "Arimo.ttf"
+# A font answers a character it has no glyph for with its own .notdef box, which is
+# the same picture for every character it cannot write.
+_NOTDEF = "￿"
 
-def line_rows(scale: int) -> int:
-    """How many pixel rows one line of a caption takes: its glyph and the air under it."""
-    return 7 * scale + max(scale, CAPTION_LINE_GAP)
+_SIZES: dict[int, ImageFont.FreeTypeFont] = {}
+_GLYPHS: dict[str, bool] = {}
 
 
-def wrap_lines(text: str, columns: int) -> list[str]:
-    """`text` in lines no wider than `columns`; a word longer than that is cut."""
+def _typeface(size: int) -> ImageFont.FreeTypeFont:
+    """The caption font at one pixel size, loaded once."""
+    found = _SIZES.get(size)
+    if found is None:
+        found = ImageFont.truetype(str(FONT_FILE), size)
+        _SIZES[size] = found
+    return found
+
+
+def _letterable(font: ImageFont.FreeTypeFont, text: str) -> str:
+    """`text` with every character the font has no glyph for turned into a space."""
+    blank = bytes(font.getmask(_NOTDEF))
+    kept = []
+    for character in text:
+        known = _GLYPHS.get(character)
+        if known is None:
+            known = bytes(font.getmask(character)) != blank
+            _GLYPHS[character] = known
+        kept.append(character if known else " ")
+    return "".join(kept)
+
+
+def line_pitch(font: ImageFont.FreeTypeFont) -> int:
+    """How many pixel rows one line of a caption takes: its lettering and the air under it."""
+    ascent, descent = font.getmetrics()
+    return ascent + descent + max(CAPTION_LINE_GAP, round(font.size / 8))
+
+
+def _block(lines: list[str], font: ImageFont.FreeTypeFont) -> int:
+    """The height a caption's lines take on the screen."""
+    return (len(lines) - 1) * line_pitch(font) + sum(font.getmetrics())
+
+
+def _wrap(text: str, font: ImageFont.FreeTypeFont, room: int) -> list[str]:
+    """`text` in lines no wider than `room`; a word wider than that is cut."""
     lines: list[str] = []
     line = ""
     for word in text.split():
-        while len(word) > columns:
-            if line:
-                lines.append(line)
-                line = ""
-            lines.append(word[:columns])
-            word = word[columns:]
-        if not line:
-            line = word
-        elif len(line) + 1 + len(word) <= columns:
+        if line and font.getlength(f"{line} {word}") <= room:
             line = f"{line} {word}"
-        else:
+            continue
+        if line:
             lines.append(line)
-            line = word
+            line = ""
+        while font.getlength(word) > room:
+            taken = 1
+            while taken < len(word) and font.getlength(word[: taken + 1]) <= room:
+                taken += 1
+            lines.append(word[:taken])
+            word = word[taken:]
+        line = word
     if line:
         lines.append(line)
     return lines
 
 
 def _caption_fit(text: str, width: int, height: int) -> tuple[int, list[str]]:
-    """The largest lettering size the whole sentence fits at, and its lines."""
-    drawable = " ".join(_drawable(text).split())
-    if not drawable:
-        return 1, []
+    """The largest lettering size the whole sentence fits at, and its lines.
+
+    A bigger size needs more lines and taller ones, so the sizes are searched by
+    halving: the largest one that holds is found in a handful of tries, which
+    matters when a book has a thousand sentences to letter.
+    """
     margin = _layout(width)[0]
     room_w, room_h = width - 2 * margin, height - 2 * margin
-    for scale in range(CAPTION_MAX_SCALE, 1, -1):
-        columns = room_w // (scale * 6)
-        if columns < CAPTION_MIN_COLUMNS:
-            continue
-        lines = wrap_lines(drawable, columns)
-        if (len(lines) - 1) * line_rows(scale) + 7 * scale <= room_h:
-            return scale, lines
+    best: tuple[int, list[str]] | None = None
+    low, high = CAPTION_MIN_SIZE, CAPTION_MAX_SIZE
+    while low <= high:
+        size = (low + high) // 2
+        font = _typeface(size)
+        lines = _wrap(_letterable(font, text), font, room_w)
+        if lines and _block(lines, font) <= room_h:
+            best = size, lines
+            low = size + 1
+        else:
+            high = size - 1
+    if best is not None:
+        return best
     # Nothing above the smallest size held: the smallest size, and only the lines
     # the screen has room for.
-    return 1, wrap_lines(drawable, max(CAPTION_MIN_COLUMNS, room_w // 6))[: max(1, room_h // line_rows(1))]
+    font = _typeface(CAPTION_MIN_SIZE)
+    lines = _wrap(_letterable(font, text), font, room_w)
+    room = max(1, 1 + (room_h - sum(font.getmetrics())) // line_pitch(font))
+    return CAPTION_MIN_SIZE, lines[:room]
 
 
 def caption_lines(text: str, width: int, height: int) -> list[str]:
     """The sentence as one screen will show it, at the largest size that holds it.
 
-    A sentence the built-in font cannot write gets no lines at all: the audio is
-    still there, only the words are not something we can draw.
+    A sentence the caption font has no letters for gets no lines at all: the audio
+    is still there, only the words are not something we can draw.
     """
     return _caption_fit(text, width, height)[1]
 
 
-def _caption_grid(text: str, width: int, height: int) -> list[bytearray]:
-    """One sentence, whole, each line centred and the block centred top to bottom."""
-    scale, lines = _caption_fit(text, width, height)
-    ink = [bytearray(width) for _ in range(height)]
-    if not lines:
-        return ink
-    margin = _layout(width)[0]
-    block = (len(lines) - 1) * line_rows(scale) + 7 * scale
-    top = max(margin, (height - block) // 2)
-    for offset, line in enumerate(lines):
-        rows = glyph_rows(line)
-        _stamp(ink, (width - len(rows[0]) * scale) // 2, top + offset * line_rows(scale), rows, scale, 1)
-    return ink
+def _photo_png(canvas: Image.Image) -> bytes:
+    """A canvas Pillow drew, written as the PNG the machine will read."""
+    buffer = io.BytesIO()
+    canvas.save(buffer, "PNG", optimize=True)
+    return buffer.getvalue()
+
+
+# A caption is filled from a mask rather than drawn in colour: the words keep one
+# colour on one ground, as a card's do, and a book carries a thousand of these
+# pictures. A screen reads a hard letter edge as well as a soft one.
+_HARD_EDGE = [0 if level < 128 else 255 for level in range(256)]
 
 
 def caption_png(
@@ -452,7 +505,25 @@ def caption_png(
     negative: bool = False,
 ) -> bytes:
     """One sentence on its own ground: no cover behind it, nothing but the words."""
-    return _grid_png(_caption_grid(text, width, height), _palette(style, negative)["background"], style, negative)
+    palette = _palette(style, negative)
+    canvas = Image.new("RGB", (width, height), _rgb(palette["background"]))
+    size, lines = _caption_fit(text, width, height)
+    if not lines:
+        return _photo_png(canvas)
+    font = _typeface(size)
+    pitch = line_pitch(font)
+    top = max(_layout(width)[0], (height - _block(lines, font)) // 2)
+    ground = Image.new("L", (width, height), 0)
+    drawn = ImageDraw.Draw(ground)
+    for offset, line in enumerate(lines):
+        drawn.text(
+            ((width - round(font.getlength(line))) // 2, top + offset * pitch),
+            line,
+            font=font,
+            fill=255,
+        )
+    canvas.paste(_rgb(palette["ink"]), (0, 0), ground.point(_HARD_EDGE))
+    return _photo_png(canvas)
 
 
 def card_label(

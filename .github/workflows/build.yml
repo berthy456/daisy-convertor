@@ -106,6 +106,13 @@ jobs:
           dist/daisy-convertor gon-ruby-mp3.zip /tmp/smoke --announce prompt --language fr
           count=$(ls /tmp/smoke/*/audios/c*.mp3 | wc -l)
           [ "$count" -eq 6 ] || { echo "expected 6 spoken cards, found $count"; exit 1; }
+      # A sentence picture is drawn with a font PyInstaller has to be told about, so
+      # a build that dropped it would still convert and still play — with blank screens.
+      - name: Smoke test the sentence pictures
+        run: |
+          dist/daisy-convertor gon-ruby-mp3.zip /tmp/captions --cut sentence --captions --announce off
+          count=$(ls /tmp/captions/*/images/s*.png | wc -l)
+          [ "$count" -gt 0 ] || { echo "the binary drew no sentence picture"; exit 1; }
       - name: Package the .deb
         run: |
           arch=$(dpkg --print-architecture)

@@ -2453,10 +2453,10 @@ class Emulator:
     sizes that machine's screen has.
 
     The face is drawn rather than widgeted, because Tk's buttons are rectangles and
-    the teller's keys are round: the screen on its bezel, the wheel's ring beside it,
-    and along the bottom the two side buttons, the play triangle, the pause bars and
-    the card slot. A chapter keeps the card it was read from on the screen for a few
-    seconds, then the screen goes dark until a key is pressed.
+    the teller's keys are round: the screen on its bezel, the speaker's grill beside
+    it, and along the bottom the two chapter keys, Back, Play/pause and OK. A chapter
+    keeps the card it was read from on the screen for a few seconds, then the screen
+    goes dark until a key is pressed.
     """
 
     # The screen is drawn at the width every player's card can be blown up to by
@@ -2471,13 +2471,13 @@ class Emulator:
     SPACING = 96
     CAPTION = 24
 
-    # The Telmi's side buttons step through the clip; the Lunii's wheel moves between
-    # the stages of a run.
-    SEEK = 10
     # How long a chapter keeps its card on the screen before the screen goes dark.
     CARD_HOLD = 4000
 
     KEYS = ("up", "down", "ok", "pause", "home")
+    # The words on the face are the player's, not the graph's: the key the graph calls
+    # `home` is the way back, and the one that holds a clip is Play/pause.
+    CAPTIONS = {"ok": "emu_ok", "pause": "emu_play", "home": "emu_back"}
 
     FACE_WIDTH = PAD * 2 + SCREEN_WIDTH + GAP + RING * 2
     FACE_HEIGHT = PAD * 2 + SCREEN_HEIGHT + GAP + DIAL * 2 + CAPTION
@@ -2585,26 +2585,27 @@ class Emulator:
             outline=DIAL_EDGE,
             width=6,
         )
-        self.face.create_oval(
-            ring_x - self.RING // 2,
-            ring_y - self.RING // 2,
-            ring_x + self.RING // 2,
-            ring_y + self.RING // 2,
-            fill=MACHINE,
-            outline=DIAL_EDGE,
-        )
+        # The speaker's grill: holes on a grid, kept inside the circle they are drilled in.
+        reach = self.RING - 12
+        for dy in range(-reach, reach + 1, 12):
+            for dx in range(-reach, reach + 1, 12):
+                if dx * dx + dy * dy <= reach * reach:
+                    self.face.create_oval(
+                        ring_x + dx - 3, ring_y + dy - 3, ring_x + dx + 3, ring_y + dy + 3,
+                        fill=SLOT, outline=SLOT,
+                    )
 
         first = (self.FACE_WIDTH - (len(self.KEYS) - 1) * self.SPACING) / 2
         y = self.PAD + self.SCREEN_HEIGHT + self.GAP + self.DIAL
         for column, button in enumerate(self.KEYS):
-            label = None if button in ("up", "down") else self.t(f"emu_{button}")
+            label = None if button in ("up", "down") else self.t(self.CAPTIONS[button])
             self._key(button, first + column * self.SPACING, y, label)
-        # The two side keys are one pair with one word: the Lunii's wheel, or the
-        # Telmi's seek, which is what the machine's own face says.
+        # The two side keys are one pair with one word: they step from one chapter to
+        # the next, which is what both machines do with them.
         self.pair_caption = self.face.create_text(
             first + self.SPACING / 2,
             y + self.DIAL + 12,
-            text=self.t("emu_seek" if self.story.machine == "telmi" else "emu_wheel"),
+            text=self.t("emu_chapters"),
             fill=MUTED,
             font=("TkDefaultFont", 9),
         )
@@ -2616,28 +2617,54 @@ class Emulator:
             y - self.DIAL,
             x + self.DIAL,
             y + self.DIAL,
-            fill=SLOT if button == "home" else DIAL,
-            outline=SLOT if button == "home" else DIAL_EDGE,
+            fill=DIAL,
+            outline=DIAL_EDGE,
             tags=(group,),
         )
         icons = []
         if button == "home":
-            # The card slot on the machine's face: dark, and rectangular.
+            # Back, as the road's own u-turn: up on one side, over, and down the other.
             icons.append(
-                self.face.create_rectangle(x - 16, y - 9, x + 16, y + 9, fill=SLOT_INK, outline=SLOT_INK, tags=(group,))
+                self.face.create_line(x + 17, y - 2, x + 17, y + 14, width=5, fill=DIAL_INK, tags=(group,))
+            )
+            icons.append(
+                self.face.create_arc(
+                    x - 11, y - 14, x + 17, y + 10, start=0, extent=180, style="arc",
+                    width=5, outline=DIAL_INK, tags=(group,),
+                )
+            )
+            icons.append(
+                self.face.create_polygon(
+                    (x - 17, y - 2), (x - 5, y - 2), (x - 11, y + 11),
+                    fill=DIAL_INK, outline=DIAL_INK, tags=(group,),
+                )
             )
         elif button == "pause":
-            for bar in (-11, 3):
+            # Play and pause on one key: the triangle, and the two bars beside it.
+            icons.append(
+                self.face.create_polygon(
+                    (x - 16, y - 12), (x - 16, y + 12), (x - 3, y),
+                    fill=DIAL_INK, outline=DIAL_INK, tags=(group,),
+                )
+            )
+            for bar in (5, 13):
                 icons.append(
                     self.face.create_rectangle(
-                        x + bar, y - 13, x + bar + 8, y + 13, fill=DIAL_INK, outline=DIAL_INK, tags=(group,)
+                        x + bar, y - 12, x + bar + 6, y + 12, fill=DIAL_INK, outline=DIAL_INK, tags=(group,)
                     )
                 )
+        elif button == "ok":
+            # The tick of a checkbox: one line, bent.
+            icons.append(
+                self.face.create_line(
+                    x - 13, y + 1, x - 4, y + 12, x + 14, y - 11,
+                    width=6, fill=DIAL_INK, capstyle="projecting", joinstyle="round", tags=(group,),
+                )
+            )
         else:
             points = {
                 "up": [(x, y - 14), (x - 15, y + 10), (x + 15, y + 10)],
                 "down": [(x, y + 14), (x - 15, y - 10), (x + 15, y - 10)],
-                "ok": [(x - 11, y - 14), (x - 11, y + 14), (x + 15, y)],
             }[button]
             icons.append(self.face.create_polygon(*points, fill=DIAL_INK, outline=DIAL_INK, tags=(group,)))
         caption = 0
@@ -2706,9 +2733,10 @@ class Emulator:
         if stage is None:
             return
         clip = self.sound is not None
-        wheel = (self.story.machine == "telmi" and clip) or stage.controls.wheel
-        self._paint("up", wheel)
-        self._paint("down", wheel)
+        # The side pair are the chapter keys: each is lit where the book has a chapter
+        # on that side of this one, and on a Lunii where its card left the wheel on.
+        self._paint("up", stage.controls.wheel or bool(emulator.chapter_step(self.story, stage.id, -1)))
+        self._paint("down", stage.controls.wheel or bool(emulator.chapter_step(self.story, stage.id, 1)))
         self._paint("ok", stage.controls.ok)
         self._paint("home", stage.controls.home)
         self._paint("pause", clip, playing=self.player is not None)
@@ -2721,12 +2749,16 @@ class Emulator:
             "on": (DIAL, DIAL_EDGE, DIAL_INK),
             "playing": (ACCENT, ACCENT, "#ffffff"),
         }[key["state"]]
-        if button == "home":
-            fill, ink = (SLOT, SLOT_INK) if on else (OFF, OFF_INK)
-            edge = fill
         self.face.itemconfigure(key["dial"], fill=fill, outline=edge)
         for icon in key["icons"]:
-            self.face.itemconfigure(icon, fill=ink, outline=ink)
+            # A line is coloured by `fill` and an arc by `outline`; a shape takes both.
+            kind = self.face.type(icon)
+            if kind == "arc":
+                self.face.itemconfigure(icon, outline=ink)
+            elif kind == "line":
+                self.face.itemconfigure(icon, fill=ink)
+            else:
+                self.face.itemconfigure(icon, fill=ink, outline=ink)
 
     def _play(self) -> None:
         if self.sound is None:
@@ -2748,16 +2780,6 @@ class Emulator:
             self._play()
         self._light(self.story.stages.get(self.current or ""))
 
-    def _seek(self, step: float) -> None:
-        if self.sound is None:
-            return
-        if self.player is not None:
-            self.heard += time.monotonic() - self.started
-            self._stop()
-        self.heard = max(0.0, self.heard + step)
-        self._play()
-        self._light(self.story.stages.get(self.current or ""))
-
     def _press(self, button: str) -> None:
         if self.current is None:
             return
@@ -2767,9 +2789,6 @@ class Emulator:
         self._cancel()
         if button == "pause":
             self._pause()
-            return
-        if self.story.machine == "telmi" and button in ("up", "down"):
-            self._seek(-self.SEEK if button == "up" else self.SEEK)
             return
         nxt = emulator.walk(self.story, self.current, button)
         if nxt and nxt != self.current:

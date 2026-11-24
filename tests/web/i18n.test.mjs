@@ -20,11 +20,9 @@ test("every language translates every key", () => {
 // and `card_number_one` is the digits alone;
 // Telmi, Lunii, the Flam and the Merlin are the players' names, which no language
 // translates, and so are the two search engines; "beta" and "Zoom" are the words
-// the Latin-script languages all borrow as is; so do the machine's "OK" and
-// "Pause", which French and German write
-// the English way while Italian, Spanish, Portuguese and Dutch write their own, and
-// its "Home", which Italian and Dutch leave English where French and the Iberian
-// languages translate it.
+// the Latin-script languages all borrow as is; so does the machine's "OK", which the
+// five Latin-script dictionaries write as it is, while Arabic, Chinese and Turkish
+// write their own.
 // Anything else that matches was left untranslated.
 test("no language is left in English by accident", () => {
   const allowed = new Set([
@@ -41,8 +39,6 @@ test("no language is left in English by accident", () => {
     "cover_search_google",
     "crop_zoom",
     "emu_ok",
-    "emu_pause",
-    "emu_home",
   ]);
   for (const code of LANGUAGES) {
     if (code === "en") continue;

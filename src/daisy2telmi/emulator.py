@@ -54,6 +54,10 @@ class Story:
     start: str
     stages: dict[str, Stage]
     folder: Path
+    # The chapter cards in the order the book tells them, and each card's own clip.
+    # The teller's graph names them; STUdio's wheel run is already a list of stages.
+    chapters: tuple[str, ...] = ()
+    clips: tuple[str | None, ...] = ()
 
 
 def find_story(where: Path) -> Path | None:
@@ -172,12 +176,16 @@ def _read_telmi(root: Path, graph: Path) -> Story:
     start = target(nodes.get("startAction"))
     if start not in stages:
         raise EmulatorError("nodes.json says where to start, and this one says nowhere")
+    listed = next((run for run in runs.values() if start in run), (start,))
+    chapters = tuple(stage_id for stage_id in listed if stage_id in stages)
     return Story(
         title=_title(root) or root.name,
         machine="telmi",
         start=start,
         stages=stages,
         folder=root,
+        chapters=chapters,
+        clips=tuple(stages[stage_id].ok for stage_id in chapters),
     )
 
 
@@ -241,6 +249,20 @@ def _title(root: Path) -> str:
     return str(listed.get("title") or "")
 
 
+def chapter_step(story: Story, stage_id: str, step: int) -> str | None:
+    """The neighbouring chapter, of the kind the player is on: a card steps to a card,
+    a chapter's clip to the next chapter's clip.
+
+    The teller's graph has no wheel to scroll a run of stages, so its side buttons
+    need the book's own order to answer "which chapter is next".
+    """
+    listed = story.chapters if stage_id in story.chapters else story.clips
+    if stage_id not in listed:
+        return None
+    at = listed.index(stage_id) + step
+    return listed[at] if 0 <= at < len(listed) else None
+
+
 def walk(story: Story, stage_id: str, button: str) -> str | None:
     """Where a button leads. `next` is not a button: it is the end of an autoplayed
     clip, which forces the OK transition whether or not the OK button is switched on.
@@ -255,9 +277,11 @@ def walk(story: Story, stage_id: str, button: str) -> str | None:
     if button == "home":
         return stage.home if stage.controls.home else None
     if button in ("up", "down"):
+        step = 1 if button == "down" else -1
+        if story.chapters:
+            return chapter_step(story, stage_id, step)
         if not stage.controls.wheel or stage_id not in stage.wheel:
             return None
-        step = 1 if button == "down" else -1
         at = stage.wheel.index(stage_id) + step
         return stage.wheel[at] if 0 <= at < len(stage.wheel) else None
     return None

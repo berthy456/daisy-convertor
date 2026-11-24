@@ -100,19 +100,21 @@ def test_a_move_past_the_end_of_its_run_leads_nowhere(tmp_path: Path) -> None:
     assert story.stages["m0"].ok is None
 
 
-def test_the_wheel_stops_at_the_ends_of_its_run(tmp_path: Path) -> None:
-    """A wheel scrolls the run of stages one action holds, and does not wrap round."""
-    stages = {
-        f"m{k}": {"image": f"m{k}.png", "audio": None, "ok": None, "home": None,
-                  "control": {"ok": False, "home": False, "wheel": True}}
-        for k in range(3)
-    }
-    story = emulator.read_story(write_story(tmp_path / "story", stages, {"m": [{"stage": f"m{k}"} for k in range(3)]}))
+def test_the_side_keys_step_from_one_chapter_to_the_next(tmp_path: Path) -> None:
+    """The teller's graph has no wheel to scroll a run of stages, so its two side keys
+    answer from the book's own order: a card steps to a card, a chapter's clip to the
+    next chapter's clip, and neither wraps round."""
+    story = emulator.read_story(write_story(tmp_path / "story", CHAPTERS, MENU))
 
-    assert story.stages["m1"].wheel == ("m0", "m1", "m2")
-    assert emulator.walk(story, "m1", "down") == "m2"
-    assert emulator.walk(story, "m2", "down") is None
+    assert story.chapters == ("m0", "m1"), "the chapter cards, in the order they are told"
+    assert story.clips == ("s0", "s1"), "and each card's own clip"
+    assert emulator.walk(story, "m0", "down") == "m1"
+    assert emulator.walk(story, "m1", "up") == "m0"
+    assert emulator.walk(story, "s0", "down") == "s1"
+    assert emulator.walk(story, "s1", "up") == "s0"
     assert emulator.walk(story, "m0", "up") is None
+    assert emulator.walk(story, "m1", "down") is None
+    assert emulator.chapter_step(story, "nope", 1) is None, "a stage that is no chapter has no neighbour"
 
 
 def test_a_folder_that_holds_no_story_says_so(tmp_path: Path) -> None:
@@ -196,7 +198,9 @@ def test_a_studio_button_is_on_only_when_its_card_says_so(tmp_path: Path) -> Non
     story = emulator.read_story(write_studio(tmp_path / "pack", STUDIO_CARDS, STUDIO_ACTIONS))
 
     assert emulator.walk(story, "c0ver", "home") is None
-    assert emulator.walk(story, "c0ver", "down") == "ch1pter"
+    assert emulator.walk(story, "c0ver", "down") == "ch1pter", "the wheel scrolls the run its action holds"
+    assert emulator.walk(story, "c0ver", "up") is None, "and stops at the ends of it"
+    assert emulator.walk(story, "ch1pter", "down") is None
     assert emulator.walk(story, "ch1pter", "next") is None, "the last card's OK is null"
     assert emulator.walk(story, "ch1pter", "home") == "c0ver"
 

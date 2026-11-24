@@ -1465,7 +1465,9 @@ def _story_folder(root: Path) -> Path:
     (root / "images").mkdir(parents=True)
     (root / "audios").mkdir()
     (root / "images" / "m0.png").write_bytes(images.placeholder_png(320, 240, style="colour"))
+    (root / "images" / "m1.png").write_bytes(images.placeholder_png(320, 240, style="colour"))
     (root / "audios" / "c0.mp3").write_bytes(b"ID3")
+    (root / "audios" / "c1.mp3").write_bytes(b"ID3")
     (root / "nodes.json").write_text(
         json.dumps(
             {
@@ -1481,12 +1483,30 @@ def _story_folder(root: Path) -> Path:
                     "s0": {
                         "image": None,
                         "audio": "c0.mp3",
-                        "ok": None,
+                        "ok": {"action": "m", "index": 1},
                         "home": {"action": "m", "index": 0},
                         "control": {"ok": False, "home": True, "autoplay": True},
                     },
+                    "m1": {
+                        "image": "m1.png",
+                        "audio": None,
+                        "ok": {"action": "s1", "index": 0},
+                        "home": None,
+                        "control": {"ok": True, "home": True, "autoplay": False},
+                    },
+                    "s1": {
+                        "image": None,
+                        "audio": "c1.mp3",
+                        "ok": None,
+                        "home": {"action": "m", "index": 1},
+                        "control": {"ok": False, "home": True, "autoplay": True},
+                    },
                 },
-                "actions": {"m": [{"stage": "m0"}], "s0": [{"stage": "s0"}]},
+                "actions": {
+                    "m": [{"stage": "m0"}, {"stage": "m1"}],
+                    "s0": [{"stage": "s0"}],
+                    "s1": [{"stage": "s1"}],
+                },
             }
         ),
         encoding="utf-8",
@@ -1511,7 +1531,7 @@ def test_the_emulator_window_walks_the_story_it_is_shown(
     app: gui.App, tmp_path: Path, monkeypatch
 ) -> None:
     """The window reads the folder the last run left and answers with the machine's
-    own buttons: OK moves on, Home goes back."""
+    own buttons: OK moves on, Back goes back."""
     started = _clips(monkeypatch)
     window = gui.Emulator(app, _story_folder(tmp_path / "the book"))
     try:
@@ -1530,12 +1550,19 @@ def test_the_emulator_window_walks_the_story_it_is_shown(
 
 
 def test_the_emulator_keys_carry_the_machine_s_words(app: gui.App, tmp_path: Path) -> None:
-    """The keys are the machine's, so they carry the machine's words: a caption that
-    reads `emu_ok` is a label that never went through the translation. The Telmi's
-    two side buttons seek, the Lunii's are its wheel."""
+    """The keys carry the player's words, not the graph's: the key the graph calls
+    `home` is Back, the one that holds a clip is Play / pause, and the two side keys
+    are the chapter keys. A caption that still reads `emu_ok` is a label that never
+    went through the translation."""
     window = gui.Emulator(app, _story_folder(tmp_path / "the book"))
     try:
-        assert [window.caption(key) for key in ("up", "ok", "pause", "home")] == ["Seek", "OK", "Pause", "Home"]
+        assert [window.caption(key) for key in ("up", "down", "ok", "pause", "home")] == [
+            "Chapters",
+            "Chapters",
+            "OK",
+            "Play / pause",
+            "Back",
+        ]
     finally:
         window._close()
 
@@ -1592,18 +1619,26 @@ def test_pause_holds_the_clip_and_the_next_press_picks_it_up(app: gui.App, tmp_p
         window._close()
 
 
-def test_the_telmi_s_side_buttons_step_through_the_clip(app: gui.App, tmp_path: Path, monkeypatch) -> None:
-    """The Telmi's side buttons are the machine's seek: ten seconds back, ten forward."""
+def test_the_side_keys_step_from_one_chapter_to_the_next(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    """The two side keys are the chapter keys: on a card they step to the neighbouring
+    card, on a chapter's clip to the neighbouring clip, and the key with no chapter on
+    that side is left dark."""
     started = _clips(monkeypatch)
     window = gui.Emulator(app, _story_folder(tmp_path / "the book"))
     try:
-        window._press("ok")
+        assert window.lit("down") and not window.lit("up"), "the first chapter has nothing behind it"
+        window._press("up")
+        assert window.current == "m0"
+
         window._press("down")
-        assert started[-1] == ("c0.mp3", pytest.approx(10, abs=0.5))
+        assert window.current == "m1", "the card steps to the card after it"
+        assert window.lit("up") and not window.lit("down"), "and the last chapter has nothing ahead"
+
+        window._press("ok")
+        assert window.current == "s1"
         window._press("up")
-        window._press("up")
-        assert started[-1] == ("c0.mp3", 0.0), "seeking back past the start stays at the start"
-        assert window.current == "s0", "the side buttons do not move between stages"
+        assert window.current == "s0", "a chapter's clip steps back to the chapter before it"
+        assert [clip for clip, _ in started] == ["c1.mp3", "c0.mp3"]
     finally:
         window._close()
 
@@ -1717,6 +1752,7 @@ def test_the_emulator_opens_the_lunii_archive_not_the_colour_folder(
         card = window.story.stages[window.story.start]
         assert card.image.parts[-2:] == ("assets", "a1.png")
         assert card.image.is_file(), "the archive was let out so its cards can be drawn"
-        assert window.caption("up") == "Wheel", "that machine has a wheel, not a seek"
+        assert window.caption("up") == "Chapters", "the side keys carry the same word on both machines"
+        assert window.lit("up") and window.lit("down"), "the card left its wheel on"
     finally:
         window._close()

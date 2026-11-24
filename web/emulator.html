@@ -20,7 +20,7 @@
           <span data-i18n="language"></span>
           <select id="lang"></select>
         </label>
-        <a class="back" href="./index.html" data-i18n="emu_back"></a>
+        <a class="back" href="./index.html" data-i18n="emu_quit"></a>
       </header>
 
       <section class="card">
@@ -36,56 +36,70 @@
         </div>
         <p id="error" class="error" hidden></p>
 
-        <!-- The machine, drawn after the icon: the screen on the left, the wheel's
-             ring on its right, and along the bottom the two arrows, the play
-             triangle, the pause bars and the card slot. The keys are the story's
-             own: a stage switches them on or off, and a dimmed one does nothing. -->
+        <!-- The machine, drawn after the icon: the screen on the left, the speaker's
+             grill on its right, and along the bottom the two chapter keys, Back,
+             Play/pause and OK. The keys are the story's own: a stage switches them on
+             or off, and a dimmed one does nothing. -->
         <div id="player" class="machine" hidden>
           <p id="story-title" class="story-title"></p>
           <div class="shell">
             <div class="screen">
               <canvas id="screen" width="320" height="240"></canvas>
             </div>
-            <div class="ring" aria-hidden="true"></div>
+            <div class="grill" aria-hidden="true"></div>
             <div class="keys">
               <div class="pair">
-                <button id="up" class="key" type="button" data-i18n-aria="emu_wheel">
+                <button id="up" class="key" type="button" data-i18n-aria="emu_chapters">
                   <span class="dial">
-                    <svg class="wheel-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 3 16h18z" /></svg>
-                    <svg class="seek-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 6 4 12l7 6zM20 6l-7 6 7 6z" /></svg>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 3 16h18z" /></svg>
                   </span>
                 </button>
-                <button id="down" class="key" type="button" data-i18n-aria="emu_wheel">
+                <button id="down" class="key" type="button" data-i18n-aria="emu_chapters">
                   <span class="dial">
-                    <svg class="wheel-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20 3 8h18z" /></svg>
-                    <svg class="seek-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6l7 6-7 6zM13 6l7 6-7 6z" /></svg>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20 3 8h18z" /></svg>
                   </span>
                 </button>
-                <p class="key-caption">
-                  <span class="wheel-text" data-i18n="emu_wheel"></span>
-                  <span class="seek-text" data-i18n="emu_seek"></span>
-                </p>
+                <p class="key-caption" data-i18n="emu_chapters"></p>
               </div>
               <button id="ok" class="key" type="button">
                 <span class="dial">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z" /></svg>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M5 12.5l4.5 4.5L19 7"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="3"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
                 </span>
                 <span class="key-name" data-i18n="emu_ok"></span>
               </button>
               <button id="pause" class="key" type="button">
                 <span class="dial">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h4v16H7zM14 4h4v16h-4z" /></svg>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5v14l10-7zM16 5h2.5v14H16zM20.5 5H23v14h-2.5z" /></svg>
                 </span>
-                <span class="key-name" data-i18n="emu_pause"></span>
+                <span class="key-name" data-i18n="emu_play"></span>
               </button>
               <button id="home" class="key" type="button">
-                <span class="dial slot">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h18v6H3z" /></svg>
+                <span class="dial">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M17 5v8a5 5 0 0 1-10 0v-2"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="3"
+                      stroke-linecap="round"
+                    />
+                    <path d="M2.5 12.5 7 18.5 11.5 12.5z" />
+                  </svg>
                 </span>
-                <span class="key-name" data-i18n="emu_home"></span>
+                <span class="key-name" data-i18n="emu_back"></span>
               </button>
             </div>
           </div>
+          <p class="muted" data-i18n="emu_hint"></p>
           <p class="muted" data-i18n="emu_dimmed"></p>
         </div>
       </section>

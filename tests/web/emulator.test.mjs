@@ -13,7 +13,7 @@ const { readZip } = await import("../../web/zip.js");
 const { buildStoryFiles, buildStoryZip } = await import("../../web/convert.js");
 const { buildStudioZip, buildPlainPk } = await import("../../web/lunii.js");
 const { rle4Bitmap } = await import("../../web/cover.js");
-const { decodeBitmap, formatOf, readStory, walk } = await import("../../web/emulator.js");
+const { chapterStep, decodeBitmap, formatOf, readStory, walk } = await import("../../web/emulator.js");
 const { installCanvasStub } = await import("./canvas-stub.mjs");
 
 installCanvasStub();
@@ -63,8 +63,23 @@ test("the Telmi's audio carries itself on, and its buttons do nothing else", asy
   assert.equal(story.stages.get("s0").controls.autoplay, true);
   assert.equal(walk(story, "s0", "ok"), null, "the OK button is switched off while the chapter plays");
   assert.equal(walk(story, "s0", "next"), "m1", "the end of the clip takes the OK transition anyway");
-  assert.equal(walk(story, "m0", "down"), null, "the Telmi has no wheel: its side buttons seek in the clip");
   assert.equal(walk(story, "m0", "home"), null, "the first card has nowhere behind it");
+});
+
+test("the Telmi's side keys step from one chapter to the next", async () => {
+  const story = await telmiStory();
+
+  assert.deepEqual(story.chapters, ["m0", "m1", "m2", "m3", "m4", "m5"], "the cards, in the order the book tells them");
+  assert.deepEqual(story.clips, ["s0", "s1", "s2", "s3", "s4", "s5"], "and each card's own clip");
+
+  assert.equal(walk(story, "m0", "down"), "m1", "a card steps to the next card");
+  assert.equal(walk(story, "m2", "up"), "m1", "and back to the one before");
+  assert.equal(walk(story, "s2", "down"), "s3", "a chapter steps to the next chapter's clip");
+  assert.equal(walk(story, "s2", "up"), "s1");
+  assert.equal(walk(story, "m0", "up"), null, "the first chapter has none behind it");
+  assert.equal(walk(story, "m5", "down"), null, "and the last has none ahead");
+  assert.equal(chapterStep(story, "m3", 1), "m4");
+  assert.equal(chapterStep(story, "m3", -1), "m2");
 });
 
 test("the Lunii story starts on its cover and the wheel scrolls its chapter cards", async () => {

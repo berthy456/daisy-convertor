@@ -50,25 +50,31 @@ export function formatOf(raw) {
 }
 
 /**
- * The story, however it arrived: {title, machine, start, stages}, each stage
- * {id, image, audio, ok, home, wheel, controls}.
+ * The story, however it arrived: {title, machine, start, stages, chapters, clips},
+ * each stage {id, image, audio, ok, home, wheel, controls}.
  *
  * `wheel` is the list the wheel scrolls through, which is the options of the action
- * the stage belongs to, and holds the stage itself. The Telmi has no wheel at all,
- * so its stories leave that list empty and the player's left and right buttons seek
- * inside the clip instead.
+ * the stage belongs to, and holds the stage itself. `chapters` is the same run seen
+ * as the book sees it — the chapter cards in the order they are told — and `clips`
+ * each card's own audio. The Telmi has no wheel, so its side buttons answer from
+ * those two lists.
  */
 export async function readStory(entries) {
   const files = unwrap(entries);
   const byPath = new Map(files.map((entry) => [entry.name, entry.data]));
+  let story;
   switch (formatOf(files)) {
     case "pk":
-      return readCard(files, byPath);
+      story = readCard(files, byPath);
+      break;
     case "lunii":
-      return readStudio(jsonOf(files, "story.json"), byPath);
+      story = readStudio(jsonOf(files, "story.json"), byPath);
+      break;
     default:
-      return readTelmi(jsonOf(files, "nodes.json"), byPath);
+      story = readTelmi(jsonOf(files, "nodes.json"), byPath);
   }
+  // STUdio's wheel run is already the list of stages the side buttons scroll.
+  return { chapters: [], clips: [], ...story };
 }
 
 /** Telmi's graph: named stages, and actions that hold a run of them. */
@@ -102,7 +108,16 @@ function readTelmi(nodes, byPath) {
   const start = target(nodes.startAction);
   if (!start) throw new Error("nodes.json says where to start, and this one says nowhere");
   const listed = byPath.get("metadata.json");
-  return { title: (listed ? JSON.parse(decodeText(listed)).title : "") || "", machine: "telmi", start, stages };
+  const run = Object.values(runs).find((options) => options.includes(start)) || [start];
+  const chapters = run.filter((id) => stages.has(id));
+  return {
+    title: (listed ? JSON.parse(decodeText(listed)).title : "") || "",
+    machine: "telmi",
+    start,
+    stages,
+    chapters,
+    clips: chapters.map((id) => stages.get(id).ok),
+  };
 }
 
 /** STUdio's graph: UUID'd stages, and action nodes holding their options. */
@@ -226,8 +241,23 @@ function readCard(files, byPath) {
 }
 
 /**
- * Where a button leads. The machine refuses a button its stage switched off, and
- * the wheel stops at the ends of its run rather than wrapping round.
+ * The neighbouring chapter, of the kind the player is on: a card steps to a card, a
+ * chapter's clip to the next chapter's clip.
+ *
+ * The teller's graph has no wheel to scroll a run of stages, so its side buttons
+ * need the book's own order to answer "which chapter is next".
+ */
+export function chapterStep(story, id, step) {
+  const listed = story.chapters.includes(id) ? story.chapters : story.clips;
+  const at = listed.indexOf(id);
+  if (at < 0) return null;
+  const next = at + step;
+  return next >= 0 && next < listed.length ? listed[next] : null;
+}
+
+/**
+ * Where a button leads. The machine refuses a button its stage switched off, and the
+ * wheel stops at the ends of its run rather than wrapping round.
  *
  * `next` is not a button: it is the end of an autoplayed clip, which forces the
  * stage's OK transition whether or not the OK button itself is switched on.
@@ -239,9 +269,11 @@ export function walk(story, id, button) {
   if (button === "ok") return stage.controls.ok ? stage.ok : null;
   if (button === "home") return stage.controls.home ? stage.home : null;
   if (button === "up" || button === "down") {
+    const step = button === "down" ? 1 : -1;
+    if (story.chapters.length) return chapterStep(story, id, step);
     if (!stage.controls.wheel) return null;
     const at = stage.wheel.indexOf(id);
-    const next = at + (button === "down" ? 1 : -1);
+    const next = at + step;
     return next >= 0 && next < stage.wheel.length ? stage.wheel[next] : null;
   }
   return null;

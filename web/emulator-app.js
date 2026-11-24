@@ -4,7 +4,7 @@
 // draws the stage it lands on, plays its sound, and lights the buttons that stage
 // switched on. Nothing is uploaded: the zip is read in this tab.
 
-import { decodeBitmap, readStory, walk } from "./emulator.js";
+import { chapterStep, decodeBitmap, readStory, walk } from "./emulator.js";
 import { LANGUAGES, NAMES, apply, pickLanguage, text } from "./i18n.js";
 import { readZip } from "./zip.js";
 
@@ -24,8 +24,6 @@ const keys = {
 };
 
 const STORED_LANGUAGE = "daisy2telmi.language";
-// The Telmi's side buttons step through the clip instead of between stages.
-const SEEK = 10;
 // How long a chapter keeps the card it is read from on the screen.
 const CARD_HOLD = 4000;
 
@@ -126,10 +124,10 @@ function stop() {
 function light(stage) {
   keys.ok.disabled = !stage.controls.ok;
   keys.home.disabled = !stage.controls.home;
-  // On a Telmi the two side buttons are not the wheel: they seek, and the machine
-  // lets them whenever there is a clip to seek through.
-  keys.up.disabled = keys.down.disabled =
-    story.machine === "telmi" ? stage.audio === null : !stage.controls.wheel;
+  // The two side keys are the chapter keys: each is lit where the book has a chapter
+  // on that side of this one, and on a Lunii where its card left the wheel on.
+  keys.up.disabled = !(stage.controls.wheel || chapterStep(story, stage.id, -1));
+  keys.down.disabled = !(stage.controls.wheel || chapterStep(story, stage.id, 1));
   keys.pause.disabled = stage.audio === null;
   keys.pause.classList.toggle("on", !audio.paused);
 }
@@ -156,14 +154,9 @@ function press(button) {
   if (next !== null && next !== current) show(next);
 }
 
-function seek(step) {
-  if (!audio.src) return;
-  audio.currentTime = Math.min(Math.max(audio.currentTime + step, 0), audio.duration || 0);
-}
-
 function startMachine() {
-  keys.up.addEventListener("click", () => (story.machine === "telmi" ? seek(-SEEK) : press("up")));
-  keys.down.addEventListener("click", () => (story.machine === "telmi" ? seek(SEEK) : press("down")));
+  keys.up.addEventListener("click", () => press("up"));
+  keys.down.addEventListener("click", () => press("down"));
   keys.ok.addEventListener("click", () => press("ok"));
   keys.home.addEventListener("click", () => press("home"));
   keys.pause.addEventListener("click", () => {
@@ -179,9 +172,7 @@ function startMachine() {
 
   document.addEventListener("keydown", (event) => {
     if (!story || event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
-    // The Telmi's side buttons are the same two keys, doing their own thing.
-    const side = story.machine === "telmi" ? () => seek(event.key === "ArrowUp" ? -SEEK : SEEK) : () => press(event.key === "ArrowUp" ? "up" : "down");
-    if (event.key === "ArrowUp" || event.key === "ArrowDown") side();
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") press(event.key === "ArrowUp" ? "up" : "down");
     else if (event.key === "Enter" || event.key === " ") press("ok");
     else if (event.key === "Backspace" || event.key.toLowerCase() === "h") press("home");
     else if (event.key.toLowerCase() === "p") keys.pause.click();
@@ -198,7 +189,6 @@ async function loadBytes(bytes, name) {
     // A story that arrived has an answer for the box that asked for one.
     drop.hidden = true;
     player.hidden = false;
-    player.classList.toggle("telmi", story.machine === "telmi");
     title.textContent = story.title || name;
     await show(story.start);
   } catch (cause) {

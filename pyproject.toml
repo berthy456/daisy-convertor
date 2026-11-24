@@ -1,6 +1,6 @@
 [project]
 name = "daisy-convertor"
-version = "1.4"
+version = "1.5"
 description = "Convert a DAISY 2.02, DAISY 3, text-only DAISY or EPUB book into a Telmi, Lunii, Flam or Merlin story, or a folder of MP3s"
 requires-python = ">=3.11"
 license = "GPL-3.0-or-later"

@@ -67,6 +67,19 @@ function childNamed(node, name) {
   );
 }
 
+/** Every audio clip with the `par` it sits under, in document order. */
+function clipsUnderPar(root) {
+  const found = [];
+  const walk = (node, group) => {
+    const name = localName(node.tagName).toLowerCase();
+    const par = name === "par" ? node : group;
+    if (name === "audio") found.push({ audio: node, par });
+    for (const child of node.children) walk(child, par);
+  };
+  walk(root, null);
+  return found;
+}
+
 /** Locate the pack root: the shallowest folder holding ncc.html or a .ncx. */
 export function findPack(entries) {
   const byDir = new Map();
@@ -377,11 +390,10 @@ export function extractBook(entries, level = "chapter") {
     const root = parse(smilName);
     const found = [];
     if (root) {
-      for (const par of root.find("par")) {
-        const audio = par.find("audio")[0];
-        const target = audio ? audioOf(audio, smilName) : null;
+      for (const { audio, par } of clipsUnderPar(root)) {
+        const target = audioOf(audio, smilName);
         if (!target) continue;
-        const words = par.find("text")[0];
+        const words = par ? named(par, "text")[0] : null;
         const text = textAt(words ? words.get("src") ?? "" : "", dirName(smilName));
         const clip = { src: target, ...clipOf(audio) };
         found.push({
@@ -408,6 +420,14 @@ export function extractBook(entries, level = "chapter") {
 
   // The first words read out in a part; a section number read aloud first is not worth a card.
   const openingText = (marks) => marks.find((mark) => mark.text.length >= 5)?.text ?? marks[0]?.text ?? "";
+
+  // Whether the pack wrote words of its own over these clips. A pack that synced only the
+  // level's heading puts it in the `par` above every clip of that level, so every clip
+  // inherits it; those parts have no words of their own.
+  const syncedWords = (marks, title) => {
+    const heading = (title ?? "").trim();
+    return marks.some((mark) => mark.text.trim() && mark.text.trim() !== heading);
+  };
 
   const chapterLevel = chapterLevelOf(entries_);
   const documents = anchorsByDocument(entries_);
@@ -448,7 +468,7 @@ export function extractBook(entries, level = "chapter") {
         continue;
       }
       const marks = smilMarks(smilName);
-      if (level === "sentence") {
+      if (level === "sentence" && syncedWords(marks, entry.title)) {
         const owner = ownerOf(entry);
         for (const mark of marks) {
           chapters.push({

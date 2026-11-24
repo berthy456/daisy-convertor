@@ -499,6 +499,16 @@ def _join_texts(texts: Iterable[str]) -> str:
     return " ".join(joined)
 
 
+def _synced_words(parts: tuple[Chapter, ...], title: str) -> bool:
+    """Whether the pack wrote words of its own over these clips.
+
+    A pack that synced only the level's heading puts it in the `<par>` above every clip
+    of that level, so every clip inherits it; those parts have no words of their own.
+    """
+    heading = title.strip()
+    return any(text and text != heading for text in (part.text.strip() for part in parts))
+
+
 def _chapter_level(entries: list[_TocEntry]) -> int:
     """The outline level that holds the book's chapters.
 
@@ -542,7 +552,7 @@ def _group(
                 front_matter.extend(_smil_segments(resolved, marks))
                 continue
             parts = _smil_parts(resolved, marks)
-            if level == "sentence":
+            if level == "sentence" and _synced_words(parts, entry.title):
                 chapters.extend(
                     _Draft(title="", segments=list(p.segments), text=p.text, body=p.text, spans=list(p.spans))
                     for p in parts

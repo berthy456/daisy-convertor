@@ -275,6 +275,13 @@ def test_the_clips_under_a_heading_keep_their_own_times(headings_only) -> None:
     assert [(s.begin, s.end) for s in book.chapters[0].spans] == [(0.0, 2.0), (2.0, 4.0), (4.0, 6.0)]
 
 
+def test_a_pack_that_synced_only_headings_cuts_like_the_paragraph_level(headings_only) -> None:
+    """Cutting such a pack at every clip would give the heading once per clip."""
+    book = extract(headings_only, "sentence")
+    assert [c.title for c in book.chapters] == ["Chap 1", "Chap 2"]
+    assert [c.body for c in book.chapters] == ["Chap 1", "Chap 2"]
+
+
 def test_a_bare_text_anchor_is_read_from_the_packs_own_text_document(heading_anchor_only) -> None:
     book = extract(heading_anchor_only, "chapter")
     assert [c.body for c in book.chapters] == ["Chap 1", "Chap 2"]

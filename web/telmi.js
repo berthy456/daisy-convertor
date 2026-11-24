@@ -58,8 +58,12 @@ export async function storyUuid(book) {
   return uuid5(UUID_NAMESPACE, seed);
 }
 
-/** `cardAudio[k]` is the file each menu card says, or null for a silent card. */
-export function buildNodes(chapterNames, cardAudio = []) {
+/**
+ * `cardAudio[k]` is the file each menu card says, or null for a silent card.
+ * `chapterImages[k]` is the picture a chapter shows while its audio plays, or null
+ * to keep showing the card it was read from.
+ */
+export function buildNodes(chapterNames, cardAudio = [], chapterImages = []) {
   if (!chapterNames.length) throw new Error("no chapters to build a story from");
 
   const stages = {};
@@ -75,7 +79,7 @@ export function buildNodes(chapterNames, cardAudio = []) {
       control: { ok: true, home: true, autoplay: false },
     };
     stages[`s${k}`] = {
-      image: null,
+      image: chapterImages[k] ?? null,
       audio: `s${k}.mp3`,
       ok: k === last ? null : { action: "m", index: k + 1 },
       home: { action: "m", index: k },

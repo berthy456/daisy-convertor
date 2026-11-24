@@ -3,11 +3,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { DRAWS, FILLS, TEXTS, installCanvasStub } from "./canvas-stub.mjs";
+import { DRAWS, FILLS, TEXTS, StubCanvas, installCanvasStub } from "./canvas-stub.mjs";
 
 installCanvasStub();
 
-const { CROP_MODES, IMAGE_SIZE, coverPng } = await import("../../web/cover.js");
+const { CAPTION_MIN_SIZE, CROP_MODES, IMAGE_SIZE, captionFit, captionLines, captionPng, coverPng, linePitch } =
+  await import("../../web/cover.js");
 
 // A tall cover: a centre-crop cuts its title off, which is the whole point of the choice.
 const cover = { width: 1000, height: 1500, close: () => {} };
@@ -125,6 +126,56 @@ test("a Lunii number is sized as a three-digit one", async () => {
   assert.equal(one, three, "every card of a story carries a number of the same height");
   assert.ok(three > 150, "and three digits fill the width of the screen");
   assert.ok((await sizeOf("8888")) < three, "a fourth digit makes it give way");
+});
+
+const SHORT = "one two";
+const LONG = "you will need to assess the unique set of potential hazards in your area and prepare for them accordingly";
+
+test("a caption is lettered at the largest size the screen holds", () => {
+  const ctx = new StubCanvas(640, 480).getContext();
+  assert.equal(captionFit(ctx, SHORT, 640, 480).size, 96, "two words fill the screen at its largest lettering");
+  const long = captionFit(ctx, LONG, 640, 480);
+  assert.ok(long.size < 96 && long.lines.length > 1, "a whole sentence gives way to its own length");
+  assert.ok(
+    captionFit(ctx, LONG, 320, 212).size < long.size,
+    "and a smaller screen makes it give way sooner",
+  );
+});
+
+test("a caption keeps every word of the sentence", () => {
+  const ctx = new StubCanvas(640, 480).getContext();
+  assert.equal(captionLines(ctx, LONG, 640, 480).join(" "), LONG);
+  assert.equal(captionLines(ctx, LONG, 320, 212).join(" "), LONG);
+});
+
+test("a sentence too tall for the screen keeps the lines it has room for", () => {
+  const ctx = new StubCanvas(640, 480).getContext();
+  const tooTall = "word ".repeat(1200).trim();
+  const { size, lines } = captionFit(ctx, tooTall, 640, 480);
+  assert.equal(size, CAPTION_MIN_SIZE, "the lettering stops at the smallest it goes");
+  assert.notEqual(lines.join(" "), tooTall, "and the sentence is cut short");
+  assert.ok(lines.length > 1 && (lines.length - 1) * linePitch(size) + size <= 432, "the lines stop at the screen");
+});
+
+test("a part with no words gets no caption picture", async () => {
+  const ctx = new StubCanvas(640, 480).getContext();
+  assert.deepEqual(captionLines(ctx, "   ", 640, 480), []);
+  assert.equal(await captionPng("", 640, 480), null);
+});
+
+test("a caption is the words on the card's own ground, and nothing else", async () => {
+  FILLS.length = 0;
+  TEXTS.length = 0;
+  const bytes = await captionPng(LONG, 640, 480, "colour");
+  assert.ok(bytes.length > 0);
+  assert.deepEqual(FILLS, [[0, 0, 640, 480, 640, 480]], "one fill of the whole screen: no cover behind the words");
+  assert.ok(TEXTS.length > 1, "and the sentence is written in more than one line");
+});
+
+test("the air between two caption lines grows with the lettering, but has a floor", () => {
+  assert.equal(linePitch(96), 96 + Math.round(96 / 7));
+  assert.equal(linePitch(8), 8 + 4);
+  assert.ok(linePitch(14) - 14 >= 4, "small lettering still keeps its lines apart");
 });
 
 test("a colour card keeps its corner number, its thumbnail and no strips", async () => {

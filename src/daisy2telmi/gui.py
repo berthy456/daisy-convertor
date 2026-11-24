@@ -27,7 +27,7 @@ from tkinter import font as tkfont, messagebox, ttk
 from urllib.parse import quote_plus
 
 from . import audio, chapters, covers, emulator, images, settings, tts
-from .cli import CARD_FORMATS, FORMATS, convert
+from .cli import CAPTION_FORMATS, CARD_FORMATS, FORMATS, convert
 from .detector import DaisyPackError, open_pack
 from .extractor import CUT_LEVELS, extract
 from .i18n import LANGUAGES, Language, text
@@ -757,6 +757,14 @@ class App:
         )
         self._labels["card_negative"] = self.negative_box
         self.negative_box.pack(anchor="w", pady=(10, 0))
+        # A part's own words on screen is a thing a big screen does, so this box is
+        # only live next to the two formats whose screen can hold a sentence.
+        self.captions_var = tk.BooleanVar(value=bool(self.options["captions"]))
+        self.captions_box = ttk.Checkbutton(
+            side, text=self.t("captions"), variable=self.captions_var, command=self._pick_captions
+        )
+        self._labels["captions"] = self.captions_box
+        self.captions_box.pack(anchor="w", pady=(6, 0))
         self._label(side, "crop_hint", wraplength=240).pack(anchor="w", pady=(10, 0))
         self.cover_var.trace_add("write", lambda *_: self._show_crop())
 
@@ -780,6 +788,7 @@ class App:
         self._show_cover()
         self._show_crop()
         self._show_negative()
+        self._show_captions()
 
         log_frame = ttk.Frame(grid)
         log_frame.grid(row=8, column=2, sticky="nsew", padx=(12, 0))
@@ -949,6 +958,7 @@ class App:
             self._crop_zoom_value,
             self._crop_focus,
             self.negative_var.get(),
+            self.captions_var.get(),
             ",".join(str(number) for number in sorted(self.dropped)),
             announce.mode,
             announce.language,
@@ -1178,6 +1188,7 @@ class App:
         self.format_var.set(FORMATS[self.format_names().index(self.format_box.get())])
         self._show_cover()
         self._show_negative()
+        self._show_captions()
         self._pick_format()
 
     def _show_cover(self) -> None:
@@ -1202,6 +1213,17 @@ class App:
         # changes it too.
         self._crop_cover = None
         self._show_crop()
+
+    def _show_captions(self) -> None:
+        """Only a Telmi or a Flam screen is big enough to read a sentence on."""
+        self.captions_box.configure(state="normal" if self.format_var.get() in CAPTION_FORMATS else "disabled")
+
+    def _pick_captions(self) -> None:
+        self.options["captions"] = self.captions_var.get()
+        if self.captions_var.get() and self.cut != "sentence":
+            # One picture per sentence is only worth drawing when each part is one.
+            self.cut = self.options["cut"] = "sentence"
+        settings.save(self.options)
 
     def _pick_format(self) -> None:
         self.options["format"] = self.format_var.get()
@@ -1456,6 +1478,7 @@ class App:
                 self._crop_zoom_value,
                 self._crop_focus,
                 self.negative_var.get(),
+                self.captions_var.get(),
             ),
             daemon=True,
         ).start()
@@ -1518,6 +1541,7 @@ class App:
         zoom: float = 1.0,
         focus: tuple[float, float] | None = None,
         negative: bool = False,
+        captions: bool = False,
     ) -> None:
         try:
             if install:
@@ -1542,6 +1566,7 @@ class App:
                         zoom=zoom,
                         focus=focus,
                         negative=negative,
+                        captions=captions,
                     ),
                 )
             )

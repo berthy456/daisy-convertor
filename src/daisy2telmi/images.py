@@ -108,6 +108,34 @@ _LETTERS = {
     "Ö": ("00101", "00000", "01110", "10001", "10001", "10001", "01110"),
     "Ü": ("00101", "00000", "10001", "10001", "10001", "10001", "01110"),
     "Ç": ("01110", "10001", "10000", "10000", "10000", "10001", "01110"),
+    # The rest of what a French or German sentence needs: the accents the words
+    # carry, and the marks that hold a sentence together.
+    "À": ("00100", "01000", "01110", "10001", "11111", "10001", "10001"),
+    "Â": ("00100", "01010", "01110", "10001", "11111", "10001", "10001"),
+    "È": ("00100", "01000", "11111", "10000", "11110", "10000", "11111"),
+    "Ê": ("00100", "01010", "11111", "10000", "11110", "10000", "11111"),
+    "Ë": ("00101", "00000", "11111", "10000", "11110", "10000", "11111"),
+    "Î": ("00100", "01010", "01110", "00100", "00100", "00100", "01110"),
+    "Ï": ("00101", "00000", "01110", "00100", "00100", "00100", "01110"),
+    "Ô": ("00100", "01010", "01110", "10001", "10001", "10001", "01110"),
+    "Ù": ("00100", "01000", "10001", "10001", "10001", "10001", "01110"),
+    "Û": ("00100", "01010", "10001", "10001", "10001", "10001", "01110"),
+    "Ñ": ("01010", "10001", "11001", "10101", "10011", "10001", "10001"),
+    ".": ("00000", "00000", "00000", "00000", "00000", "01110", "01110"),
+    ",": ("00000", "00000", "00000", "00000", "01110", "01110", "00100"),
+    ":": ("00000", "01110", "01110", "00000", "01110", "01110", "00000"),
+    ";": ("00000", "01110", "01110", "00000", "01110", "01110", "00100"),
+    "!": ("00100", "00100", "00100", "00100", "00100", "00000", "00100"),
+    "?": ("01110", "10001", "00001", "00010", "00100", "00000", "00100"),
+    "'": ("00100", "00100", "00000", "00000", "00000", "00000", "00000"),
+    "’": ("00100", "00100", "00000", "00000", "00000", "00000", "00000"),
+    "“": ("01010", "01010", "00000", "00000", "00000", "00000", "00000"),
+    "”": ("01010", "01010", "00000", "00000", "00000", "00000", "00000"),
+    "«": ("00000", "00101", "01010", "10000", "01010", "00101", "00000"),
+    "»": ("00000", "10100", "01010", "00010", "01010", "10100", "00000"),
+    "-": ("00000", "00000", "00000", "11111", "00000", "00000", "00000"),
+    "(": ("00010", "00100", "01000", "01000", "01000", "00100", "00010"),
+    ")": ("01000", "00100", "00010", "00010", "00010", "00100", "01000"),
     "/": ("00001", "00010", "00010", "00100", "01000", "01000", "10000"),
     " ": ("00000", "00000", "00000", "00000", "00000", "00000", "00000"),
 }
@@ -332,6 +360,99 @@ def card_layer_png(
 ) -> bytes:
     """The same lettering on a transparent canvas, to lay over a cropped cover."""
     return _grid_png(_card_grid(label, text, width, height, band=style == "bw"), None, style, negative)
+
+
+# A sentence's own picture: the whole of it, at the largest lettering the screen
+# still holds. The screen is small, so the size is found by trying the largest and
+# stepping down until every line of the sentence fits on it.
+CAPTION_MAX_SCALE = 8
+CAPTION_MIN_COLUMNS = 8
+# The air between two lines of a caption grows with the lettering, but never below
+# a few pixels: at the small lettering a tall sentence needs, one pixel of air reads
+# as one solid block of words.
+CAPTION_LINE_GAP = 4
+
+
+def line_rows(scale: int) -> int:
+    """How many pixel rows one line of a caption takes: its glyph and the air under it."""
+    return 7 * scale + max(scale, CAPTION_LINE_GAP)
+
+
+def wrap_lines(text: str, columns: int) -> list[str]:
+    """`text` in lines no wider than `columns`; a word longer than that is cut."""
+    lines: list[str] = []
+    line = ""
+    for word in text.split():
+        while len(word) > columns:
+            if line:
+                lines.append(line)
+                line = ""
+            lines.append(word[:columns])
+            word = word[columns:]
+        if not line:
+            line = word
+        elif len(line) + 1 + len(word) <= columns:
+            line = f"{line} {word}"
+        else:
+            lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+    return lines
+
+
+def _caption_fit(text: str, width: int, height: int) -> tuple[int, list[str]]:
+    """The largest lettering size the whole sentence fits at, and its lines."""
+    drawable = " ".join(_drawable(text).split())
+    if not drawable:
+        return 1, []
+    margin = _layout(width)[0]
+    room_w, room_h = width - 2 * margin, height - 2 * margin
+    for scale in range(CAPTION_MAX_SCALE, 1, -1):
+        columns = room_w // (scale * 6)
+        if columns < CAPTION_MIN_COLUMNS:
+            continue
+        lines = wrap_lines(drawable, columns)
+        if (len(lines) - 1) * line_rows(scale) + 7 * scale <= room_h:
+            return scale, lines
+    # Nothing above the smallest size held: the smallest size, and only the lines
+    # the screen has room for.
+    return 1, wrap_lines(drawable, max(CAPTION_MIN_COLUMNS, room_w // 6))[: max(1, room_h // line_rows(1))]
+
+
+def caption_lines(text: str, width: int, height: int) -> list[str]:
+    """The sentence as one screen will show it, at the largest size that holds it.
+
+    A sentence the built-in font cannot write gets no lines at all: the audio is
+    still there, only the words are not something we can draw.
+    """
+    return _caption_fit(text, width, height)[1]
+
+
+def _caption_grid(text: str, width: int, height: int) -> list[bytearray]:
+    """One sentence, whole, each line centred and the block centred top to bottom."""
+    scale, lines = _caption_fit(text, width, height)
+    ink = [bytearray(width) for _ in range(height)]
+    if not lines:
+        return ink
+    margin = _layout(width)[0]
+    block = (len(lines) - 1) * line_rows(scale) + 7 * scale
+    top = max(margin, (height - block) // 2)
+    for offset, line in enumerate(lines):
+        rows = glyph_rows(line)
+        _stamp(ink, (width - len(rows[0]) * scale) // 2, top + offset * line_rows(scale), rows, scale, 1)
+    return ink
+
+
+def caption_png(
+    text: str,
+    width: int = IMAGE_SIZE[0],
+    height: int = IMAGE_SIZE[1],
+    style: str = "colour",
+    negative: bool = False,
+) -> bytes:
+    """One sentence on its own ground: no cover behind it, nothing but the words."""
+    return _grid_png(_caption_grid(text, width, height), _palette(style, negative)["background"], style, negative)
 
 
 def card_label(

@@ -45,7 +45,13 @@ class StoryReport:
     stages: tuple[str, ...]
     title_source: str
     cards: int = 0
+    captions: int = 0
     audio_mode: str = "encoded"
+
+
+# The two machines whose screen is big enough to read a sentence on. A Lunii's is
+# not, and a Merlin card has none at all.
+CAPTION_PLAYERS = ("telmi", "flam")
 
 
 # What a card can say about the part it introduces. The title patterns need a
@@ -177,6 +183,7 @@ def build_nodes(
     chapter_names: Sequence[str],
     card_audio: Sequence[str | None] | None = None,
     card_autoplay: bool = False,
+    chapter_images: Sequence[str | None] | None = None,
 ) -> dict:
     """Chapter-menu `nodes.json`, mirroring Telmi-Sync's own audio-list generator.
 
@@ -187,12 +194,17 @@ def build_nodes(
     A card plays its `audio` as soon as it is drawn, whether or not autoplay is
     on (`readStage` calls `audio_play` for any defined audio); autoplay only
     decides whether the player waits for OK afterwards.
+
+    A chapter stage shows the card it was read from until its own picture, if the
+    story has one, replaces it: `chapter_images` is that picture per chapter.
     """
     if not chapter_names:
         raise StoryError("no chapters to build a story from")
 
     if card_audio is None:
         card_audio = [None] * len(chapter_names)
+    if chapter_images is None:
+        chapter_images = [None] * len(chapter_names)
 
     stages: dict[str, dict] = {}
     actions: dict[str, list[dict]] = {"m": [{"stage": f"m{k}"} for k in range(len(chapter_names))]}
@@ -206,7 +218,7 @@ def build_nodes(
             "control": {"ok": True, "home": True, "autoplay": card_autoplay},
         }
         stages[f"s{k}"] = {
-            "image": None,
+            "image": chapter_images[k],
             "audio": f"{chapter_names[k]}.mp3",
             "ok": None if k == len(chapter_names) - 1 else {"action": "m", "index": k + 1},
             "home": {"action": "m", "index": k},
@@ -332,6 +344,7 @@ def build_story(
     player: str = "telmi",
     view: dict | None = None,
     negative: bool = False,
+    captions: bool = False,
 ) -> StoryReport:
     """Render every chapter to `audios/` and write the story's JSON files and images.
 
@@ -345,6 +358,10 @@ def build_story(
     a plain player has no colour panel, so its set is drawn light-on-dark the
     other way round and flattened to the sixteen greys the card keeps. `negative`
     turns that set inside out, as an old film's negative reads.
+
+    `captions` gives each part a picture of its own words, shown while its audio
+    plays. That needs the book cut to sentences — one sentence per part, one
+    picture per sentence — and a screen big enough to read a sentence on.
     """
     if not book.chapters:
         raise StoryError("the pack contains no chapter with audio or text")
@@ -353,6 +370,10 @@ def build_story(
         raise StoryError(
             f"{len(silent)} chapter(s) have neither audio nor text, starting with {silent[0].title!r}"
         )
+    if captions and cut != "sentence":
+        raise StoryError("the sentence pictures need one sentence per part: --cut sentence")
+    if captions and player not in CAPTION_PLAYERS:
+        raise StoryError(f"the sentence pictures are drawn for a {' or a '.join(CAPTION_PLAYERS)} screen, not {player}")
 
     audios = out_dir / "audios"
     scene = out_dir / "images"
@@ -416,6 +437,12 @@ def build_story(
         images.card_label(code, k + 1, count, cut == "chapter", show_total) for k in range(count)
     ]
     texts = [chapter.text for chapter in book.chapters]
+    scene_size = images.screen(player)[0]
+    # A part whose words the font cannot write gets no picture: its audio plays on
+    # the card's own picture, as it does when no caption was asked for.
+    captioned = (
+        [bool(images.caption_lines(text, *scene_size)) for text in texts] if captions else [False] * count
+    )
 
     def draw(target: Path, style: str) -> None:
         """The title image, the cover and every card, at one player's sizes."""
@@ -446,8 +473,20 @@ def build_story(
             images.placeholder_png(*cover_size, style=style, negative=grey)
         )
 
+    def draw_captions(target: Path, style: str) -> None:
+        """One picture per part: its whole sentence, on the card's own ground."""
+        grey = negative and style == "bw"
+        for index, (text, shown) in enumerate(zip(texts, captioned)):
+            if shown:
+                (target / "images" / f"s{index}.png").write_bytes(
+                    images.caption_png(text, *scene_size, style=style, negative=grey)
+                )
+
     log.info("drawing %d card(s)%s", count, "" if cover is None else f" from the cover {cover.name}")
     draw(out_dir, "colour")
+    if captions:
+        log.info("drawing %d sentence picture(s) for the %s screen", sum(captioned), player)
+        draw_captions(out_dir, "colour")
     if lunii_dir is not None:
         log.info("drawing the same %d card(s) in greys for the Lunii", count)
         draw(lunii_dir, "bw")
@@ -458,7 +497,12 @@ def build_story(
     )
     (out_dir / "nodes.json").write_text(
         json.dumps(
-            build_nodes(chapter_names, cards, announce.autoplay if announce else False),
+            build_nodes(
+                chapter_names,
+                cards,
+                announce.autoplay if announce else False,
+                [f"s{k}.png" if shown else None for k, shown in enumerate(captioned)],
+            ),
             ensure_ascii=False,
             indent=2,
         )
@@ -475,6 +519,7 @@ def build_story(
         stages=tuple(chapter_names),
         title_source=title_source,
         cards=spoken,
+        captions=sum(captioned),
         audio_mode=audio_mode,
     )
 

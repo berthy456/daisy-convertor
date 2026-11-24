@@ -1,6 +1,6 @@
 // DAISY zip in, Telmi story zip out, entirely in the browser.
 
-import { cardPng, coverPng, screen } from "./cover.js";
+import { captionPng, cardPng, coverPng, screen } from "./cover.js";
 import { extractBook, normalizePath } from "./daisy.js";
 import { concatSegments } from "./mp3.js";
 import { placeholderPng } from "./png.js";
@@ -12,6 +12,10 @@ const json = (value) => new TextEncoder().encode(`${JSON.stringify(value, null, 
 // A part cut below chapter level has no title that says which part it is, so its
 // card plays the sound it opens with instead of a spoken number.
 const CARD_SNIPPET_SECONDS = 3;
+
+// The formats whose screen is big enough to read a sentence on. A Lunii's is not,
+// and a Merlin card has no screen at all.
+export const CAPTION_FORMATS = ["telmi", "flam"];
 
 /** The first seconds of a part, cut at MP3 frame boundaries. */
 function firstSeconds(segments, bytesOf, seconds) {
@@ -42,6 +46,8 @@ function firstSeconds(segments, bytesOf, seconds) {
  *   sizes every picture is drawn at.
  * options.cardLabel(number, total, worded): the words drawn on a card.
  * options.cardAudio(number, count): bytes for the card to say, or null to leave it silent.
+ * options.captions: give each part a picture of its own words, shown while its
+ *   audio plays instead of the card's.
  * options.drop: 1-based part numbers to leave out of the story.
  */
 export async function buildStoryFiles(entries, silentMp3, onProgress = () => {}, options = {}) {
@@ -77,7 +83,11 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
   const cardLabel = options.cardLabel ?? ((number, count) => `Chapter ${number}/${count}`);
   const say = options.t ?? ((key) => key);
   const spoken = options.cardAudio ?? (async () => null);
+  // A part's own words are only worth drawing when each part is one sentence, on a
+  // screen big enough to read one on.
+  const captioned = Boolean(options.captions) && cut === "sentence" && CAPTION_FORMATS.includes(options.player ?? "telmi");
   const cards = [];
+  const scenes = [];
   let done = 0;
 
   const step = (label) => {
@@ -101,6 +111,13 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
         negative,
       ),
     });
+
+    // A part whose words cannot be drawn at all keeps the card it was read from.
+    const words = captioned ? await captionPng(chapter.text, ...scene, style, negative) : null;
+    if (words) {
+      files.push({ name: `${dirName}/images/s${k}.png`, data: words });
+      scenes[k] = `s${k}.png`;
+    }
 
     let card = null;
     if (cut === "chapter") {
@@ -141,7 +158,7 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
   step(say("prog_title_images"));
 
   const metadata = buildMetadata(book, uuid);
-  const nodes = buildNodes(book.chapters.map((_, k) => `s${k}`), cards);
+  const nodes = buildNodes(book.chapters.map((_, k) => `s${k}`), cards, scenes);
   files.push({ name: `${dirName}/metadata.json`, data: json(metadata) });
   files.push({ name: `${dirName}/nodes.json`, data: json(nodes) });
   files.push({ name: `${dirName}/notes.json`, data: json(buildNotes(book)) });

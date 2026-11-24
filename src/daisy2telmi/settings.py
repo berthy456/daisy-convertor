@@ -21,6 +21,7 @@ from .i18n import LANGUAGES
 log = logging.getLogger(__name__)
 
 DEFAULTS: dict = {
+    "captions": False,
     "cut": "chapter",
     "cover_crop": "center",
     # The folder the last file list was left in, so the next one opens there.

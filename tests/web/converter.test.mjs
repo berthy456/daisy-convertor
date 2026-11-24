@@ -13,7 +13,7 @@ const PACK = join(ROOT, "gon-ruby-mp3.zip");
 const { readZip, writeZip } = await import("../../web/zip.js");
 const { extractBook } = await import("../../web/daisy.js");
 const { buildStoryFiles, buildStoryZip } = await import("../../web/convert.js");
-const { normalizeFileName, slugify, storyDirName, storyUuid } = await import("../../web/telmi.js");
+const { buildNodes, normalizeFileName, slugify, storyDirName, storyUuid } = await import("../../web/telmi.js");
 const { mp3Frames, trimFrames } = await import("../../web/mp3.js");
 const { cardWords } = await import("../../web/cover.js");
 
@@ -103,6 +103,37 @@ test("a part shorter than the card clip is not stored twice", async () => {
   assert.equal(cards[0], "s0.mp3");
   assert.equal(story.files.some((file) => file.name.endsWith("/audios/c0.mp3")), false);
   assert.ok(story.files.filter((file) => file.name.includes("/audios/c")).length < story.book.chapters.length);
+});
+
+test("a story cut at sentences carries a picture of each part's own words", async () => {
+  const silent = new Uint8Array(await readFile(join(ROOT, "web/silence.mp3")));
+  const story = await buildStoryFiles(await pack("gon-ruby-mp3.zip"), silent, () => {}, {
+    cut: "sentence",
+    player: "telmi",
+    captions: true,
+  });
+  const scenes = story.files.filter((file) => /\/images\/s\d+\.png$/.test(file.name));
+  const worded = story.book.chapters.filter((part) => part.text.trim());
+  assert.equal(scenes.length, worded.length, "one picture per part that has words to draw");
+  assert.equal(story.nodes.stages.s0.image, "s0.png");
+  // The card keeps its own picture: only the part being played shows its words.
+  assert.equal(story.nodes.stages.m0.image, "m0.png");
+});
+
+test("a screen too small for a sentence, or a cut too coarse, gets no caption pictures", async () => {
+  const silent = new Uint8Array(await readFile(join(ROOT, "web/silence.mp3")));
+  for (const asked of [{ player: "lunii", cut: "sentence" }, { player: "telmi", cut: "chapter" }]) {
+    const story = await buildStoryFiles(await pack("gon-ruby-mp3.zip"), silent, () => {}, { ...asked, captions: true });
+    assert.equal(story.files.some((file) => /\/images\/s\d+\.png$/.test(file.name)), false, asked.player);
+    assert.equal(story.nodes.stages.s0.image, null);
+  }
+});
+
+test("a chapter can carry its own picture", () => {
+  const nodes = buildNodes(["s0", "s1"], ["c0.mp3", null], ["s0.png", null]);
+  assert.equal(nodes.stages.s0.image, "s0.png");
+  assert.equal(nodes.stages.s1.image, null);
+  assert.equal(nodes.stages.m1.audio, null);
 });
 
 test("trimming an MP3 keeps whole frames inside the asked range", async () => {

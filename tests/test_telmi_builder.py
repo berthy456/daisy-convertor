@@ -17,6 +17,7 @@ from daisy2telmi.telmi_builder import (
     build_metadata,
     build_nodes,
     build_notes,
+    build_story,
     story_dir_name,
     story_uuid,
 )
@@ -88,6 +89,25 @@ def test_a_chapter_returns_to_the_next_card() -> None:
 def test_last_chapter_ends_the_story() -> None:
     """Published packs use a null `ok` to end, not a wrap-around to the menu."""
     assert build_nodes(SAMPLE)["stages"]["s2"]["ok"] is None
+
+
+def test_a_chapter_can_carry_its_own_picture() -> None:
+    """A captioned part shows its sentence while its audio plays; a part the font
+    cannot write keeps showing the card it was read from."""
+    nodes = build_nodes(SAMPLE, chapter_images=["s0.png", None, "s2.png"])
+    assert nodes["stages"]["s0"]["image"] == "s0.png"
+    assert nodes["stages"]["s1"]["image"] is None
+    assert validate_nodes(nodes) == []
+
+
+def test_the_sentence_pictures_ask_for_the_cut_and_the_screen_they_need() -> None:
+    from daisy2telmi.extractor import Chapter
+
+    book = make_book(chapters=[Chapter("Un", (), text="Un", body="Un")])
+    with pytest.raises(StoryError, match="one sentence per part"):
+        build_story(book, Path("nowhere"), cut="chapter", captions=True)
+    with pytest.raises(StoryError, match="not lunii"):
+        build_story(book, Path("nowhere"), cut="sentence", player="lunii", captions=True)
 
 
 def test_empty_chapter_list_is_rejected() -> None:

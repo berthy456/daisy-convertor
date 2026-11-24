@@ -332,6 +332,107 @@ export async function cardPng(
   return toPng(canvas);
 }
 
+// A sentence's own picture: the whole of it, at the largest lettering the screen
+// still holds. The size is found by trying the largest and stepping down until
+// every line of the sentence fits.
+export const CAPTION_MAX_SIZE = 96;
+export const CAPTION_MIN_SIZE = 8;
+// The air between two lines grows with the lettering, but never below a few pixels:
+// at the small lettering a tall sentence needs, one pixel of air reads as one solid
+// block of words.
+export const CAPTION_LINE_GAP = 4;
+
+/** How many pixel rows one line of a caption takes: its own height and the air under it. */
+export function linePitch(size) {
+  return size + Math.max(Math.round(size / 7), CAPTION_LINE_GAP);
+}
+
+/** `words` in lines no wider than `room`; a word wider than that is cut where it stops fitting. */
+function wrapWords(ctx, words, room) {
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    let piece = word;
+    while (ctx.measureText(piece).width > room) {
+      if (piece.length < 2) return null;
+      let cut = piece.length - 1;
+      while (cut > 1 && ctx.measureText(piece.slice(0, cut)).width > room) cut -= 1;
+      if (line) {
+        lines.push(line);
+        line = "";
+      }
+      lines.push(piece.slice(0, cut));
+      piece = piece.slice(cut);
+    }
+    const joined = line ? `${line} ${piece}` : piece;
+    if (line && ctx.measureText(joined).width > room) {
+      lines.push(line);
+      line = piece;
+    } else {
+      line = joined;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+/** The largest lettering the whole sentence fits at, and its lines. */
+export function captionFit(ctx, text, width, height) {
+  const { margin } = layout(width);
+  const room = [width - 2 * margin, height - 2 * margin];
+  const words = (text ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return { size: CAPTION_MIN_SIZE, lines: [] };
+  for (let size = CAPTION_MAX_SIZE; size > CAPTION_MIN_SIZE; size -= 2) {
+    ctx.font = `${size}px system-ui, sans-serif`;
+    const lines = wrapWords(ctx, words, room[0]);
+    if (lines && (lines.length - 1) * linePitch(size) + size <= room[1]) return { size, lines };
+  }
+  ctx.font = `${CAPTION_MIN_SIZE}px system-ui, sans-serif`;
+  const lines = wrapWords(ctx, words, room[0]) ?? [];
+  const room_for_lines = Math.max(1, Math.floor((room[1] - CAPTION_MIN_SIZE) / linePitch(CAPTION_MIN_SIZE)) + 1);
+  return { size: CAPTION_MIN_SIZE, lines: lines.slice(0, room_for_lines) };
+}
+
+/** The sentence as one screen will show it, at the largest size that holds it. */
+export function captionLines(ctx, text, width, height) {
+  return captionFit(ctx, text, width, height).lines;
+}
+
+/**
+ * One sentence on its own ground: no cover behind it, nothing but the words.
+ *
+ * A part's caption replaces the card's picture while its audio plays, so the
+ * sentence is read on the plain ground the card's lettering sits on too.
+ *
+ * null when the part has no words to draw: there is nothing to show, so the part
+ * keeps the card's own picture.
+ */
+export async function captionPng(text, width = IMAGE_SIZE[0], height = IMAGE_SIZE[1], style = "colour", negative = false) {
+  const canvas = surface(width, height);
+  const ctx = canvas.getContext("2d");
+  const { margin } = layout(width);
+  const { size, lines } = captionFit(ctx, text, width, height);
+  if (!lines.length) return null;
+  ctx.fillStyle = PALETTE[style].background;
+  ctx.fillRect(0, 0, width, height);
+  ctx.lineJoin = "round";
+  ctx.miterLimit = 2;
+  ctx.textBaseline = "top";
+  ctx.textAlign = "center";
+  ctx.font = `${size}px system-ui, sans-serif`;
+  ctx.lineWidth = Math.max(2, Math.round(size / 10));
+  ctx.strokeStyle = PALETTE[style].border;
+  ctx.fillStyle = PALETTE[style].ink;
+  const block = (lines.length - 1) * linePitch(size) + size;
+  const top = Math.max(margin, Math.round((height - block) / 2));
+  for (const [index, line] of lines.entries()) {
+    ctx.strokeText(line, width / 2, top + index * linePitch(size));
+    ctx.fillText(line, width / 2, top + index * linePitch(size));
+  }
+  if (style === "bw") toGreys(ctx, width, height, negative);
+  return toPng(canvas);
+}
+
 /** The cover, cropped to width x height. */
 export async function coverPng(cover, width, height, view = {}, style = "colour", negative = false) {
   const canvas = surface(width, height);

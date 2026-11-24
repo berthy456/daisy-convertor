@@ -1124,6 +1124,7 @@ def test_the_crop_knobs_stand_beside_the_frame(app: gui.App) -> None:
     assert beside["row"] == frame["row"], "the same row as the frame"
     assert all(box.master is side for box in app.crop_boxes.values()), "the three bands too"
     assert app.crop_zoom.master.master is side, "and the zoom"
+    assert app.captions_box.master is side, "and the words on screen"
     assert side is not app.format_box.master, "the negative belongs to the picture, not to the format"
 
 
@@ -1140,6 +1141,47 @@ def test_the_negative_reaches_the_conversion(app: gui.App, tmp_path, monkeypatch
     app._start()
     app._drain()
     assert seen[0][1]["negative"] is True
+
+
+def test_the_words_on_screen_are_offered_for_the_two_screens_that_hold_a_sentence(app: gui.App) -> None:
+    app.format_var.set("telmi")
+    app._show_captions()
+    assert app.captions_box.instate(["!disabled"]), "a Telmi screen holds a sentence"
+    app.format_var.set("flam")
+    app._show_captions()
+    assert app.captions_box.instate(["!disabled"]), "so does the Flam's"
+    app.format_var.set("lunii")
+    app._show_captions()
+    assert app.captions_box.instate(["disabled"]), "a Lunii screen is too small to read a sentence on"
+    app.format_var.set("merlin")
+    app._show_captions()
+    assert app.captions_box.instate(["disabled"]), "and a Merlin card has no screen at all"
+
+
+def test_the_words_on_screen_ask_for_one_sentence_per_part(app: gui.App, monkeypatch) -> None:
+    monkeypatch.setattr(gui.settings, "save", lambda options: None)
+    app.cut = "chapter"
+    app.captions_var.set(True)
+    app._pick_captions()
+    assert app.cut == "sentence", "one picture per part is only worth drawing when each part is one"
+    assert app.options["cut"] == "sentence", "and the choice is saved as the cut it needs"
+
+
+def test_the_words_on_screen_reach_the_conversion(app: gui.App, tmp_path, monkeypatch) -> None:
+    seen: list = []
+    monkeypatch.setattr(gui, "convert", lambda *args, **kwargs: seen.append((args, kwargs)) or 0)
+    monkeypatch.setattr(gui.settings, "save", lambda options: None)
+
+    app.format_var.set("telmi")
+    app.captions_var.set(True)
+    app._pick_captions()
+    (tmp_path / "pack.zip").write_bytes(b"PK")
+    app.pack_var.set(str(tmp_path / "pack.zip"))
+    app.out_var.set(str(tmp_path / "out"))
+    app._start()
+    app._drain()
+    assert seen[0][1]["captions"] is True
+    assert seen[0][0][7] == "telmi", "the format travels with it"
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")

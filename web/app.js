@@ -13,7 +13,7 @@ import {
   squareJpeg,
 } from "./cover.js";
 import { findCover } from "./covers.js";
-import { buildStoryZip } from "./convert.js";
+import { CAPTION_FORMATS, buildStoryZip } from "./convert.js";
 import { LANGUAGES, NAMES, apply, pickLanguage, text } from "./i18n.js";
 import { buildPlainPk, buildStudioZip, packName } from "./lunii.js";
 import { buildMerlinFiles } from "./merlin.js";
@@ -54,6 +54,8 @@ const formatInputs = [...document.querySelectorAll('input[name="format"]')];
 const coverSection = document.getElementById("cover-section");
 const negativeRow = document.getElementById("card-negative-row");
 const negativeBox = document.getElementById("card-negative");
+const captionsRow = document.getElementById("captions-row");
+const captionsBox = document.getElementById("captions");
 const partsBox = document.getElementById("parts");
 const partsList = document.getElementById("parts-list");
 const partsNote = document.getElementById("parts-note");
@@ -66,6 +68,7 @@ const STORED_FORMAT = "daisy2telmi.format";
 const STORED_CROP = "daisy2telmi.crop";
 const STORED_CARDS = "daisy2telmi.cards";
 const STORED_NEGATIVE = "daisy2telmi.negative";
+const STORED_CAPTIONS = "daisy2telmi.captions";
 // The summary lists the parts it starts; a book cut to the sentence level has hundreds.
 const LISTED_PARTS = 30;
 // A sentence-level book can run to thousands of parts: past this the page says
@@ -92,6 +95,10 @@ let zoom = 1;
 let cards = { total: true, word: true, count: false };
 // Whether the black-and-white Lunii cards are drawn as a negative of the cover.
 let negative = false;
+// Whether each part gets a picture of its own words, shown while its audio plays.
+let captions = false;
+// The cut levels the pack being read can be cut at, empty until it has been read.
+let cutLevels = [];
 // Part numbers left out of the story, in the numbering of the chosen cut level.
 let dropped = new Set();
 // Counts the lookups in flight, so an answer about a pack that has been replaced
@@ -152,6 +159,7 @@ function startCut() {
     input.addEventListener("change", () => {
       cut = input.value;
       remember(STORED_CUT, cut);
+      showCaptions();
       showParts();
     });
   }
@@ -169,6 +177,27 @@ function startCards() {
   }
 }
 
+/** A part's own words need a screen big enough to read a sentence on, and one sentence per part. */
+const captionsOn = () => captions && cut === "sentence" && CAPTION_FORMATS.includes(format);
+
+function showCaptions() {
+  // Only a Telmi or a Flam screen holds a sentence; the choice stays put while
+  // another player is chosen.
+  captionsRow.hidden = !CAPTION_FORMATS.includes(format);
+  // A box that could draw nothing but the card's own picture is not worth offering.
+  captionsBox.disabled = cut !== "sentence" || !cutLevels.includes("sentence");
+}
+
+function startCaptions() {
+  captions = saved(STORED_CAPTIONS) === "1";
+  captionsBox.checked = captions;
+  captionsBox.addEventListener("change", () => {
+    captions = captionsBox.checked;
+    remember(STORED_CAPTIONS, captions ? "1" : "0");
+  });
+  showCaptions();
+}
+
 function showFormat() {
   // Only the plain Lunii screen has no colour, so only its cards can be read the
   // other way round; the choice stays put while another player is chosen.
@@ -177,6 +206,7 @@ function showFormat() {
   // no story for the drawn machine to play.
   coverSection.hidden = format === "mp3";
   testButton.hidden = format === "mp3";
+  showCaptions();
 }
 
 function startFormat() {
@@ -484,6 +514,7 @@ function settingsKey() {
     zoom,
     focus,
     negative,
+    captionsOn(),
     lang,
     cards.total,
     cards.word,
@@ -532,6 +563,7 @@ async function buildPack() {
           // greys. A commercial `.pk` keeps each picture's own sixteen colours.
           style: format === "lunii" ? "bw" : "colour",
           negative,
+          captions: captionsOn(),
           t: (key) => t(key),
           cardLabel: (number, total, worded) =>
             t(cards.total ? (worded ? "card_label" : "card_number") : (worded ? "card_label_one" : "card_number_one"), {
@@ -649,10 +681,12 @@ async function openCutLevels() {
       cut = choices[Math.min(CUT_LEVELS.indexOf(cut), choices.length - 1)];
       remember(STORED_CUT, cut);
     }
+    cutLevels = choices;
     for (const input of cutInputs) {
       input.disabled = !choices.includes(input.value);
       input.checked = input.value === cut;
     }
+    showCaptions();
     log(t("log_cut_levels", { levels: choices.map((level) => t(`cut_${level}`)).join(", ") }));
     await showParts();
   } catch (error) {
@@ -741,6 +775,7 @@ testButton.addEventListener("click", testStory);
 startLanguage();
 startFormat();
 startNegative();
+startCaptions();
 startCut();
 startCards();
 startCrop();

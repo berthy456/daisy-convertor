@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from daisy2telmi import audio, images
-from daisy2telmi.cli import CARD_FORMATS
+from daisy2telmi.cli import CAPTION_FORMATS, CARD_FORMATS
 from daisy2telmi.i18n import LANGUAGES
 
 NO_FFMPEG = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
@@ -105,6 +105,67 @@ def test_the_lettering_of_every_card_stays_inside_its_screen() -> None:
         assert bottom <= scene[1], player
         number = images.glyph_rows("213/213")
         assert margin + len(number[0]) * number_scale <= scene[0], player
+
+
+CAPTION = "you will need to assess the unique set of potential hazards in your area and prepare for them accordingly"
+
+
+def test_a_caption_is_lettered_at_the_largest_size_the_screen_holds() -> None:
+    scale, lines = images._caption_fit(CAPTION, 640, 480)
+    margin = images._layout(640)[0]
+    assert len(lines) > 1
+    assert all(len(line) * scale * 6 <= 640 - 2 * margin for line in lines)
+    assert (len(lines) - 1) * images.line_rows(scale) + 7 * scale <= 480 - 2 * margin
+    # A shorter sentence of the same words is drawn bigger, not in more lines.
+    bigger, fewer = images._caption_fit("prepare for one", 640, 480)
+    assert bigger > scale
+    assert len(fewer) < len(lines)
+
+
+def test_a_caption_keeps_every_word_of_the_sentence() -> None:
+    assert " ".join(images.caption_lines(CAPTION, 320, 212)) == CAPTION.upper()
+
+
+def test_a_sentence_too_long_for_the_screen_keeps_the_lines_it_has_room_for() -> None:
+    lines = images.caption_lines("you can prepare for one by making a first aid kit. " * 40, 320, 212)
+    assert lines
+    assert len(lines) <= (212 - 2 * images._layout(320)[0]) // images.line_rows(1)
+
+
+def test_a_sentence_the_font_cannot_write_gets_no_caption() -> None:
+    assert images.caption_lines("これは、私（わたし）が小さいときに", 640, 480) == []
+    assert images.caption_lines("", 640, 480) == []
+
+
+def test_wrap_lines_cuts_a_word_too_long_for_the_line() -> None:
+    assert images.wrap_lines("ANTIDISESTABLISHMENTARIANISM", 10) == ["ANTIDISEST", "ABLISHMENT", "ARIANISM"]
+
+
+def test_the_caption_picture_is_the_screen_it_shows_the_sentence_on() -> None:
+    width, height, colour = png_header(images.caption_png("you can prepare for one", 640, 480))
+    assert (width, height) == (640, 480)
+    assert colour == 2, "the words sit on their own ground, not over the cover"
+
+
+def test_a_caption_fits_the_screen_of_every_machine_that_gets_one() -> None:
+    for player in CAPTION_FORMATS:
+        scene, _ = images.screen(player)
+        scale, lines = images._caption_fit(CAPTION, *scene)
+        assert lines, player
+        assert (len(lines) - 1) * images.line_rows(scale) + 7 * scale <= scene[1] - 2 * images._layout(scene[0])[0], player
+
+
+def test_the_lines_of_a_small_caption_stay_apart() -> None:
+    """Big lettering has its own height of air under it; small lettering gets a floor,
+    or a tall sentence reads as one solid block of words."""
+    assert images.line_rows(8) == 7 * 8 + 8
+    assert images.line_rows(2) == 7 * 2 + images.CAPTION_LINE_GAP
+
+
+def test_the_caption_grid_draws_the_words_and_nothing_else() -> None:
+    """A caption is the sentence on the card's own ground: no cover, no number."""
+    assert {cell for line in images._caption_grid("prepare for one", 640, 480) for cell in line} == {0, 1, 2}
+    assert images._caption_grid("これは", 640, 480)[0] == bytearray(640)
 
 
 def test_the_crop_preview_keeps_the_players_ratio() -> None:

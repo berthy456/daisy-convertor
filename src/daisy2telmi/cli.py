@@ -48,6 +48,9 @@ PLAYER = {
 # The two Lunii exports hold the same story; the archive and the pictures differ:
 # STUdio's zip with grey cards, or the layout the card keeps with colour ones.
 LUNII = ("lunii", "lunii-pk")
+# The formats whose screen is big enough to read a sentence on. A Lunii's is not, and
+# a Merlin card has no screen at all.
+CAPTION_FORMATS = ("telmi", "flam")
 
 # The Merlin writes itself, with no official SDK and no way to try a card on the
 # machine that made the format, so it is offered but not promised.
@@ -105,6 +108,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         choices=CUT_LEVELS,
         help="where to cut the book: at its chapters (default), at every paragraph the pack "
         "marks, or at every sentence it synced",
+    )
+    look.add_argument(
+        "--captions",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="give each part a picture of its own words, shown while its audio plays; "
+        "needs --cut sentence, and a Telmi or a Flam screen (--no-captions for the card's "
+        "own picture, as usual)",
     )
     look.add_argument(
         "--preview",
@@ -231,6 +242,11 @@ def cut_level(args: argparse.Namespace) -> str:
     return args.cut or settings.load()["cut"]
 
 
+def captions(args: argparse.Namespace) -> bool:
+    """Saved sentence-picture choice, overridden by --captions or --no-captions."""
+    return settings.load()["captions"] if args.captions is None else args.captions
+
+
 def cover_crop(args: argparse.Namespace) -> str:
     """Saved crop choice, overridden by --cover-crop."""
     return args.cover_crop or settings.load()["cover_crop"]
@@ -340,6 +356,7 @@ def convert(
     focus: tuple[float, float] | None = None,
     merge: Path | None = None,
     negative: bool = False,
+    captions: bool = False,
 ) -> int:
     """Convert one pack. Logs through this module's logger so a GUI can follow along."""
     announce = speech(announce)
@@ -349,6 +366,16 @@ def convert(
         if cover is not None and not cover.is_file():
             log.error("no such cover image: %s", cover)
             return 2
+        if captions and fmt not in CAPTION_FORMATS:
+            log.error(
+                "the sentence pictures are drawn for a Telmi or a Flam screen: a Lunii's is too "
+                "small to read a sentence on and a Merlin card has none"
+            )
+            return 2
+        if captions and cut != "sentence":
+            # One picture per sentence is only worth drawing when each part is one sentence.
+            log.info("the sentence pictures need one sentence per part: cutting at sentences instead")
+            cut = "sentence"
         # The looked-up cover has to outlive the lookup: the cards are drawn below.
         with open_pack(input_path) as pack, tempfile.TemporaryDirectory(prefix="daisy-convertor-cover-") as scratch:
             log.info("pack root: %s", pack.root)
@@ -405,7 +432,7 @@ def convert(
                 else:
                     # The `.pk` is the commercial layout: its pictures keep their own
                     # sixteen colours, so they are drawn from the colour cards as they are.
-                    report = build_story(book, target, announce, cover, cut, crop, player=player, view=view)
+                    report = build_story(book, target, announce, cover, cut, crop, player=player, view=view, captions=captions)
                     if fmt == "lunii-pk":
                         archive = write_pack(target)
                     elif fmt == "merlin":
@@ -451,6 +478,8 @@ def convert(
     )
     log.info("title.mp3 source: %s", report.title_source)
     log.info("chapter cards: %d spoken, autoplay %s", report.cards, "on" if announce and announce.autoplay else "off")
+    if report.captions:
+        log.info("sentence pictures: %d, one per part, shown while its audio plays", report.captions)
     return 0
 
 
@@ -483,6 +512,7 @@ def main(argv: list[str] | None = None) -> int:
         args.cover_zoom,
         merge=args.merlin_merge,
         negative=card_negative(args),
+        captions=captions(args),
     )
 
 

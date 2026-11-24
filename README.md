@@ -53,6 +53,8 @@ Drag the picture to move it. The **Zoom** slider, the mouse wheel, or the arrow 
 
 **Chapters** follows the book's own outline. **Paragraphs** and **Sentences** make many short parts instead, which is how a long chapter becomes something a child listens to in one sitting. The book's own marks decide how many parts each gives, and the app only offers the levels that book can actually give.
 
+**Show the words on screen.** Tick it with **Sentences** and each part shows its own words while its audio plays — the whole sentence, at the largest lettering that screen holds, with no cover behind it. Only a Telmi or a Flam screen is big enough to read a sentence on.
+
 ### 6. Listen, and drop what is not the story
 
 **Chapters** opens the list. Select a line and press **Listen**, or double-click it, to hear a chapter before deciding. One part plays at a time, and the button becomes **Stop** while it plays, so a part you have heard enough of is over when you say so. Untick the ones that are not part of the story — the legal notice, the table of contents, the "end of book" announcement — and what is left is renumbered, so the cards still count from 1.

@@ -47,6 +47,7 @@ Before converting:
 | :--- | :--- | :--- |
 | `--list` | | prints one line per part (number, length, title, clip count) and stops; needs no output folder |
 | `--cut` | `chapter` `paragraph` `sentence` | where the book is cut; `chapter` follows the pack's own outline |
+| `--captions` / `--no-captions` | | draws each part's own words as its picture, shown while its audio plays. Needs `--cut sentence` and a Telmi or a Flam screen |
 | `--preview FOLDER` | | writes one playable MP3 per part into FOLDER and stops |
 | `--drop CHAPTERS` | `2`, `2,4-6` | leaves those parts out, by the numbers `--list` prints; what is left is renumbered. A number outside the book, or dropping every part, exits 2 |
 
@@ -105,6 +106,7 @@ stories/_00_Wesh la fee_292b74ca-d8be-53f9-a5d5-5224a36bbd02/
     s0.mp3 ... sN.mp3      one per part
   images/
     m0.png ... mN.png      640x480: the cover with the card text over it, or the number on a placeholder
+    s0.png ... sN.png      only with --captions: the part's own words, on the card's ground and with no cover
 ```
 
 The zip nests the folder one level, because `findDirectory` in Telmi-Sync's `ConvertZip.js` counts `metadata.json`, `nodes.json`, `title.mp3` and `title.png` in a single zip directory and requires exactly four. Telmi-Sync renames the folder on import, so the name is for readability before import.
@@ -117,9 +119,19 @@ m<k>   menu card: image m<k>.png, no audio, autoplay off, ok → s<k>
 s<k>   chapter:   audio s<k>.mp3, autoplay on, ok → m[k+1], home → m[k]
 ```
 
+With `--captions` a chapter stage carries `image: s<k>.png` too; without it the chapter has no picture and keeps showing the card it was read from.
+
 The last chapter's `ok` is `null`, which is how the published sample packs end a story.
 
 A Telmi story has no night-mode flag: the player's night mode takes the story already open in front of it. What decides whether a chapter joins that playlist is the graph's own `control.autoplay` and `control.ok`, set so a chapter runs on by itself. A Lunii archive carries one word, `nightModeAvailable`, and a converted audiobook always sets it, because it never asks for anything but the next chapter.
+
+### The sentence pictures
+
+`--captions` draws each part's own words as its picture and puts it on that part's stage, so the screen reads the sentence while its audio plays. The card keeps the cover; only the playing part goes plain.
+
+The whole sentence is drawn, at the largest lettering the screen still holds: the size is found by trying the largest and stepping down until every line fits. The air between two lines grows with the lettering but never below 4 pixels, so a tall sentence at small lettering does not read as one solid block. A sentence too tall even at the smallest lettering keeps the lines the screen has room for. Each picture is a PNG of 2.4–6.2 KB: a 569-sentence book's whole `images/` folder, cards included, is 6.3 MB.
+
+Only a Telmi or a Flam screen is big enough to read a sentence on — a Lunii's is not, and a Merlin card has none — and the cut must be at sentences, because one picture per part is only worth drawing when each part is one sentence. Asking for captions on another format or another cut stops the run rather than writing a story that shows nothing. The desktop draws the words with the same 5x7 bitmap font as the cards, so a Chinese or Arabic pack gets no caption pictures there; the web page letters them with the browser's own font.
 
 ### Lunii `.plain.pk`
 
@@ -212,6 +224,8 @@ The main window asks which engine reads the cards, in a box beside the player th
 
 **Options** holds the rest: the interface language, what the cards say, whether the drawn card counts the parts, autoplay, the window bar, and the two folders the app works in — the one the file lists open in, and the one stories are written to. Closing either window writes `~/.config/daisy2telmi/config.json` (`%APPDATA%\daisy2telmi\config.json` on Windows), which the CLI reads too, so a flag only overrides what is already saved.
 
+**Show the words on screen** sits under the crop controls: each part gets a picture of its own words, shown while its audio plays. The box is live only for Telmi and Flam, and ticking it moves the cut to sentences.
+
 Drag-and-drop needs the optional `tkinterdnd2`; without it the browse buttons work and the window says so. `build_binary.py` passes `--collect-all tkinterdnd2` when it is installed.
 
 ## Web page
@@ -220,13 +234,15 @@ Drag-and-drop needs the optional `tkinterdnd2`; without it the browse buttons wo
 
 Once a pack has been read, the page lists the parts with their lengths, each with a box: untick one to leave it out. The numbers belong to the chosen cut level, so changing level redraws the list; past 400 parts the page only says how many there are. **The chapter cards** holds three boxes: show how many parts there are on the drawn card, say the word chapter, say how many parts there are. The choices are kept in `localStorage` and travel to the drawn card text and to the card audio.
 
+**Show the words on screen** sits under the crop controls, and is greyed out unless the format is Telmi or Flam and the cut is at sentences — the page offers a box that could draw nothing but the card's own picture. The page letters the words with the browser's own font, so it draws captions for a Chinese pack where the desktop cannot.
+
 **MP3 playlist** is written on its own: the cover frame, the crop controls and **Test the story** are hidden, because a plain player is handed no pictures at all and there is no story graph to play back.
 
 `web/voices/<language>/01.mp3` … `50.mp3` are the pre-recorded announcements ("Chapter 4"), `n-01.mp3` … `n-50.mp3` the numbers alone, and `of-pre.mp3`, `of-mid.mp3` and `of-post.mp3` the words the language puts around the total, split out of its own `{n} of {total}` pattern so a language that names the part before the number, or after both, is recorded as it speaks. `tools/make_web_voices.py` generates them all, from Chatterbox (`--engine chatterbox --python <interpreter with chatterbox-tts>`) or from espeak-ng, which is the default and needs no download, and levels every clip to the loudness the app levels its cards to. The chapter clips committed are the Chatterbox ones; the bare numbers and the fragments are espeak-ng, because Chatterbox 0.1.7 loses its place on a one-word phrase and answers "of" with 23 seconds of noise. A browser tab can play speech but cannot capture it into a file, so the clips are committed rather than synthesised during conversion; past chapter 50 the cards stay silent.
 
 The page concatenates MP3 frame data instead of re-encoding. That is safe because the player resamples, but it means no clip trimming and no bitrate normalisation.
 
-`web/emulator.html` plays a pack back before it is printed: drop in the Telmi zip, the STUdio zip or the `.plain.pk`, and the page draws the machine, its screen and its five keys — the side pair, OK, Pause and Home — a key lit only where the pack switched it on, Pause wherever the stage has a clip. `web/emulator.js` reads the three archives into one model — a stage, its media, and where OK, home and the wheel lead — and walks it the way the firmware does, including the card's run-length bitmaps; `web/emulator-app.js` is the player on top of it. The keyboard follows the machine: arrows for the side buttons, Enter or Space for OK, Backspace or `h` for home, `p` for Pause. A Telmi story has no wheel, so there the two side buttons seek ten seconds back and forward inside the clip. A chapter has no picture of its own: it keeps the card it is read from for four seconds, then the screen goes dark until a key.
+`web/emulator.html` plays a pack back before it is printed: drop in the Telmi zip, the STUdio zip or the `.plain.pk`, and the page draws the machine, its screen and its five keys — the side pair, OK, Pause and Home — a key lit only where the pack switched it on, Pause wherever the stage has a clip. `web/emulator.js` reads the three archives into one model — a stage, its media, and where OK, home and the wheel lead — and walks it the way the firmware does, including the card's run-length bitmaps; `web/emulator-app.js` is the player on top of it. The keyboard follows the machine: arrows for the side buttons, Enter or Space for OK, Backspace or `h` for home, `p` for Pause. A Telmi story has no wheel, so there the two side buttons seek ten seconds back and forward inside the clip. A chapter with no picture of its own keeps the card it is read from for four seconds, then the screen goes dark until a key; a story built with the sentence pictures shows its words instead.
 
 `src/daisy2telmi/emulator.py` is the same reader for the app. `find_story` returns the newest story in the output folder — a folder holding `nodes.json` or `story.json`, or a zip holding either — `read_story` reads either graph into the same model (a stage, its media, and where OK, home and the wheel lead), letting an archive out into a temporary folder so a clip has a path to play from, and `walk` answers where a button leads. `gui.Emulator` draws the machine on one canvas — the shell, the screen, the wheel's ring and the five keys — at whole-pixel zoom, lights a key only where the stage switched it on, and holds a chapter's card for four seconds before the screen goes dark. Pause and the side buttons steer the clip through `ffplay -ss`: `chapters.open_preview(path, resume)` starts a clip part-way in, which it asks of ffplay even on macOS, where `afplay` would start over. The `.pk` records are read on the web page only: Tk cannot decode the card's BMP.
 

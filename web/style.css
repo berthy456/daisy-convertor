@@ -33,8 +33,10 @@ body {
   font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+/* Wide enough that the six players and the two cover searches each keep their own
+   line, and the crop frame can stand beside its knobs. */
 main {
-  max-width: 48rem;
+  max-width: 66rem;
   margin: 0 auto;
   padding: 2rem 1rem 3rem;
 }
@@ -145,6 +147,15 @@ code {
   font-size: 0.9rem;
 }
 
+/* The pack the page is working on, named where it was chosen. */
+.pack-name {
+  margin: 0.75rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
 .pickers {
   display: flex;
   gap: 0.5rem;
@@ -208,6 +219,13 @@ input[type="file"] {
   gap: 0.35rem;
   align-items: center;
   color: var(--ink);
+}
+
+/* A player's name is one choice, so it is never broken over two lines: the row
+   wraps between the players, not inside one. */
+.format-row label,
+.cover-search label {
+  white-space: nowrap;
 }
 
 /* The cover lookup asks three services in turn and runs while the rest of the
@@ -320,10 +338,24 @@ input[type="file"] {
     margin-top: 0;
   }
 
+  .crop-box .crop-tools .captions-note {
+    flex: none;
+  }
+
+  /* The knobs take the column beside the frame; what the frame does is said under
+     it, across the whole card. */
   .crop-box .crop-note {
-    grid-column: 2;
+    grid-column: 1 / -1;
     grid-row: 2;
   }
+}
+
+/* What the words on screen cost is said under the box that asks for them: its own
+   line when the knobs run along the page, part of the column when they stand beside
+   the frame. */
+.crop-tools .captions-note {
+  flex: 0 0 100%;
+  margin: 0;
 }
 
 .crop,

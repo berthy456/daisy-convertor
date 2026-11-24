@@ -81,6 +81,25 @@ test("a part carries the words the pack read over it", async () => {
   assert.ok(extractBook(entries, "chapter").chapters[0].text.startsWith("これは、私（わたし）"));
 });
 
+test("a sentence-cut part knows the chapter it was read under", async () => {
+  const entries = await pack("gon-ruby-mp3.zip");
+  const sentences = extractBook(entries, "sentence").chapters;
+  const chapters = extractBook(entries, "chapter").chapters;
+  const owners = sentences.map((part) => part.chapter);
+  assert.deepEqual(
+    [...new Set(owners)],
+    chapters.map((_, index) => index),
+    "the book's own chapters, in the order they play",
+  );
+  assert.equal(
+    owners.filter((value, index) => index === 0 || value !== owners[index - 1]).length,
+    chapters.length,
+    "a chapter's sentences stay together in the list",
+  );
+  assert.equal(sentences[0].chapterTitle, chapters[0].title);
+  assert.equal(chapters[0].chapter, undefined, "at chapter level a part is its own chapter");
+});
+
 test("a card below chapter level plays the opening seconds of its part", async () => {
   const silent = new Uint8Array(await readFile(join(ROOT, "web/silence.mp3")));
   const story = await buildStoryFiles(await pack("gon-ruby-mp3.zip"), silent, () => {}, { cut: "paragraph" });

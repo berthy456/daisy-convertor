@@ -60,6 +60,8 @@ const partsBox = document.getElementById("parts");
 const partsList = document.getElementById("parts-list");
 const partsNote = document.getElementById("parts-note");
 const partsAll = document.getElementById("parts-all");
+const packLabel = document.getElementById("pack-name");
+const captionsNote = document.getElementById("captions-note");
 
 const silentMp3 = new Uint8Array(await (await fetch("./silence.mp3")).arrayBuffer());
 const STORED_LANGUAGE = "daisy2telmi.language";
@@ -81,6 +83,12 @@ const CROP_WIDTH = 720;
 
 let source = null;
 let cover = null;
+// Whether the cover on the page came from a lookup or from the user: only the
+// second one is a setting worth carrying to the next pack. The book's name the
+// pack gave the two search boxes follows the same rule.
+let coverAuto = false;
+let autoTitle = "";
+let autoAuthor = "";
 let lang = "en";
 let cut = "chapter";
 let crop = "center";
@@ -184,6 +192,7 @@ function showCaptions() {
   // Only a Telmi or a Flam screen holds a sentence; the choice stays put while
   // another player is chosen.
   captionsRow.hidden = !CAPTION_FORMATS.includes(format);
+  captionsNote.hidden = captionsRow.hidden;
   // A box that could draw nothing but the card's own picture is not worth offering.
   captionsBox.disabled = cut !== "sentence" || !cutLevels.includes("sentence");
 }
@@ -372,9 +381,10 @@ function startCrop() {
   });
 }
 
-function setCover(bitmap) {
+function setCover(bitmap, lookedUp = false) {
   if (cover) cover.close();
   cover = bitmap;
+  coverAuto = lookedUp;
   coverStamp += 1;
   coverClear.hidden = false;
   log(t("log_cover_set", { w: bitmap.width, h: bitmap.height }));
@@ -384,6 +394,7 @@ function setCover(bitmap) {
 function clearCover() {
   if (cover) cover.close();
   cover = null;
+  coverAuto = false;
   coverStamp += 1;
   coverClear.hidden = true;
   coverUrl.value = "";
@@ -416,7 +427,7 @@ async function suggestCover() {
   if (cover) return;
   // The service names are its own, so they are not translated, only appended.
   log(found.bitmap ? `${t("cover_found")} (${found.source})` : t("cover_none"));
-  if (found.bitmap) setCover(found.bitmap);
+  if (found.bitmap) setCover(found.bitmap, true);
 }
 
 function partSeconds(chapter) {
@@ -429,9 +440,35 @@ function formatSeconds(seconds) {
 }
 
 /**
+ * The chapters a sentence-cut book is made of: its parts in the order they play,
+ * grouped by the chapter each was read under. Dropping one leaves out every
+ * sentence it owns, which is what a listener trims a book with.
+ */
+function chapterRows(parts) {
+  const rows = [];
+  parts.forEach((part, index) => {
+    const last = rows[rows.length - 1];
+    if (last && last.chapter === part.chapter) {
+      last.numbers.push(index + 1);
+      last.seconds += partSeconds(part);
+      return;
+    }
+    rows.push({
+      chapter: part.chapter,
+      numbers: [index + 1],
+      title: part.chapterTitle || `Part ${rows.length + 1}`,
+      seconds: partSeconds(part),
+    });
+  });
+  return rows;
+}
+
+/**
  * The parts the pack was cut into, each with a box to leave it out. The numbers
  * belong to the chosen level, so changing level redraws the list and forgets the
- * parts left out of the old one.
+ * parts left out of the old one. At the sentence level the boxes are the chapters:
+ * a book cut to sentences runs to thousands of parts, and no one trims it one
+ * sentence at a time.
  */
 async function showParts() {
   if (!source) return;
@@ -440,29 +477,35 @@ async function showParts() {
   partsList.textContent = "";
   try {
     const { chapters } = extractBook(await packEntries(), cut);
-    if (chapters.length > LISTED_BOXES) {
+    const rows =
+      cut === "sentence"
+        ? chapterRows(chapters)
+        : chapters.map((chapter, index) => ({ numbers: [index + 1], title: chapter.title, seconds: partSeconds(chapter) }));
+    if (rows.length > LISTED_BOXES) {
       partsNote.textContent = t("parts_too_many", { n: chapters.length });
       partsBox.hidden = false;
       return;
     }
     partsNote.textContent = "";
-    chapters.forEach((chapter, index) => {
-      const row = document.createElement("label");
+    rows.forEach((row, index) => {
+      const line = document.createElement("label");
       const box = document.createElement("input");
       box.type = "checkbox";
       box.checked = true;
       box.addEventListener("change", () => {
-        if (box.checked) dropped.delete(index + 1);
-        else dropped.add(index + 1);
+        for (const number of row.numbers) {
+          if (box.checked) dropped.delete(number);
+          else dropped.add(number);
+        }
         partsAll.hidden = dropped.size === 0;
       });
       const title = document.createElement("span");
-      title.textContent = `${index + 1}. ${chapter.title}`;
+      title.textContent = `${index + 1}. ${row.title}`;
       const length = document.createElement("span");
       length.className = "muted";
-      length.textContent = formatSeconds(partSeconds(chapter));
-      row.append(box, title, length);
-      partsList.append(row);
+      length.textContent = formatSeconds(row.seconds);
+      line.append(box, title, length);
+      partsList.append(line);
     });
     partsBox.hidden = false;
   } catch {
@@ -493,8 +536,14 @@ function showSummary(story) {
   const more = parts.length > LISTED_PARTS ? `\n${t("summary_more", { n: parts.length - LISTED_PARTS })}` : "";
   summary.textContent = `${story.dirName}\n${t("log_chapters", { n: parts.length })}\n${listed}${more}`;
   summary.hidden = false;
-  if (!coverTitle.value.trim()) coverTitle.value = story.book.title || "";
-  if (!coverAuthor.value.trim() && story.book.author) coverAuthor.value = story.book.author;
+  if (!coverTitle.value.trim()) {
+    coverTitle.value = story.book.title || "";
+    autoTitle = coverTitle.value;
+  }
+  if (!coverAuthor.value.trim() && story.book.author) {
+    coverAuthor.value = story.book.author;
+    autoAuthor = coverAuthor.value;
+  }
   showCoverSearch();
 }
 
@@ -628,37 +677,47 @@ async function testStory() {
   if (!source) return;
   testButton.disabled = true;
   clearResult();
+  // The tab is opened on the click itself: a browser only lets a page open one
+  // while it is still handling the click, and the story takes seconds to build.
+  const tab = window.open("./emulator.html?test=1", "_blank");
+  playing = tab ? { tab, pack: null, asked: false } : null;
   try {
     tested = { key: settingsKey(), ...(await buildPack()) };
-    play(tested);
+    if (playing) hand(tested);
+    // A blocked popup still has the pack: hand it over as a file the player opens.
+    else offer(tested.name, tested.bytes);
   } catch (error) {
     log(t("log_error", { message: error.message ?? error }));
+    // The tab is this page's own, and the story it was opened for never came.
+    if (playing) playing.tab.close();
+    playing = null;
     bar.hidden = true;
   } finally {
     testButton.disabled = false;
   }
 }
 
-/** Open the story player in its own tab and hand it the pack, without a file. */
-function play(pack) {
-  const tab = window.open("./emulator.html?test=1", "_blank");
-  if (!tab) {
-    // A blocked popup still has the pack: hand it over as a file the player opens.
-    offer(pack.name, pack.bytes);
-    return;
-  }
-  playing = { tab, pack };
+/** The story the player tab asked for, or asks for the moment it has one. */
+function hand(pack) {
+  playing.pack = pack;
+  if (playing.asked) send();
 }
 
-// The player tab asks for the pack it was opened to play, so nothing is uploaded
-// and nothing is saved to disk on the way.
-window.addEventListener("message", (event) => {
-  if (event.origin !== location.origin || !playing || event.source !== playing.tab) return;
-  if (event.data?.type !== "daisy2telmi-ask") return;
-  event.source.postMessage(
+function send() {
+  playing.tab.postMessage(
     { type: "daisy2telmi-story", name: playing.pack.name, bytes: playing.pack.bytes },
     location.origin,
   );
+}
+
+// The player tab asks for the pack it was opened to play, so nothing is uploaded
+// and nothing is saved to disk on the way. It asks as soon as it is loaded, which
+// is usually before the story it is waiting for has been built.
+window.addEventListener("message", (event) => {
+  if (event.origin !== location.origin || !playing || event.source !== playing.tab) return;
+  if (event.data?.type !== "daisy2telmi-ask") return;
+  playing.asked = true;
+  if (playing.pack) send();
 });
 
 /** The pack read once: the cut levels need its outline, and the conversion needs the same files. */
@@ -695,6 +754,12 @@ async function openCutLevels() {
 }
 
 function setSource(name, loader) {
+  // The cover and the book's name a lookup gave belong to the pack they were
+  // looked up for; everything else the page holds is the user's own setting and stays.
+  if (coverAuto) clearCover();
+  if (coverTitle.value === autoTitle) coverTitle.value = "";
+  if (coverAuthor.value === autoAuthor) coverAuthor.value = "";
+  autoTitle = autoAuthor = "";
   source = { name, loader, entries: null };
   // A pack that is not the one a test played cannot be the story that test showed.
   tested = null;
@@ -703,6 +768,8 @@ function setSource(name, loader) {
   clearResult();
   partsBox.hidden = true;
   logView.textContent = "";
+  packLabel.textContent = t("pack_loaded", { name });
+  packLabel.hidden = false;
   showCoverSearch(name.replace(/\.[^.]+$/, ""));
   log(t("log_loaded", { name }));
   openCutLevels();

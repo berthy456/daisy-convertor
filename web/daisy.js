@@ -414,6 +414,15 @@ export function extractBook(entries, level = "chapter") {
   const pageCache = new Map();
   const chapters = [];
   let frontMatter = [];
+  // A book cut below the chapters still belongs to them: the sentence parts carry
+  // the chapter they were read under, so the list a book is trimmed with stays the
+  // book's own chapters rather than a thousand sentences. The same rule `place`
+  // uses one level up: an entry opens a chapter when it sits at or above it.
+  const owners = [];
+  const ownerOf = (entry) => {
+    if (!owners.length || entry.level <= chapterLevel) owners.push(entry.title || "");
+    return { chapter: owners.length - 1, chapterTitle: owners[owners.length - 1] };
+  };
 
   const place = (draft) => {
     // Open a part, or add it to the one before at a level below the chapters.
@@ -440,6 +449,7 @@ export function extractBook(entries, level = "chapter") {
       }
       const marks = smilMarks(smilName);
       if (level === "sentence") {
+        const owner = ownerOf(entry);
         for (const mark of marks) {
           chapters.push({
             title: "",
@@ -448,6 +458,7 @@ export function extractBook(entries, level = "chapter") {
             body: mark.text,
             spans: [...mark.spans],
             level: entry.level,
+            ...owner,
           });
         }
         continue;
@@ -473,8 +484,9 @@ export function extractBook(entries, level = "chapter") {
     }
     const body = pageCache.get(name).get(document.anchor) ?? "";
     if (level === "sentence") {
+      const owner = ownerOf(entry);
       for (const sentence of sentences(body)) {
-        chapters.push({ title: "", segments: [], text: sentence, body: sentence, spans: [], level: entry.level });
+        chapters.push({ title: "", segments: [], text: sentence, body: sentence, spans: [], level: entry.level, ...owner });
       }
       continue;
     }
@@ -511,6 +523,8 @@ export function extractBook(entries, level = "chapter") {
         // That same text one piece per synced clip, in the order the clips play.
         spans: c.spans ?? [],
         segments: merge(c.segments),
+        // Only the sentence level needs it: at the other two, a part is a chapter.
+        ...(c.chapter === undefined ? {} : { chapter: c.chapter, chapterTitle: c.chapterTitle }),
       })),
     frontMatter: merge(frontMatter),
   };

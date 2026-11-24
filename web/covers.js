@@ -104,6 +104,16 @@ async function getJSON(url) {
   }
 }
 
+// A service that has stopped answering is not worth waiting for: the page has a
+// manual search the user can run while this lookup is still trying, and a book
+// none of them carries should be said so in seconds rather than minutes.
+const TIMEOUT = 8000;
+
+function within(trying) {
+  const limit = new Promise((_, reject) => setTimeout(() => reject(new Error("no answer")), TIMEOUT));
+  return Promise.race([trying, limit]);
+}
+
 /**
  * The picture and the service it came from, or `{ bitmap: null }`. A service
  * that has no cover answers with a 1x1 GIF, which is a picture of nothing, so
@@ -112,9 +122,9 @@ async function getJSON(url) {
 export async function findCover(book, base) {
   for (const [name, locate] of SOURCES) {
     try {
-      const url = await locate(book);
+      const url = await within(locate(book));
       if (!url) continue;
-      const bitmap = await loadCoverUrl(url, base);
+      const bitmap = await within(loadCoverUrl(url, base));
       if (bitmap !== null && bitmap.width > 1) return { bitmap, source: name };
     } catch {
       // One service refusing costs only its turn: the next is asked.

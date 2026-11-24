@@ -1074,7 +1074,8 @@ class App:
             if entry.is_dir():
                 if target.is_dir() and any(target.iterdir()) and not self.force_var.get():
                     self._append(
-                        f"ERROR: {target} already holds a story: tick the overwrite box to replace it"
+                        f"ERROR: a file of the same name already exists: {target} holds a story. "
+                        "Tick the overwrite box to replace it"
                     )
                     return False
                 shutil.copytree(entry, target, dirs_exist_ok=True)

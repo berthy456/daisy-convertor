@@ -160,12 +160,13 @@ def test_an_already_extracted_folder_is_accepted(tmp_path: Path) -> None:
 
 
 @requires_pack
-def test_an_existing_story_folder_is_refused_without_force(tmp_path: Path) -> None:
+def test_an_existing_story_folder_is_refused_without_force(tmp_path: Path, caplog) -> None:
     out = tmp_path / "out"
     assert main([str(PACK), str(out)]) == 0
     (out / "keep.txt").write_text("do not clobber", encoding="utf-8")
     assert main([str(PACK), str(out)]) == 2
     assert (out / "keep.txt").read_text(encoding="utf-8") == "do not clobber"
+    assert "a file of the same name already exists" in caplog.text, "the log names the clash"
 
 
 def test_a_non_daisy_folder_fails_cleanly(tmp_path: Path) -> None:

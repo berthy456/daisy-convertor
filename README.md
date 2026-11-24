@@ -98,7 +98,7 @@ The app can read the cards in a real voice. On the first conversion it offers to
 
 **Nothing happens when a chapter is clicked.** The chapters window plays through the machine's own audio player; if the machine has none, the line still shows the chapter's length.
 
-**"already holds a story: nothing was written".** A story with that name was made before, and the log says so in red. Tick **Overwrite an existing story folder** to replace it.
+**"a file of the same name already exists".** A story with that name was made before, and the log says so in red. Tick **Overwrite an existing story folder** to replace it.
 
 ## For developers
 

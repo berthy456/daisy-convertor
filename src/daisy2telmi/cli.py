@@ -338,7 +338,10 @@ def speech(announce: Announce | None) -> Announce | None:
 def _unfinished(target: Path | None) -> None:
     """What a failed run left in the output folder, before the next run refuses it."""
     if target is not None and target.is_dir():
-        log.error("%s holds an unfinished story: overwrite it to write the story again", target)
+        log.error(
+            "a file of the same name already exists: %s holds an unfinished story. Overwrite it to write the story again",
+            target,
+        )
 
 
 def convert(
@@ -402,8 +405,8 @@ def convert(
             target = output_dir if output_dir.name == name else output_dir / name
             if target.exists() and any(target.iterdir()) and not force:
                 log.error(
-                    "%s already holds a story: nothing was written. Tick the overwrite box, "
-                    "or pass --force, to replace it.",
+                    "a file of the same name already exists: %s holds a story, so nothing was written. "
+                    "Tick the overwrite box, or pass --force, to replace it.",
                     target,
                 )
                 return 2

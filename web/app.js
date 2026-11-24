@@ -115,6 +115,9 @@ let coverJob = 0;
 // The pack a test just played, kept so Save can hand it over without building the
 // story a second time.
 let tested = null;
+// The zip the last download link pointed at. A browser keeps an object URL's bytes
+// until it is revoked, and a big book's zip is tens of megabytes.
+let downloadUrl = null;
 // The player tab that asked for a pack, and the pack it asked for.
 let playing = null;
 // How many covers came and went: a bitmap cannot be compared to its earlier self,
@@ -548,6 +551,8 @@ function showSummary(story) {
 }
 
 function clearResult() {
+  if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+  downloadUrl = null;
   downloadLink.hidden = true;
   downloadLink.removeAttribute("href");
 }
@@ -645,7 +650,9 @@ async function buildPack() {
 }
 
 function offer(name, bytes) {
-  downloadLink.href = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
+  if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+  downloadUrl = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
+  downloadLink.href = downloadUrl;
   downloadLink.download = name;
   downloadLink.hidden = false;
   bar.value = 1;

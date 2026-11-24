@@ -53,6 +53,22 @@ DEVICES = (AUTO, "cpu", "mps", "cuda")
 PACKAGES = {PIPER: "piper-tts", COQUI: "coqui-tts", CHATTERBOX: "chatterbox-tts"}
 MODULES = {PIPER: "piper", COQUI: "TTS", CHATTERBOX: "chatterbox"}
 
+# What each of them imports at speak time besides its own package. A package engine
+# can be present with its runtime missing: the app then calls it installed and the
+# first chapter dies on "no module named torch".
+RUNTIMES = {PIPER: ("onnxruntime",), COQUI: ("torch",), CHATTERBOX: ("torch",)}
+
+# Coqui and Chatterbox speak with torch. On Linux the PyPI wheel of torch brings the
+# CUDA libraries and triton with it — over a gigabyte, none of it used here — and
+# triton is the one download that fails most often. The CPU index carries the same
+# versions with none of that, and a pin like `torch==2.6.0` is satisfied by 2.6.0+cpu.
+TORCH_ENGINES = (COQUI, CHATTERBOX)
+CPU_TORCH = "https://download.pytorch.org/whl/cpu"
+
+# pip gives up on a stalled download after five tries and 15 s with nothing arriving.
+# A torch wheel is exactly the size that stalls.
+PIP_RETRIES = ["--retries", "10", "--timeout", "120"]
+
 SPEAKING_RATE = 150  # words per minute, espeak-ng's unit
 
 SPEEDS = ("slow", "normal", "fast")
@@ -272,8 +288,10 @@ def _has_package(engine: str, exe: str | None) -> bool:
     key = (exe, engine)
     if key not in _package_cache:
         # find_spec only looks the package up: importing any of them pulls torch
-        # or onnxruntime in, which is what asking costs.
-        probe = f"import importlib.util as u; print(u.find_spec({MODULES[engine]!r}) is not None)"
+        # or onnxruntime in, which is what asking costs. The runtime is looked up
+        # the same way, because the engine package alone is not enough to speak with.
+        names = [MODULES[engine], *RUNTIMES.get(engine, ())]
+        probe = f"import importlib.util as u; print(all(u.find_spec(n) is not None for n in {names!r}))"
         result = subprocess.run(
             [exe, "-I", "-c", probe], capture_output=True, text=True, env=_external_env()
         )
@@ -453,6 +471,11 @@ def install_engine(engine: str, python: str | None = None) -> str:
 
     With no Python named, the app installs into one it made itself: the machine's
     own Python refuses the install on Debian 13 and Fedora.
+
+    For the two engines that speak with torch, torch goes in first and from the CPU
+    index. Asked for alongside the engine, pip takes the PyPI build of it, and on
+    Linux that build drags the CUDA libraries and triton down with it — over a
+    gigabyte, on a machine that is going to speak on the CPU.
     """
     package = PACKAGES.get(engine)
     if package is None:
@@ -463,7 +486,15 @@ def install_engine(engine: str, python: str | None = None) -> str:
             f"no Python to install {package} into: set the {LABELS[engine]} Python in the options, "
             "or pass --tts-python"
         )
-    _stream(exe, ["-m", "pip", "install", "--upgrade", package], "pip")
+    cpu_torch = ["--extra-index-url", CPU_TORCH] if engine in TORCH_ENGINES and sys.platform == "linux" else []
+    if cpu_torch:
+        try:
+            _stream(exe, ["-m", "pip", "install", "--index-url", CPU_TORCH, "torch", "torchaudio", *PIP_RETRIES], "pip")
+        except TtsError as exc:
+            # The CPU index is a second host. Where it cannot be reached, the engine
+            # install still has the PyPI wheel to fall back on.
+            log.info("%s: %s", CPU_TORCH, exc)
+    _stream(exe, ["-m", "pip", "install", "--upgrade", package, *PIP_RETRIES, *cpu_torch], "pip")
     _package_cache.clear()
     log.info("%s is installed in %s", package, exe)
     return exe

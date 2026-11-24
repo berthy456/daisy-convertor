@@ -180,7 +180,7 @@ def test_installing_a_package_uses_the_pip_of_the_python_named(monkeypatch) -> N
     tts._package_cache[("/opt/python", tts.PIPER)] = False
 
     assert tts.install_engine(tts.PIPER, "/opt/python") == "/opt/python"
-    assert started == [["/opt/python", "-m", "pip", "install", "--upgrade", tts.PACKAGES[tts.PIPER]]]
+    assert started == [["/opt/python", "-m", "pip", "install", "--upgrade", tts.PACKAGES[tts.PIPER], *tts.PIP_RETRIES]]
     # The options page shows whether the package is there, so it must look again.
     assert ("/opt/python", tts.PIPER) not in tts._package_cache
     tts._package_cache.clear()
@@ -209,8 +209,68 @@ def test_an_install_with_no_python_named_makes_an_environment_of_its_own(
     exe = tts.install_engine(tts.PIPER)
 
     assert started[0] == ["/usr/bin/python3", "-m", "venv", str(env)]
-    assert [exe, "-m", "pip", "install", "--upgrade", tts.PACKAGES[tts.PIPER]] in started
+    assert [exe, "-m", "pip", "install", "--upgrade", tts.PACKAGES[tts.PIPER], *tts.PIP_RETRIES] in started
     assert exe == str(env / "bin/python")
+
+
+def test_a_torch_engine_gets_its_torch_from_the_cpu_index_first(monkeypatch) -> None:
+    """On Linux the PyPI torch drags the CUDA libraries and triton with it: over a
+    gigabyte, on a machine that is going to speak on the CPU."""
+    started: list[list[str]] = []
+
+    def fake_popen(argv, **kwargs):
+        started.append(argv)
+        return _SilentProcess()
+
+    monkeypatch.setattr(tts.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(tts.sys, "platform", "linux")
+    monkeypatch.setattr(tts, "_python", lambda python=None: "/opt/python")
+
+    assert tts.install_engine(tts.CHATTERBOX, "/opt/python") == "/opt/python"
+    torch, engine = started
+    assert torch[:6] == ["/opt/python", "-m", "pip", "install", "--index-url", tts.CPU_TORCH]
+    assert {"torch", "torchaudio"} <= set(torch), "the CPU build of both, before the engine"
+    assert tts.PACKAGES[tts.CHATTERBOX] in engine
+    assert tts.CPU_TORCH in engine, "so a torch the resolver still wants comes from there too"
+
+
+def test_a_light_engine_is_installed_without_touching_the_torch_index(monkeypatch) -> None:
+    started: list[list[str]] = []
+
+    def fake_popen(argv, **kwargs):
+        started.append(argv)
+        return _SilentProcess()
+
+    monkeypatch.setattr(tts.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(tts.sys, "platform", "linux")
+    monkeypatch.setattr(tts, "_python", lambda python=None: "/opt/python")
+
+    assert tts.install_engine(tts.PIPER, "/opt/python") == "/opt/python"
+    assert len(started) == 1
+    assert tts.CPU_TORCH not in started[0]
+
+
+def test_an_engine_missing_its_torch_is_not_called_installed(monkeypatch) -> None:
+    """coqui-tts lands without torch when that one download stalls. The engine is
+    then there on paper, and the first chapter dies on "no module named torch"."""
+    seen: list[str] = []
+
+    def fake_run(argv, **kwargs):
+        probe = argv[3]
+        seen.append(probe)
+        return subprocess.CompletedProcess(argv, 0, "False\n" if "torch" in probe else "True\n", "")
+
+    monkeypatch.setattr(tts.subprocess, "run", fake_run)
+    monkeypatch.setattr(tts, "_pythons", lambda python=None: ["/usr/bin/python3"])
+    tts._package_cache.clear()
+
+    assert tts.available(tts.COQUI) is False
+    assert "torch" in seen[0] and "TTS" in seen[0], "the package and what it speaks with"
+
+    monkeypatch.setattr(tts.subprocess, "run", lambda argv, **k: subprocess.CompletedProcess(argv, 0, "True\n", ""))
+    tts._package_cache.clear()
+    assert tts.available(tts.COQUI) is True
+    tts._package_cache.clear()
 
 
 def test_an_environment_whose_python_lacks_ensurepip_is_given_its_pip(tmp_path, monkeypatch) -> None:

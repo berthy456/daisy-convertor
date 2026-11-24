@@ -214,6 +214,8 @@ One process speaks the whole batch, because loading the model costs more than sa
 
 Where `python3 -m venv` cannot bootstrap pip — Debian ships `venv` without `ensurepip` unless `python3-venv` is installed — the app fetches `get-pip.py`; where that cannot be fetched either, it rebuilds the environment with `--system-site-packages` so it can run the machine's own pip, which still installs inside the environment.
 
+On Linux, Coqui and Chatterbox get `torch` and `torchaudio` first, from `https://download.pytorch.org/whl/cpu`: the PyPI wheel of torch brings the CUDA libraries and triton with it, over a gigabyte for a machine that speaks on the CPU, and the engine's own pin is satisfied by the `+cpu` build. pip runs with `--retries 10 --timeout 120` for the same reason. An engine is called installed only when its runtime is in the same interpreter: `torch` for Coqui and Chatterbox, `onnxruntime` for Piper.
+
 The built binaries carry espeak-ng, its shared libraries and its language data, so speech works with nothing installed. Windows builds use the Windows engine.
 
 ## GUI

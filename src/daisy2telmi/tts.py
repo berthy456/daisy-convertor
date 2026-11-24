@@ -107,7 +107,7 @@ PIPER_VOICES: dict[str, list[str]] = {
         "en_GB-vctk-medium",
     ],
     "es": ["es_ES-davefx-medium", "es_ES-sharvard-medium", "es_MX-ald-medium", "es_MX-claude-high"],
-    "fr": ["fr_FR-siwis-medium", "fr_FR-upmc-medium", "fr_FR-tom-medium", "fr_FR-mls-medium", "fr_FR-siwis-low"],
+    "fr": ["fr_FR-upmc-medium", "fr_FR-siwis-medium", "fr_FR-tom-medium", "fr_FR-mls-medium", "fr_FR-siwis-low"],
     "it": ["it_IT-paola-medium", "it_IT-riccardo-x_low"],
     "nl": ["nl_NL-pim-medium", "nl_NL-ronnie-medium", "nl_NL-mls-medium", "nl_BE-nathalie-medium"],
     "pt": ["pt_BR-faber-medium", "pt_BR-cadu-medium", "pt_BR-jeff-medium", "pt_PT-tugão-medium"],
@@ -463,7 +463,7 @@ def _stream(exe: str, args: list[str], label: str) -> None:
         raise TtsError(f"{label} failed in {exe}: {' '.join(args)}")
 
 
-def install_engine(engine: str, python: str | None = None) -> str:
+def install_engine(engine: str, python: str | None = None, lang: str | None = None) -> str:
     """Install `engine`'s package, and answer which interpreter now has it.
 
     Asked for rather than done on the side: Chatterbox and Coqui bring torch with
@@ -476,6 +476,9 @@ def install_engine(engine: str, python: str | None = None) -> str:
     index. Asked for alongside the engine, pip takes the PyPI build of it, and on
     Linux that build drags the CUDA libraries and triton down with it — over a
     gigabyte, on a machine that is going to speak on the CPU.
+
+    Piper also gets one voice per language: the package alone has no weights, and
+    `auto` looks for a voice on disk before it looks for the package.
     """
     package = PACKAGES.get(engine)
     if package is None:
@@ -497,6 +500,8 @@ def install_engine(engine: str, python: str | None = None) -> str:
     _stream(exe, ["-m", "pip", "install", "--upgrade", package, *PIP_RETRIES, *cpu_torch], "pip")
     _package_cache.clear()
     log.info("%s is installed in %s", package, exe)
+    if engine == PIPER:
+        install_voices(exe, lang)
     return exe
 
 
@@ -508,21 +513,57 @@ def engine_python(engine: str, python: str | None = None) -> str:
     raise TtsError(f"{LABELS[engine]} is not installed: install it from the speech page first")
 
 
-def download_voice(voice: str, python: str | None = None) -> Path:
-    """Download one Piper voice into the app's voice folder, and answer where it landed.
-
-    The weights are the one part of a speech engine the app never ships: a voice is
-    tens of megabytes, and the machine that speaks the cards should fetch its own.
-    """
-    exe = engine_python(PIPER, python)
-    folder = settings.speech_voices()
-    folder.mkdir(parents=True, exist_ok=True)
+def _download_voice(exe: str, voice: str, folder: Path) -> Path:
     _stream(exe, ["-m", "piper.download_voices", voice, "--data-dir", str(folder)], "piper")
     path = folder / f"{voice}.onnx"
     if not path.is_file():
         raise TtsError(f"the {voice} voice did not arrive in {folder}")
     log.info("%s is in %s", voice, folder)
     return path
+
+
+def download_voice(voice: str, python: str | None = None) -> Path:
+    """Download one Piper voice into the app's voice folder, and answer where it landed.
+
+    The weights are the one part of a speech engine the app never ships: a voice is
+    tens of megabytes, and the machine that speaks the cards should fetch its own.
+    """
+    folder = settings.speech_voices()
+    folder.mkdir(parents=True, exist_ok=True)
+    return _download_voice(engine_python(PIPER, python), voice, folder)
+
+
+def default_voice(code: str) -> str | None:
+    """The voice a language gets when the app installs one: the first on its list."""
+    return (PIPER_VOICES.get(code) or [None])[0]
+
+
+def install_voices(exe: str, lang: str | None = None) -> list[str]:
+    """Download the default Piper voice of every language, and answer which arrived.
+
+    Piper with no voice on disk is an engine `auto` walks past: it looks for a voice
+    before it looks for the package. The language in use goes first so the app can
+    speak as soon as the first download lands, and a voice that will not arrive is
+    logged and left to the speech page rather than stopping the install.
+    """
+    folder = settings.speech_voices()
+    folder.mkdir(parents=True, exist_ok=True)
+    order = [lang, *sorted(set(PIPER_VOICES) - {lang})] if lang else sorted(PIPER_VOICES)
+    arrived: list[str] = []
+    for code in order:
+        name = default_voice(code)
+        if not name:
+            continue
+        if (folder / f"{name}.onnx").is_file():
+            arrived.append(name)
+            continue
+        try:
+            _download_voice(exe, name, folder)
+        except TtsError as exc:
+            log.info("%s: %s", name, exc)
+            continue
+        arrived.append(name)
+    return arrived
 
 
 def engines(python: str | None = None) -> list[Engine]:

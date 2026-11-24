@@ -177,6 +177,7 @@ def test_installing_a_package_uses_the_pip_of_the_python_named(monkeypatch) -> N
 
     monkeypatch.setattr(tts.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(tts, "_python", lambda python=None: "/opt/python")
+    monkeypatch.setattr(tts, "install_voices", lambda exe, lang=None: [])
     tts._package_cache[("/opt/python", tts.PIPER)] = False
 
     assert tts.install_engine(tts.PIPER, "/opt/python") == "/opt/python"
@@ -205,6 +206,7 @@ def test_an_install_with_no_python_named_makes_an_environment_of_its_own(
     monkeypatch.setattr(tts.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(tts.settings, "speech_env", lambda engine: env)
     monkeypatch.setattr(tts, "_python", lambda python=None: "/usr/bin/python3")
+    monkeypatch.setattr(tts, "install_voices", lambda exe, lang=None: [])
 
     exe = tts.install_engine(tts.PIPER)
 
@@ -244,10 +246,72 @@ def test_a_light_engine_is_installed_without_touching_the_torch_index(monkeypatc
     monkeypatch.setattr(tts.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(tts.sys, "platform", "linux")
     monkeypatch.setattr(tts, "_python", lambda python=None: "/opt/python")
+    monkeypatch.setattr(tts, "install_voices", lambda exe, lang=None: [])
 
     assert tts.install_engine(tts.PIPER, "/opt/python") == "/opt/python"
     assert len(started) == 1
     assert tts.CPU_TORCH not in started[0]
+
+
+def test_installing_piper_downloads_a_voice_for_every_language(tmp_path, monkeypatch) -> None:
+    """Piper alone has no weights: `auto` looks for a voice on disk before it looks
+    for the package, so an install that downloads nothing installs nothing."""
+    started: list[list[str]] = []
+    folder = tmp_path / "voices"
+
+    def fake_popen(argv, **kwargs):
+        started.append(argv)
+        if "piper.download_voices" in argv:
+            (folder / f"{argv[3]}.onnx").write_bytes(b"model")
+        return _SilentProcess()
+
+    monkeypatch.setattr(tts.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(tts.settings, "speech_voices", lambda: folder)
+    monkeypatch.setattr(tts, "_python", lambda python=None: "/opt/python")
+
+    tts.install_engine(tts.PIPER, "/opt/python", "fr")
+
+    voices = [argv[3] for argv in started[1:]]
+    assert voices[0] == "fr_FR-upmc-medium", "the language in use downloads first"
+    assert set(voices) == {tts.default_voice(code) for code in tts.PIPER_VOICES}
+    assert all((folder / f"{voice}.onnx").is_file() for voice in voices)
+
+
+def test_a_voice_that_will_not_arrive_does_not_stop_the_others(tmp_path, monkeypatch) -> None:
+    folder = tmp_path / "voices"
+
+    def fake_popen(argv, **kwargs):
+        if argv[3] != "fr_FR-upmc-medium":
+            (folder / f"{argv[3]}.onnx").write_bytes(b"model")
+        return _SilentProcess()
+
+    monkeypatch.setattr(tts.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(tts.settings, "speech_voices", lambda: folder)
+
+    arrived = tts.install_voices("/opt/python", "fr")
+
+    assert "fr_FR-upmc-medium" not in arrived
+    assert len(arrived) == len(tts.PIPER_VOICES) - 1, "every other language still gets its voice"
+
+
+def test_a_voice_already_on_disk_is_not_downloaded_again(tmp_path, monkeypatch) -> None:
+    folder = tmp_path / "voices"
+    folder.mkdir()
+    started: list[list[str]] = []
+
+    def fake_popen(argv, **kwargs):
+        started.append(argv)
+        (folder / f"{argv[3]}.onnx").write_bytes(b"model")
+        return _SilentProcess()
+
+    monkeypatch.setattr(tts.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(tts.settings, "speech_voices", lambda: folder)
+    (folder / "fr_FR-upmc-medium.onnx").write_bytes(b"model")
+
+    arrived = tts.install_voices("/opt/python", "fr")
+
+    assert "fr_FR-upmc-medium" in arrived
+    assert all("fr_FR-upmc-medium" not in argv for argv in started)
 
 
 def test_an_engine_missing_its_torch_is_not_called_installed(monkeypatch) -> None:
@@ -606,14 +670,14 @@ def test_the_device_is_left_to_the_model_when_not_chosen(tmp_path, monkeypatch) 
 def test_the_piper_voice_folder_lists_only_the_language_it_holds(tmp_path, monkeypatch) -> None:
     voices = tmp_path / "voices"
     voices.mkdir()
-    for name in ("fr_FR-siwis-medium", "fr_FR-tom-medium", "en_US-lessac-medium", "fr_FR-unlisted-low"):
+    for name in ("fr_FR-upmc-medium", "fr_FR-siwis-medium", "fr_FR-tom-medium", "en_US-lessac-medium", "fr_FR-unlisted-low"):
         (voices / f"{name}.onnx").write_text("")
     monkeypatch.setattr(tts.settings, "speech_voices", lambda: voices)
 
     # The voices the app lists come in the order it lists them; a voice the user put
     # there themselves is still offered, at the end.
     listed = tts.PIPER_VOICES["fr"][0]
-    assert tts.piper_voices("fr") == [listed, "fr_FR-tom-medium", "fr_FR-unlisted-low"]
+    assert tts.piper_voices("fr") == [listed, "fr_FR-siwis-medium", "fr_FR-tom-medium", "fr_FR-unlisted-low"]
     assert tts.piper_voices("de") == []
     assert tts.piper_voice("fr").name == f"{listed}.onnx"
     assert tts.piper_voice("de") is None

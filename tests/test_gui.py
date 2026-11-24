@@ -695,12 +695,12 @@ def _settled(app: gui.App, button: ttk.Button) -> None:
 
 
 def test_the_speech_page_installs_the_engine_it_shows(app: gui.App, monkeypatch) -> None:
-    installed: list[tuple[str, str | None]] = []
+    installed: list[tuple[str, str | None, str]] = []
     monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
     monkeypatch.setattr(
         gui.tts,
         "install_engine",
-        lambda engine, python=None: installed.append((engine, python)) or "/opt/venv/bin/python",
+        lambda engine, python=None, lang=None: installed.append((engine, python, lang)) or "/opt/venv/bin/python",
     )
     app.options["tts"] = "piper"
     page = gui.Speech(app)
@@ -710,12 +710,13 @@ def test_the_speech_page_installs_the_engine_it_shows(app: gui.App, monkeypatch)
     page._install_engine()
     assert page.install_button.instate(["disabled"])
     _settled(app, page.install_button)
-    assert installed == [("piper", "/opt/python")]
+    assert installed[0][:2] == ("piper", "/opt/python")
+    assert installed[0][2], "the language in use is named, so its voice downloads first"
 
 
 def test_an_install_with_no_python_named_shows_the_one_the_app_built(app: gui.App, monkeypatch) -> None:
     monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
-    monkeypatch.setattr(gui.tts, "install_engine", lambda engine, python=None: "/opt/venv/bin/python")
+    monkeypatch.setattr(gui.tts, "install_engine", lambda engine, python=None, lang=None: "/opt/venv/bin/python")
     app.options["tts"] = "piper"
     page = gui.Speech(app)
     page._install_engine()
@@ -724,7 +725,7 @@ def test_an_install_with_no_python_named_shows_the_one_the_app_built(app: gui.Ap
 
 
 def test_a_failing_install_is_reported_and_the_button_comes_back(app: gui.App, monkeypatch, caplog) -> None:
-    def refuse(engine, python=None):
+    def refuse(engine, python=None, lang=None):
         raise gui.tts.TtsError("no network")
 
     monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)

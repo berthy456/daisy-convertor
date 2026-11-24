@@ -1639,7 +1639,7 @@ class App:
         try:
             if install:
                 try:
-                    tts.install_engine(announce.engine, announce.python)
+                    tts.install_engine(announce.engine, announce.python, announce.language)
                 except tts.TtsError as exc:
                     log.error("%s: the machine's own voice will read the cards instead", exc)
                     announce = replace(announce, engine=tts.AUTO)
@@ -2385,7 +2385,7 @@ class Speech(Settings):
         code = self.language().code
         try:
             if kind == "install":
-                self.events.put(("install", tts.install_engine(argument, options["python"])))
+                self.events.put(("install", tts.install_engine(argument, options["python"], code)))
                 return
             if kind == "voice":
                 self.events.put(("voice", tts.download_voice(argument, options["python"])))

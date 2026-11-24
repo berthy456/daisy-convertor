@@ -1167,6 +1167,30 @@ def test_the_words_on_screen_ask_for_one_sentence_per_part(app: gui.App, monkeyp
     assert app.options["cut"] == "sentence", "and the choice is saved as the cut it needs"
 
 
+def test_the_words_on_screen_recut_the_chapters_window_open_under_them(
+    app: gui.App, three_chapters, monkeypatch
+) -> None:
+    monkeypatch.setattr(gui.settings, "save", lambda options: None)
+    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
+    page._measure = lambda: None
+    assert app.chapter_list is page, "the window knows the list it has open"
+
+    app.format_var.set("telmi")
+    app.captions_var.set(True)
+    app._pick_captions()
+
+    assert page.cut == "sentence", "the window lists the parts the run will cut"
+    assert page.cut_var.get() == "sentence", "and its own radio shows that cut"
+
+    second = gui.ChapterList(app, Path("/tmp/other.zip"))
+    second._measure = lambda: None
+    page._close()
+    assert app.chapter_list is second, "an older window does not clear the one still open"
+
+    second._close()
+    assert app.chapter_list is None, "a closed window is not one to follow"
+
+
 def test_the_words_on_screen_reach_the_conversion(app: gui.App, tmp_path, monkeypatch) -> None:
     seen: list = []
     monkeypatch.setattr(gui, "convert", lambda *args, **kwargs: seen.append((args, kwargs)) or 0)

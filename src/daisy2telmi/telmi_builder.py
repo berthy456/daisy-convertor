@@ -46,6 +46,7 @@ class StoryReport:
     title_source: str
     cards: int = 0
     captions: int = 0
+    parts: int = 0
     audio_mode: str = "encoded"
 
 
@@ -520,6 +521,7 @@ def build_story(
         title_source=title_source,
         cards=spoken,
         captions=sum(captioned),
+        parts=count,
         audio_mode=audio_mode,
     )
 

@@ -478,8 +478,11 @@ def convert(
     )
     log.info("title.mp3 source: %s", report.title_source)
     log.info("chapter cards: %d spoken, autoplay %s", report.cards, "on" if announce and announce.autoplay else "off")
-    if report.captions:
-        log.info("sentence pictures: %d, one per part, shown while its audio plays", report.captions)
+    if captions:
+        if report.captions == 0:
+            log.info("no sentence picture: the built-in font cannot letter this book's words")
+        else:
+            log.info("sentence pictures: %d of %d parts, shown while its audio plays", report.captions, report.parts)
     return 0
 
 

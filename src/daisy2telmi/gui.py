@@ -588,6 +588,9 @@ class App:
         self.language_var = tk.StringVar(value=self.options["language"])
         self.cut = self.options["cut"]
         self.dropped: set[int] = set()
+        # The chapters window lists the parts at its own cut, so it has to follow a
+        # cut the main window changes under it.
+        self.chapter_list: ChapterList | None = None
         # A test run writes the story into a folder the app made and keeps it, so the
         # Save button can write that same pack without running the converter again.
         self._test_folder: Path | None = None
@@ -1223,6 +1226,8 @@ class App:
         if self.captions_var.get() and self.cut != "sentence":
             # One picture per sentence is only worth drawing when each part is one.
             self.cut = self.options["cut"] = "sentence"
+            if self.chapter_list is not None:
+                self.chapter_list._choose("sentence")
         settings.save(self.options)
 
     def _pick_format(self) -> None:
@@ -1655,6 +1660,7 @@ class ChapterList:
 
         self.cut = app.cut
         self.reported = False
+        app.chapter_list = self
         # The chapter now playing, when the app started the player itself: only
         # then can the window stop it, and only one chapter plays at a time.
         self._playing: subprocess.Popen | None = None
@@ -1908,6 +1914,10 @@ class ChapterList:
         self.app._append(f"ERROR: {message}")
 
     def _close(self) -> None:
+        # "Chapters" can be pressed twice, so an older window must not clear the
+        # tracking of the one still open.
+        if self.app.chapter_list is self:
+            self.app.chapter_list = None
         self.app.dropped = {
             info.number for info, box in zip(self.info, self.keep) if not box.get()
         }

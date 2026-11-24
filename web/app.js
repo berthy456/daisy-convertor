@@ -62,6 +62,8 @@ const partsNote = document.getElementById("parts-note");
 const partsAll = document.getElementById("parts-all");
 const packLabel = document.getElementById("pack-name");
 const captionsNote = document.getElementById("captions-note");
+const testPlayer = document.getElementById("test-player");
+const testFrame = document.getElementById("test-frame");
 
 const silentMp3 = new Uint8Array(await (await fetch("./silence.mp3")).arrayBuffer());
 const STORED_LANGUAGE = "daisy2telmi.language";
@@ -112,13 +114,16 @@ let dropped = new Set();
 // Counts the lookups in flight, so an answer about a pack that has been replaced
 // is thrown away instead of landing in the cover box.
 let coverJob = 0;
+// The lookup the page started on its own, so a conversion can wait for it: a cover
+// that lands after the story was built would make that story out of date.
+let coverLookup = Promise.resolve();
 // The pack a test just played, kept so Save can hand it over without building the
 // story a second time.
 let tested = null;
 // The zip the last download link pointed at. A browser keeps an object URL's bytes
 // until it is revoked, and a big book's zip is tens of megabytes.
 let downloadUrl = null;
-// The player tab that asked for a pack, and the pack it asked for.
+// The story the player overlay is showing, or null when it is shut.
 let playing = null;
 // How many covers came and went: a bitmap cannot be compared to its earlier self,
 // so the settings key counts the changes instead.
@@ -668,6 +673,7 @@ async function saveStory() {
   saveButton.disabled = true;
   clearResult();
   try {
+    await coverLookup;
     const pack = tested && tested.key === settingsKey() ? tested : await buildPack();
     if (pack === tested) log(t("test_reuse"));
     offer(pack.name, pack.bytes);
@@ -679,52 +685,93 @@ async function saveStory() {
   }
 }
 
-/** Build the story into memory, play it, and keep it for the Save button. */
+/**
+ * Ask where the story should go, build it, write it there, and only then open the
+ * player over the page. The save dialog is asked for on the click itself: a browser
+ * lets a page open one only while it is still handling that click, and a story takes
+ * seconds to build.
+ */
 async function testStory() {
   if (!source) return;
   testButton.disabled = true;
   clearResult();
-  // The tab is opened on the click itself: a browser only lets a page open one
-  // while it is still handling the click, and the story takes seconds to build.
-  const tab = window.open("./emulator.html?test=1", "_blank");
-  playing = tab ? { tab, pack: null, asked: false } : null;
+  const target = await saveTarget();
+  if (target === null) {
+    testButton.disabled = false;
+    return;
+  }
   try {
-    tested = { key: settingsKey(), ...(await buildPack()) };
-    if (playing) hand(tested);
-    // A blocked popup still has the pack: hand it over as a file the player opens.
-    else offer(tested.name, tested.bytes);
+    await coverLookup;
+    const key = settingsKey();
+    const pack = tested && tested.key === key ? tested : await buildPack();
+    tested = { key, ...pack };
+    if (target) {
+      await writeFile(target, pack);
+      bar.value = 1;
+      log(t("log_ready", { name: target.name }));
+    } else {
+      offer(pack.name, pack.bytes);
+    }
+    openPlayer(pack);
   } catch (error) {
     log(t("log_error", { message: error.message ?? error }));
-    // The tab is this page's own, and the story it was opened for never came.
-    if (playing) playing.tab.close();
-    playing = null;
     bar.hidden = true;
   } finally {
     testButton.disabled = false;
   }
 }
 
-/** The story the player tab asked for, or asks for the moment it has one. */
-function hand(pack) {
-  playing.pack = pack;
-  if (playing.asked) send();
+/**
+ * Where the story should be written, as a file handle the page can write to.
+ * null: the user backed out of the dialog. undefined: this browser cannot ask, so
+ * the story goes to its own download folder instead.
+ */
+async function saveTarget() {
+  if (typeof window.showSaveFilePicker !== "function") return undefined;
+  const base = source.name.replace(/\.[^.]+$/, "") || "story";
+  try {
+    return await window.showSaveFilePicker({
+      suggestedName: `${base}.${format === "lunii-pk" ? "pk" : "zip"}`,
+    });
+  } catch (error) {
+    if (error.name === "AbortError") return null;
+    return undefined;
+  }
+}
+
+async function writeFile(handle, pack) {
+  const file = await handle.createWritable();
+  await file.write(new Blob([pack.bytes], { type: "application/zip" }));
+  await file.close();
+}
+
+/** The player, opened over the converter with the story it plays already built. */
+function openPlayer(pack) {
+  playing = pack;
+  testFrame.src = "./emulator.html?test=1";
+  testPlayer.showModal();
 }
 
 function send() {
-  playing.tab.postMessage(
-    { type: "daisy2telmi-story", name: playing.pack.name, bytes: playing.pack.bytes },
+  testFrame.contentWindow.postMessage(
+    { type: "daisy2telmi-story", name: playing.name, bytes: playing.bytes },
     location.origin,
   );
 }
 
-// The player tab asks for the pack it was opened to play, so nothing is uploaded
-// and nothing is saved to disk on the way. It asks as soon as it is loaded, which
-// is usually before the story it is waiting for has been built.
+// The player asks for the story it was opened to play, so nothing is uploaded and
+// nothing is read back from the file it was just written. It asks as soon as it is
+// loaded, which is usually before the story has been built.
 window.addEventListener("message", (event) => {
-  if (event.origin !== location.origin || !playing || event.source !== playing.tab) return;
-  if (event.data?.type !== "daisy2telmi-ask") return;
-  playing.asked = true;
-  if (playing.pack) send();
+  if (event.origin !== location.origin || !playing || event.source !== testFrame.contentWindow) return;
+  if (event.data?.type === "daisy2telmi-ask") send();
+  else if (event.data?.type === "daisy2telmi-close") testPlayer.close();
+});
+
+testPlayer.addEventListener("close", () => {
+  playing = null;
+  // A frame left loaded keeps playing the story it was handed.
+  testFrame.src = "about:blank";
 });
 
 /** The pack read once: the cut levels need its outline, and the conversion needs the same files. */
@@ -784,7 +831,7 @@ function setSource(name, loader) {
   showCoverSearch(name.replace(/\.[^.]+$/, ""));
   log(t("log_loaded", { name }));
   openCutLevels();
-  suggestCover();
+  coverLookup = suggestCover();
 }
 
 async function entriesFromZip(file) {

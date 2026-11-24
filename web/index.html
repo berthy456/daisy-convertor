@@ -233,6 +233,12 @@
       <footer>
         <p data-i18n-html="footer_line"></p>
       </footer>
+
+      <!-- The story the page just built, played over the converter itself. The pack
+           stays in this page, and closing the player leaves the converter as it was. -->
+      <dialog id="test-player" data-i18n-aria="test_story">
+        <iframe id="test-frame" data-i18n-aria="test_story"></iframe>
+      </dialog>
     </main>
 
     <script type="module" src="./app.js"></script>

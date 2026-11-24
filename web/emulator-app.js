@@ -228,12 +228,19 @@ drop.addEventListener("drop", (event) => {
   if (file) load(file);
 });
 
-// Opened by the converter page to play a story it just built: that page holds the
-// pack, so this one asks for it instead of making the user save it and pick it again.
-if (window.opener && new URL(location.href).searchParams.get("test") === "1") {
+// Opened inside the converter page to play a story that page just built: it holds
+// the pack, so this one asks for it instead of making the user save it and pick it
+// again. Its own way out is the converter's, too: it shuts the player rather than
+// loading the converter a second time, inside the player.
+if (window.parent !== window && new URL(location.href).searchParams.get("test") === "1") {
+  document.documentElement.classList.add("player");
   window.addEventListener("message", (event) => {
     if (event.origin !== location.origin || event.data?.type !== "daisy2telmi-story") return;
     loadBytes(event.data.bytes, event.data.name);
   });
-  window.opener.postMessage({ type: "daisy2telmi-ask" }, location.origin);
+  document.querySelector(".back").addEventListener("click", (event) => {
+    event.preventDefault();
+    window.parent.postMessage({ type: "daisy2telmi-close" }, location.origin);
+  });
+  window.parent.postMessage({ type: "daisy2telmi-ask" }, location.origin);
 }

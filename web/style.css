@@ -664,3 +664,39 @@ footer {
     height: 3.5rem;
   }
 }
+
+/* The story player, opened over the converter. It is the emulator page itself, so
+   it keeps its own colours and its own keys; only the frame it sits in is this
+   page's own. */
+#test-player {
+  width: min(96vw, 66rem);
+  height: min(92vh, 54rem);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+}
+
+#test-player::backdrop {
+  background: rgba(12, 16, 26, 0.6);
+}
+
+#test-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+}
+
+/* The player page, shown inside that frame: it is already named by the button that
+   opened it, so its own introduction makes the machine's keys fall below the frame,
+   and a screen stretched to the full width does the same. */
+.player .tagline {
+  display: none;
+}
+
+.player .screen {
+  max-width: 35rem;
+}

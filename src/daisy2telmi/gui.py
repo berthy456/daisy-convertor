@@ -961,7 +961,7 @@ class App:
             self._crop_zoom_value,
             self._crop_focus,
             self.negative_var.get(),
-            self.captions_var.get(),
+            self.captions_wanted(),
             ",".join(str(number) for number in sorted(self.dropped)),
             announce.mode,
             announce.language,
@@ -1220,6 +1220,12 @@ class App:
     def _show_captions(self) -> None:
         """Only a Telmi or a Flam screen is big enough to read a sentence on."""
         self.captions_box.configure(state="normal" if self.format_var.get() in CAPTION_FORMATS else "disabled")
+
+    def captions_wanted(self) -> bool:
+        """The box's tick, but only where a screen exists to show the words on: a
+        tick left over from a Telmi run must not make a Lunii run refuse its own
+        conversion."""
+        return bool(self.captions_var.get()) and self.format_var.get() in CAPTION_FORMATS
 
     def _pick_captions(self) -> None:
         self.options["captions"] = self.captions_var.get()
@@ -1483,7 +1489,7 @@ class App:
                 self._crop_zoom_value,
                 self._crop_focus,
                 self.negative_var.get(),
-                self.captions_var.get(),
+                self.captions_wanted(),
             ),
             daemon=True,
         ).start()

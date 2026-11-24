@@ -1208,6 +1208,30 @@ def test_the_words_on_screen_reach_the_conversion(app: gui.App, tmp_path, monkey
     assert seen[0][0][7] == "telmi", "the format travels with it"
 
 
+def test_the_words_on_screen_stay_off_for_a_machine_that_has_no_screen_for_them(
+    app: gui.App, tmp_path, monkeypatch
+) -> None:
+    seen: list = []
+    monkeypatch.setattr(gui, "convert", lambda *args, **kwargs: seen.append((args, kwargs)) or 0)
+    monkeypatch.setattr(gui.settings, "save", lambda options: None)
+
+    app.format_var.set("telmi")
+    app.captions_var.set(True)
+    app._pick_captions()
+    app.format_var.set("lunii")
+    app._show_captions()
+    app._pick_format()
+
+    (tmp_path / "pack.zip").write_bytes(b"PK")
+    app.pack_var.set(str(tmp_path / "pack.zip"))
+    app.out_var.set(str(tmp_path / "out"))
+    app._start()
+    app._drain()
+
+    assert seen[0][1]["captions"] is False, "the Lunii run is not refused for a tick it cannot honour"
+    assert app.captions_var.get(), "the tick is kept for the next Telmi run"
+
+
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
 def test_a_cover_is_drawn_under_the_crop_frame(app: gui.App, tmp_path) -> None:
     cover = tmp_path / "cover.png"

@@ -368,8 +368,9 @@ def card_layer_png(
 
 # A sentence's own picture: the whole of it, at the largest lettering the screen
 # still holds. The screen is small, so the size is found by trying the largest and
-# stepping down until every line of the sentence fits on it.
-CAPTION_MAX_SIZE = 64
+# stepping down until every line of the sentence fits on it. The ceiling is the web
+# page's, so the same sentence is the same size on both.
+CAPTION_MAX_SIZE = 96
 CAPTION_MIN_SIZE = 10
 # The air between two lines of a caption grows with the lettering, but never below
 # a few pixels: at the small lettering a tall sentence needs, one pixel of air reads

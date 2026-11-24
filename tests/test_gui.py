@@ -192,6 +192,38 @@ def test_an_output_folder_the_user_chose_is_left_alone(app: gui.App, tmp_path: P
     assert app.out_var.get() == str(tmp_path / "keep")
 
 
+def test_a_second_pack_loses_the_cover_the_app_found(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    """A cover, an author and a title the services found were found for one book, so
+    the next pack gets its own. Everything else the window holds carries over."""
+    monkeypatch.setattr(app, "_cover_lookup", lambda *args: None)
+    app.options["cut"] = "paragraph"
+    app.format_var.set("flam")
+
+    first = tmp_path / "wesh.zip"
+    first.write_bytes(b"PK")
+    app.pack_var.set(str(first))
+    app._find_cover()
+    app._took_cover(app._cover_job, str(tmp_path / "cover-1.jpg"), "Wesh", "Rachel Corenblit")
+    assert app.cover_var.get() == str(tmp_path / "cover-1.jpg")
+    assert (app.title_var.get(), app.author_var.get()) == ("Wesh", "Rachel Corenblit")
+
+    second = tmp_path / "aiguille.zip"
+    second.write_bytes(b"PK")
+    app.pack_var.set(str(second))
+    app._find_cover()
+    assert app.cover_var.get() == "", "the cover found for the first pack does not follow it"
+    assert (app.title_var.get(), app.author_var.get()) == ("", ""), "nor the words it filled the boxes with"
+    assert app.options["cut"] == "paragraph" and app.format_var.get() == "flam", "the chosen settings stayed"
+
+    mine = tmp_path / "mine.png"
+    mine.write_bytes(images.placeholder_png(300, 900))
+    app.cover_var.set(str(mine))
+    app.author_var.set("Corenblit")
+    app._find_cover()
+    assert app.cover_var.get() == str(mine), "a cover the user picked is kept"
+    assert app.author_var.get() == "Corenblit", "words the user typed are kept"
+
+
 def test_a_dialog_opens_where_the_pack_is(app: gui.App, tmp_path: Path, monkeypatch) -> None:
     opened: list[str] = []
     monkeypatch.setattr(gui.Browser, "run", lambda self: opened.append(str(self.current)) or "")
@@ -558,6 +590,36 @@ def test_a_file_list_opens_in_the_folder_named_in_the_options(app: gui.App, tmp_
     # The folder a file list was left in still wins, because the user was just there.
     app.options["last_dir"] = str(tmp_path)
     assert app._start_dir() == str(tmp_path)
+
+
+def test_the_options_page_asks_for_the_folders_it_does_not_have(app: gui.App, tmp_path) -> None:
+    """Two empty boxes are a question, so the page asks it instead of describing
+    what it does with an empty one."""
+    quiet = gui.Options(app)
+    try:
+        assert quiet.folders_hint.cget("text") == app.t("opt_folders_unset")
+    finally:
+        quiet.top.destroy()
+
+    app.options["input_dir"] = str(tmp_path)
+    app.options["output_dir"] = str(tmp_path / "stories")
+    named = gui.Options(app)
+    try:
+        assert named.folders_hint.cget("text") == app.t("opt_folders_hint")
+    finally:
+        named.top.destroy()
+
+
+def test_the_window_stops_asking_once_the_folders_are_named(app: gui.App, tmp_path) -> None:
+    """A first run has no folders of its own, and says so once; naming them ends the ask."""
+    assert app.t("log_folders_missing") in app.log_view.get("1.0", "end")
+
+    app.options["output_dir"] = str(tmp_path / "stories")
+    reopened = gui.App(gui.make_root(), options=app.options)
+    try:
+        assert app.t("log_folders_missing") not in reopened.log_view.get("1.0", "end")
+    finally:
+        reopened.root.destroy()
 
 
 def _settled(app: gui.App, button: ttk.Button) -> None:

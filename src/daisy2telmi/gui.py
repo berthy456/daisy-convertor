@@ -562,6 +562,12 @@ class App:
         self.pack_var = tk.StringVar()
         self.out_var = tk.StringVar()
         self._auto_out = ""
+        # What the last pack's lookup filled in. A cover, an author and a title the
+        # services gave belong to the pack they were found for; only what the user
+        # typed or picked is a setting that carries to the next pack.
+        self._auto_cover = ""
+        self._auto_author = ""
+        self._auto_title = ""
         theme(root)
         set_icon(root)
         self.pack_var.trace_add("write", self._follow_pack)
@@ -598,6 +604,8 @@ class App:
         self._on_done = None
         self._labels: dict[str, tk.Widget] = {}
         self._build()
+        if not self.options.get("input_dir") and not self.options.get("output_dir"):
+            self._append(self.t("log_folders_missing"))
         if self.frameless:
             self._take_system_bar()
         root.after(100, self._drain)
@@ -1096,12 +1104,14 @@ class App:
         ISBN, and three services hold the cover for it between them. The answer
         arrives on its own thread: a lookup that takes a second should not stop
         the window from drawing. A cover the user already typed is never
-        replaced.
+        replaced, and the cover the last pack's lookup found is dropped before
+        this one asks.
         """
         pack = self._typed_path(self.pack_var)
         self._cover_job += 1
         self._pack_title = None
         self._spin_off()
+        self._drop_lookup()
         if pack is None or not pack.exists() or self.cover_var.get().strip():
             return
         if self._cover_dir is None:
@@ -1110,6 +1120,18 @@ class App:
         dest = self._cover_dir / f"cover-{self._cover_job}.jpg"
         self._spin_on()
         threading.Thread(target=self._cover_lookup, args=(pack, self._cover_job, dest), daemon=True).start()
+
+    def _drop_lookup(self) -> None:
+        """Clear what the previous pack's lookup filled in.
+
+        A cover, an author and a title the services gave were found for one book.
+        The next pack gets its own. A box the user typed into or pointed at holds
+        their own choice, and is left where they put it.
+        """
+        for box, name in ((self.cover_var, "_auto_cover"), (self.author_var, "_auto_author"), (self.title_var, "_auto_title")):
+            if box.get() == getattr(self, name):
+                setattr(self, name, "")
+                box.set("")
 
     def _spin_on(self) -> None:
         """Show the bar and keep it turning: Tk only moves an indeterminate bar
@@ -1620,12 +1642,15 @@ class App:
         self._spin_off()
         self._pack_title = title
         if author and not self.author_var.get().strip():
+            self._auto_author = author
             self.author_var.set(author)
         if title and not self.title_var.get().strip():
+            self._auto_title = title
             self.title_var.set(title)
         if self.cover_var.get().strip():
             return
         if path:
+            self._auto_cover = path
             self.cover_var.set(path)
             self._append(self.t("cover_found"))
         else:
@@ -2074,9 +2099,10 @@ class Options(Settings):
         folders.columnconfigure(1, weight=1)
         self.input_box = self._folder(folders, "opt_input_dir", 0, app.options["input_dir"])
         self.output_box = self._folder(folders, "opt_output_dir", 1, app.options["output_dir"])
-        ttk.Label(folders, text=app.t("opt_folders_hint"), style="Brand.TLabel").grid(
-            row=2, column=0, columnspan=2, sticky="w", pady=(6, 0)
-        )
+        # Two empty boxes are a question the app is still asking, so the page asks it.
+        asked = "opt_folders_hint" if app.options.get("input_dir") and app.options.get("output_dir") else "opt_folders_unset"
+        self.folders_hint = ttk.Label(folders, text=app.t(asked), style="Brand.TLabel")
+        self.folders_hint.grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         ttk.Button(self.grid, text=app.t("opt_close"), command=self._close).grid(
             row=7, column=0, columnspan=2, sticky="e", pady=(12, 0)

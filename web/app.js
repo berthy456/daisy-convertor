@@ -766,6 +766,10 @@ function setSource(name, loader) {
   saveButton.disabled = false;
   testButton.disabled = false;
   clearResult();
+  // A dropped part is a number in one book's part list, and the Save button is
+  // live again before the new pack's list has been read: clear them here, not in
+  // the redraw that follows.
+  dropped.clear();
   partsBox.hidden = true;
   logView.textContent = "";
   packLabel.textContent = t("pack_loaded", { name });

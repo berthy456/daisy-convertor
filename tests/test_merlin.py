@@ -15,6 +15,7 @@ from daisy2telmi.merlin import (
     KIND_ROOT,
     MAX_NAME,
     RECORD_SIZE,
+    TITLE_FIELD,
     Item,
     MerlinError,
     Playlist,
@@ -74,6 +75,22 @@ def test_a_name_the_firmware_would_choke_on_is_refused() -> None:
 def test_a_title_longer_than_its_field_is_refused() -> None:
     with pytest.raises(MerlinError):
         pack(Item(id=1, parent=0, order=0, kind=KIND_AUDIO, title="é" * 40))
+
+
+def test_a_heading_longer_than_the_record_is_shortened_not_refused() -> None:
+    """A WIPO article name or an epub subtitle runs past the title field, and the
+    card shows only what fits anyway. Refusing it threw away a whole conversion."""
+    heading = "Article 9. Notice to Right Owners for Commercial Reproduction of Works"
+    card = Playlist()
+    card.add(0, KIND_ROOT, "Root")
+    part = card.audio(1, heading, file_name())
+    assert part.title.startswith("Article 9.")
+    assert part.title.endswith("…")
+    assert len(part.title.encode("utf-8")) <= TITLE_FIELD
+    assert len(pack(part)) == RECORD_SIZE
+    assert merlin.fit_title("é" * 40).count("é") == 31, "a cut lands on a character, not inside one"
+    assert "�" not in merlin.fit_title("é" * 40)
+    assert merlin.fit_title("Premier chapitre") == "Premier chapitre", "a title that fits is left alone"
 
 
 def test_a_playlist_is_a_whole_number_of_records(tmp_path) -> None:

@@ -68,6 +68,20 @@ class Item:
     add_time: int = 0
 
 
+def fit_title(title: str) -> str:
+    """The title as the record can hold it.
+
+    A DAISY or epub heading runs past the 66 bytes the card's title field has — a
+    WIPO article name or a subtitle does it on its own — and the card shows only
+    what fits anyway. The words past that are dropped here, at a character, with
+    the ellipsis the screen would have put there.
+    """
+    raw = unicodedata.normalize("NFC", title).encode("utf-8")
+    if len(raw) <= TITLE_FIELD:
+        return unicodedata.normalize("NFC", title)
+    return raw[: TITLE_FIELD - 3].decode("utf-8", "ignore").rstrip() + "…"
+
+
 def _field(text: str, size: int, form: str, what: str) -> bytes:
     raw = unicodedata.normalize(form, text).encode("utf-8")
     if len(raw) > size:
@@ -159,7 +173,7 @@ class Playlist:
             order=order,
             kind=kind,
             name=name,
-            title=unicodedata.normalize("NFC", title),
+            title=fit_title(title),
         )
         self._next += 1
         self.items.append(item)

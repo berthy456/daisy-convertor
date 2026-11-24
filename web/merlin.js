@@ -46,6 +46,23 @@ The sound keeps the rate the DAISY pack was recorded at. The card's own spec is
 which the desktop app re-encodes.
 `;
 
+/**
+ * The title as the record can hold it.
+ *
+ * A DAISY or epub heading runs past the 66 bytes the card's title field has — a WIPO
+ * article name or a subtitle does it on its own — and the card shows only what fits
+ * anyway. The words past that are dropped here, at a character, with the ellipsis the
+ * screen would have put there.
+ */
+export function fitTitle(title) {
+  const text = title.normalize("NFC");
+  const raw = new TextEncoder().encode(text);
+  if (raw.length <= TITLE_FIELD) return text;
+  // A cut in the middle of a character decodes to a replacement sign: drop it.
+  const kept = new TextDecoder().decode(raw.subarray(0, TITLE_FIELD - 3)).replace(/�+$/, "");
+  return `${kept.trimEnd()}…`;
+}
+
 function field(text, size, form, what) {
   const raw = new TextEncoder().encode(text.normalize(form));
   if (raw.length > size) {
@@ -145,7 +162,7 @@ export class Playlist {
       order: this.items.filter((other) => other.parent === parent).length,
       kind,
       name,
-      title: title.normalize("NFC"),
+      title: fitTitle(title),
       children: 0,
       favOrder: 0,
       limitTime: 0,

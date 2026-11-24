@@ -22,8 +22,10 @@ const {
   MerlinError,
   Playlist,
   RECORD_SIZE,
+  TITLE_FIELD,
   buildMerlinFiles,
   fileName,
+  fitTitle,
   pack,
   readPlaylist,
   storyParts,
@@ -54,6 +56,23 @@ async function story(cut = "chapter") {
   // A card that speaks: the page only writes a card's sound when it has a voice for it.
   return buildStoryFiles(entries, silent, () => {}, { cut, cardAudio: async () => silent });
 }
+
+test("a heading longer than the record is shortened the same way the app shortens it", () => {
+  const bytes = (text) => new TextEncoder().encode(text).length;
+  const cases = [
+    "Article 9. Notice to Right Owners for Commercial Reproduction of Works",
+    "é".repeat(40),
+    "3.5 Haüy's meeting with Lesueur and the founding of l'Institution des jeunes sourds",
+  ];
+  for (const heading of cases) {
+    const fitted = fitTitle(heading);
+    assert.ok(bytes(fitted) <= TITLE_FIELD, `${heading}: the field holds it`);
+    assert.ok(!fitted.includes("�"), `${heading}: the cut lands on a character, not inside one`);
+  }
+  assert.equal(fitTitle(cases[0]), "Article 9. Notice to Right Owners for Commercial Reproduction o…");
+  assert.equal(fitTitle(cases[1]), `${"é".repeat(31)}…`);
+  assert.equal(fitTitle("Premier chapitre"), "Premier chapitre");
+});
 
 test("a record is the Python build's, byte for byte", () => {
   for (const [what, entry] of Object.entries(RECORDS)) {

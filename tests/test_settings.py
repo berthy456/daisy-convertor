@@ -63,6 +63,23 @@ def test_unknown_keys_are_ignored(tmp_path, monkeypatch) -> None:
     assert "cover" not in settings.load()
 
 
+def test_a_file_written_before_the_own_bar_default_loses_that_default(tmp_path, monkeypatch) -> None:
+    """1.3 wrote `frameless: false` for everyone, and no one was asked."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    settings.save(dict(settings.DEFAULTS, language="fr"))
+    stored = json.loads(settings.config_path().read_text(encoding="utf-8"))
+    stored["frameless"] = False
+    stored["written_by"] = "1.3"
+    settings.config_path().write_text(json.dumps(stored), encoding="utf-8")
+    assert settings.load()["frameless"] is True
+
+
+def test_a_system_bar_put_back_after_that_version_stays_back(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    settings.save(dict(settings.DEFAULTS, frameless=False))
+    assert settings.load()["frameless"] is False
+
+
 def test_a_broken_file_does_not_stop_a_conversion(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     _machine_language(monkeypatch, "en_US.UTF-8")

@@ -16,6 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import __version__
 from .i18n import LANGUAGES
 
 log = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ DEFAULTS: dict = {
     "autoplay": False,
     "card_total": True,
     "card_negative": False,
-    "frameless": False,
+    "frameless": True,
     "format": "telmi",
     "tts": "auto",
     "voice": None,
@@ -127,6 +128,17 @@ def speech_voices() -> Path:
     return data_dir() / "voices"
 
 
+# The window drew its own bar by default from 1.4 on. A settings file written
+# before that carries the old default for it, which no one chose.
+_OWN_BAR_FROM = (1, 4)
+
+
+def _written_before(stamp: object) -> bool:
+    if not isinstance(stamp, str):
+        return True
+    return tuple(int(part) for part in re.split(r"[^0-9]+", stamp) if part) < _OWN_BAR_FROM
+
+
 def load() -> dict:
     """The saved options, with the machine's own language where nothing was saved."""
     options = dict(DEFAULTS, language=system_language())
@@ -139,6 +151,8 @@ def load() -> dict:
         return options
     if isinstance(stored, dict):
         options.update({key: value for key, value in stored.items() if key in DEFAULTS})
+        if _written_before(stored.get("written_by")):
+            options["frameless"] = DEFAULTS["frameless"]
     return options
 
 
@@ -146,5 +160,6 @@ def save(options: dict) -> Path:
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {key: options.get(key, DEFAULTS[key]) for key in DEFAULTS}
+    payload["written_by"] = __version__
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return path

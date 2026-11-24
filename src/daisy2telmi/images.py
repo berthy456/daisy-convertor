@@ -399,10 +399,14 @@ def _typeface(size: int) -> ImageFont.FreeTypeFont:
 
 
 def _letterable(font: ImageFont.FreeTypeFont, text: str) -> str:
-    """`text` with every character the font has no glyph for turned into a space."""
+    """`text` in single-spaced words, with every character the font has no glyph for turned into a space.
+
+    A sentence keeps the line breaks the page it was written on had, and the font
+    renderer refuses to lay one out at all: here they are word separators.
+    """
     blank = bytes(font.getmask(_NOTDEF))
     kept = []
-    for character in text:
+    for character in " ".join(text.split()):
         known = _GLYPHS.get(character)
         if known is None:
             known = bytes(font.getmask(character)) != blank

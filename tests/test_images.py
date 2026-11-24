@@ -137,6 +137,14 @@ def test_a_caption_is_written_in_the_words_the_book_used() -> None:
     assert any(character.islower() for line in lines for character in line)
 
 
+def test_a_sentence_broken_across_two_lines_of_its_page_is_one_caption() -> None:
+    """The text a pack carries keeps the line breaks of the page it was written on,
+    and the font renderer refuses to lay one out at all."""
+    broken = "you will need to\nassess the unique set of\r\npotential hazards"
+    whole = "you will need to assess the unique set of potential hazards"
+    assert " ".join(images.caption_lines(broken, 320, 212)) == whole
+
+
 def test_the_caption_font_letters_every_language_the_app_offers() -> None:
     font = images._typeface(24)
     for text in ("é è à ç œ « ’ —", "ü ö ß ñ ¿ ¡", "ş ı ğ ç", "0123456789"):

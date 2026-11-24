@@ -386,6 +386,7 @@ Builds:
 - **The bundled ffmpeg is the build machine's binary**, unmodified and unsigned.
 - **No cover art comes from the pack.** DAISY 2.02 audio packs carry no usable cover. A lookup needs the network, and a pack with no ISBN and no searchable title has nothing to ask with.
 - **The drawn card label is uppercase Latin.** The bitmap font in `src/daisy2telmi/images.py` covers the eight Latin-script languages plus accented letters; Chinese and Arabic cards fall back to the bare number.
+- **A sentence picture needs letters Arimo has.** It adds lower case and accents, and covers Greek, Cyrillic and Hebrew too; a Chinese or Arabic sentence gets no picture, only its audio.
 - **A non-Latin title collapses in the folder name.** `stringNormalizeFileName` keeps only `a-zA-Z0-9-.`, so *ごんぎつね* becomes a single space and the folder is `_00_ _<uuid>`. This is Telmi-Sync's own behaviour, not a converter bug; `metadata.json` keeps the real title.
 - **Chapter granularity is fixed.** A pack with a single flat heading level becomes one chapter; there is no option to split on `h2`.
 - **No resume or bookmarking.** Telmi has no position concept in this format, so a listener restarts at chapter 1.

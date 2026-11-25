@@ -6,6 +6,7 @@ Windows builds from runs of the `build` workflow, before they are a release. Eac
 | :--- | :--- | :--- | :--- |
 | `beta1` | `cdf5add` | [45655770154](https://github.com/berthy456/daisy-convertor/actions/runs/45655770154) | 162535356 bytes |
 | `beta2` | `b46df2f` | [45693256180](https://github.com/berthy456/daisy-convertor/actions/runs/45693256180) | 162551078 bytes |
+| `beta3` | `5e3224b` | [45711277806](https://github.com/berthy456/daisy-convertor/actions/runs/45711277806) | 162548979 bytes |
 
 The other builds of the same commit (macOS, .deb, AppImage) are the artifacts of the run named beside it.
 

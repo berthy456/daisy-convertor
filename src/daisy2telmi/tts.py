@@ -24,6 +24,7 @@ from pathlib import Path
 from . import audio, settings
 from .extractor import AudioSegment
 from .i18n import Language, language
+from .proc import NO_WINDOW, UTF8
 
 log = logging.getLogger(__name__)
 
@@ -246,9 +247,70 @@ def _external_env() -> dict[str, str]:
     return env
 
 
+# The oldest Python an engine still installs into.
+MIN_PYTHON = (3, 10)
+_ANSWER = "import sys; print('.'.join(map(str, sys.version_info[:2])))"
+_answers: dict[str, tuple[int, int] | None] = {}
+
+
+def _installs() -> list[str]:
+    """Where the python.org installer puts a Python on Windows."""
+    found: list[str] = []
+    for key in ("LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)"):
+        raw = os.environ.get(key, "")
+        if not raw:
+            continue
+        root = Path(raw) / "Programs" / "Python" if key == "LOCALAPPDATA" else Path(raw)
+        if not root.is_dir():
+            continue
+        folders = (d for d in root.iterdir() if d.name.casefold().startswith("python3"))
+        for folder in sorted(folders, reverse=True):
+            exe = folder / "python.exe"
+            if exe.is_file():
+                found.append(str(exe))
+    return found
+
+
+def _version(exe: str) -> tuple[int, int] | None:
+    """What that interpreter answers when asked, or None when it is not a Python.
+
+    On Windows the first `python.exe` on PATH is usually the Microsoft Store's
+    alias, which is not a Python: it prints "Python was not found ... install it
+    from the Microsoft Store" and exits, and its words used to be the error the
+    app showed the user. Asking is what tells the two apart.
+    """
+    if exe not in _answers:
+        try:
+            result = subprocess.run(
+                [exe, "-c", _ANSWER],
+                capture_output=True,
+                env=_external_env(),
+                creationflags=NO_WINDOW,
+                **UTF8,
+            )
+        except OSError:
+            _answers[exe] = None
+        else:
+            parts = result.stdout.strip().split(".")
+            _answers[exe] = (int(parts[0]), int(parts[1])) if len(parts) == 2 and all(p.isdigit() for p in parts) else None
+    return _answers[exe]
+
+
 def _python(python: str | None = None) -> str | None:
     """A Python the user can install models into; a frozen app has none of its own."""
-    return python or _which("python3") or _which("python")
+    if python:
+        return python
+    names = [_which("python3"), _which("python")]
+    if sys.platform == "win32":
+        # `py` is the launcher the python.org installer ships, and it resolves to
+        # a real install; the folders it installs to are searched too, because
+        # the installer offers no PATH entry at all.
+        names = [_which("py"), *_installs(), *names]
+    for exe in names:
+        version = _version(exe) if exe else None
+        if version and version >= MIN_PYTHON:
+            return exe
+    return None
 
 
 def _pythons(python: str | None = None) -> list[str]:
@@ -293,7 +355,7 @@ def _has_package(engine: str, exe: str | None) -> bool:
         names = [MODULES[engine], *RUNTIMES.get(engine, ())]
         probe = f"import importlib.util as u; print(all(u.find_spec(n) is not None for n in {names!r}))"
         result = subprocess.run(
-            [exe, "-I", "-c", probe], capture_output=True, text=True, env=_external_env()
+            [exe, "-I", "-c", probe], capture_output=True, env=_external_env(), creationflags=NO_WINDOW, **UTF8
         )
         _package_cache[key] = result.stdout.strip() == "True"
     return _package_cache[key]
@@ -361,12 +423,15 @@ def make_speech_env(engine: str) -> str:
     base = _python(None)
     if not base:
         raise TtsError(
-            f"no Python to build a {LABELS[engine]} environment with: install Python 3.10 or newer, "
+            f"no Python to build a {LABELS[engine]} environment with: install Python "
+            f"{'.'.join(map(str, MIN_PYTHON))} or newer from python.org, "
             f"or set the {LABELS[engine]} Python in the options"
         )
     env.parent.mkdir(parents=True, exist_ok=True)
     log.info("making a %s environment in %s", LABELS[engine], env)
-    result = subprocess.run([base, "-m", "venv", str(env)], capture_output=True, text=True, env=_external_env())
+    result = subprocess.run(
+        [base, "-m", "venv", str(env)], capture_output=True, env=_external_env(), creationflags=NO_WINDOW, **UTF8
+    )
     if result.returncode == 0 and _has_pip(exe):
         return exe
     # Half an environment is worse than none: the retry has to start clean. A
@@ -379,8 +444,9 @@ def make_speech_env(engine: str) -> str:
     result = subprocess.run(
         [base, "-m", "venv", "--without-pip", str(env)],
         capture_output=True,
-        text=True,
         env=_external_env(),
+        creationflags=NO_WINDOW,
+        **UTF8,
     )
     if result.returncode:
         raise TtsError(f"could not make a Python environment: {_reason(result)}")
@@ -411,8 +477,9 @@ def _shared_pip(base: str, env: Path) -> bool:
     result = subprocess.run(
         [base, "-m", "venv", "--without-pip", "--system-site-packages", str(env)],
         capture_output=True,
-        text=True,
         env=_external_env(),
+        creationflags=NO_WINDOW,
+        **UTF8,
     )
     if result.returncode:
         return False
@@ -425,7 +492,12 @@ def _shared_pip(base: str, env: Path) -> bool:
 
 def _has_pip(exe: str) -> bool:
     """Whether that interpreter can run pip as a module."""
-    return subprocess.run([exe, "-m", "pip", "--version"], capture_output=True, env=_external_env()).returncode == 0
+    return (
+        subprocess.run(
+            [exe, "-m", "pip", "--version"], capture_output=True, env=_external_env(), creationflags=NO_WINDOW
+        ).returncode
+        == 0
+    )
 
 
 def _bootstrap_pip(exe: str) -> None:
@@ -438,7 +510,9 @@ def _bootstrap_pip(exe: str) -> None:
     except OSError as exc:
         raise TtsError(f"could not reach {GET_PIP}: {exc}") from exc
     try:
-        result = subprocess.run([exe, str(script)], capture_output=True, text=True, env=_external_env())
+        result = subprocess.run(
+            [exe, str(script)], capture_output=True, env=_external_env(), creationflags=NO_WINDOW, **UTF8
+        )
     finally:
         script.unlink(missing_ok=True)
     if result.returncode:
@@ -453,7 +527,12 @@ def _stream(exe: str, args: list[str], label: str) -> None:
     """
     log.info("%s: %s", label, " ".join(args[:4]))
     process = subprocess.Popen(
-        [exe, *args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=_external_env()
+        [exe, *args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        env=_external_env(),
+        creationflags=NO_WINDOW,
+        **UTF8,
     )
     assert process.stdout is not None
     for line in process.stdout:
@@ -648,7 +727,7 @@ def voices(engine: str, lang: Language) -> list[str]:
     if engine == ESPEAK and (exe := _which("espeak-ng") or _which("espeak")):
         return _lines(exe, ["--voices=" + lang.espeak], _espeak_env(), skip_header=True)
     if engine == SAY and (exe := _which("say")):
-        result = subprocess.run([exe, "-v", "?"], capture_output=True, text=True)
+        result = subprocess.run([exe, "-v", "?"], capture_output=True, creationflags=NO_WINDOW, **UTF8)
         wanted = lang.locale.replace("-", "_")
         return [
             line.split()[0]
@@ -667,7 +746,7 @@ def voices(engine: str, lang: Language) -> list[str]:
 
 
 def _lines(exe: str, args: list[str], env: dict[str, str] | None = None, skip_header: bool = False) -> list[str]:
-    result = subprocess.run([exe, *args], capture_output=True, text=True, env=env)
+    result = subprocess.run([exe, *args], capture_output=True, env=env, creationflags=NO_WINDOW, **UTF8)
     rows = result.stdout.splitlines()[1:] if skip_header else result.stdout.splitlines()
     names = []
     for row in rows:
@@ -683,7 +762,8 @@ def _run_powershell(exe: str, script: str) -> str:
     result = subprocess.run(
         [exe, "-NoProfile", "-NonInteractive", "-EncodedCommand", payload],
         capture_output=True,
-        text=True,
+        creationflags=NO_WINDOW,
+        **UTF8,
     )
     if result.returncode != 0:
         raise TtsError(f"speech command failed: {(result.stderr or result.stdout).strip()}")
@@ -747,7 +827,7 @@ def _render(
 
 def _check(argv: list[str], label: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
     log.debug("running: %s", " ".join(argv))
-    result = subprocess.run(argv, capture_output=True, text=True, env=env)
+    result = subprocess.run(argv, capture_output=True, env=env, creationflags=NO_WINDOW, **UTF8)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip().splitlines()
         raise TtsError(f"{label} failed: {detail[-1] if detail else 'exit ' + str(result.returncode)}")

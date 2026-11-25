@@ -518,6 +518,67 @@ def test_a_package_cannot_be_installed_without_a_python(monkeypatch) -> None:
         tts.install_engine(tts.PIPER, "/opt/python")
 
 
+def test_the_missing_python_says_where_to_get_one(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(tts, "_python", lambda python=None: None)
+    monkeypatch.setattr(tts.settings, "speech_env", lambda engine: tmp_path / "piper")
+    with pytest.raises(tts.TtsError, match="python.org"):
+        tts.make_speech_env(tts.PIPER)
+
+
+def _windows_python(monkeypatch, answers: dict[str, tuple[int, int] | None]) -> None:
+    """A Windows PATH whose `python.exe` is the Store's alias, plus a real install."""
+    monkeypatch.setattr(tts.sys, "platform", "win32")
+    tts._answers.clear()
+
+    def fake_run(argv, **kwargs):
+        version = answers.get(argv[0])
+        if version is None:
+            return subprocess.CompletedProcess(
+                argv, 49, "", "Python was not found; run without arguments to install from the Microsoft Store"
+            )
+        return subprocess.CompletedProcess(argv, 0, ".".join(map(str, version)) + "\n", "")
+
+    monkeypatch.setattr(tts.subprocess, "run", fake_run)
+
+
+ALIAS = "C:/Users/Elodie/AppData/Local/Microsoft/WindowsApps/python.exe"
+INSTALLED = "C:/Users/Elodie/AppData/Local/Programs/Python/Python312/python.exe"
+
+
+def test_the_store_alias_is_not_taken_for_a_python(monkeypatch) -> None:
+    # Windows puts the alias on PATH before any install, and its complaint used to
+    # be the error the app showed: "could not make a Python environment: Python
+    # not found, please install it on the Microsoft Store".
+    _windows_python(monkeypatch, {ALIAS: None, INSTALLED: (3, 12)})
+    monkeypatch.setattr(tts, "_which", lambda name: ALIAS if name in ("python", "python3") else None)
+    monkeypatch.setattr(tts, "_installs", lambda: [INSTALLED])
+    assert tts._python() == INSTALLED
+
+
+def test_a_machine_with_only_the_store_alias_has_no_python(monkeypatch) -> None:
+    _windows_python(monkeypatch, {ALIAS: None})
+    monkeypatch.setattr(tts, "_which", lambda name: ALIAS if name in ("python", "python3") else None)
+    monkeypatch.setattr(tts, "_installs", lambda: [])
+    assert tts._python() is None
+
+
+def test_a_python_older_than_the_engines_install_into_is_refused(monkeypatch) -> None:
+    _windows_python(monkeypatch, {INSTALLED: (3, 8)})
+    monkeypatch.setattr(tts, "_which", lambda name: None)
+    monkeypatch.setattr(tts, "_installs", lambda: [INSTALLED])
+    assert tts._python() is None
+
+
+def test_the_installer_folders_are_searched_newest_first(tmp_path, monkeypatch) -> None:
+    for name in ("Python310", "Python312", "Shared"):
+        (tmp_path / "Programs" / "Python" / name).mkdir(parents=True)
+        (tmp_path / "Programs" / "Python" / name / "python.exe").write_text("")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("ProgramFiles", raising=False)
+    monkeypatch.delenv("ProgramFiles(x86)", raising=False)
+    assert [Path(exe).parent.name for exe in tts._installs()] == ["Python312", "Python310"]
+
+
 def _bundled_app(tmp_path, monkeypatch) -> Path:
     """Pretend to be the AppImage: mounted under /tmp/.mount_XXX, unpacked, and
     pointing its own Python at what it unpacked."""

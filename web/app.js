@@ -662,6 +662,7 @@ async function buildPack() {
           cardAudio: spoken,
         })
       : await buildStoryZip(entries, silentMp3, progress, {
+          pack: source.name,
           cover,
           crop,
           zoom,

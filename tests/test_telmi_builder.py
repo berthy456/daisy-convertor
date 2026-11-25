@@ -169,6 +169,13 @@ def test_dir_name_pads_a_single_digit_age_and_caps_the_title() -> None:
     assert name.startswith("_12_" + "a" * 32 + "_")
 
 
+def test_dir_name_keeps_a_readable_word_when_the_title_normalizes_to_nothing() -> None:
+    """`ごんぎつね` leaves nothing behind, and a blank before the uuid reads as a
+    broken pack in the player's list."""
+    assert story_dir_name("ごんぎつね", "8f2c-44", 0, "", "gon-ruby-mp3") == "_00_gon-ruby-mp3_8f2c-44"
+    assert story_dir_name("ごんぎつね", "8f2c-44") == "_00_story_8f2c-44"
+
+
 def test_placeholder_png_is_a_valid_640x480_rgb_image() -> None:
     data = placeholder_png()
     assert data.startswith(b"\x89PNG\r\n\x1a\n")

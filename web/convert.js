@@ -67,7 +67,7 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
   if (drop.size) book.chapters = book.chapters.filter((_, k) => !drop.has(k + 1));
 
   const uuid = await storyUuid(book);
-  const dirName = storyDirName(book.title, uuid);
+  const dirName = storyDirName(book.title, uuid, 0, "", options.pack);
   const byName = new Map(entries.map((entry) => [normalizePath(entry.name), entry]));
   const bytesOf = (segment) => ({ ...segment, data: byName.get(segment.src).data });
   const files = [];

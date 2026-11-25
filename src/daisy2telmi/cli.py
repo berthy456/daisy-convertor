@@ -402,7 +402,11 @@ def convert(
                 log.debug("  %s -> %s", chapter.title, [str(s.src.name) for s in chapter.segments])
             # A player shows the folder's name, so the playlist pack is named after
             # the book; the story formats keep Telmi's `<category>_<age>_<title>_<uuid>`.
-            name = playlist.safe_name(book.title) if fmt == "mp3" else story_dir_name(book.title, story_uuid(book))
+            name = (
+                playlist.safe_name(book.title)
+                if fmt == "mp3"
+                else story_dir_name(book.title, story_uuid(book), fallback=input_path.stem)
+            )
             target = output_dir if output_dir.name == name else output_dir / name
             if target.exists() and any(target.iterdir()) and not force:
                 log.error(

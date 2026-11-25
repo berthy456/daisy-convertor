@@ -83,7 +83,7 @@ def test_the_zip_passes_telmis_zip_import_checks(story: Path) -> None:
 @requires_pack
 def test_the_story_folder_uses_telmis_naming(story: Path) -> None:
     metadata = json.loads((story / "metadata.json").read_text(encoding="utf-8"))
-    assert story.name == story_dir_name(metadata["title"], metadata["uuid"])
+    assert story.name == story_dir_name(metadata["title"], metadata["uuid"], fallback=PACK.stem)
 
 
 @requires_pack

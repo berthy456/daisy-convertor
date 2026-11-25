@@ -43,6 +43,11 @@ test("folder naming reproduces a real published Telmi story", () => {
   );
 });
 
+test("a title that normalizes to nothing takes the pack's own name", () => {
+  assert.equal(storyDirName("ごんぎつね", "8f2c-44", 0, "", "gon-ruby-mp3"), "_00_gon-ruby-mp3_8f2c-44");
+  assert.equal(storyDirName("ごんぎつね", "8f2c-44"), "_00_story_8f2c-44");
+});
+
 test("normalising and slugifying match Telmi-Sync's Strings.js", () => {
   // Values taken from the Python implementation, which was diffed against Strings.js.
   assert.equal(normalizeFileName("L'île  à   Vélo!!"), "L ile a Velo ");

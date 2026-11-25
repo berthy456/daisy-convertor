@@ -139,12 +139,18 @@ def slugify(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", stripped.lower())
 
 
-def story_dir_name(title: str, story_id: str, age: int = 0, category: str = "") -> str:
-    """Telmi-Sync's `generateDirNameStory`: `<category>_<age>_<title>_<uuid>`."""
+def story_dir_name(title: str, story_id: str, age: int = 0, category: str = "", fallback: str = "") -> str:
+    """Telmi-Sync's `generateDirNameStory`: `<category>_<age>_<title>_<uuid>`.
+
+    A title outside the Latin alphabet - `ごんぎつね`, an Arabic one - normalizes to
+    nothing, and the name the player shows would be a blank with a uuid after it. The
+    pack's own file name is the next thing the user can read.
+    """
+    name = normalize_file_name(title).strip() or normalize_file_name(fallback).strip() or "story"
     return (
         f"{normalize_file_name(category)[:32]}_"
         f"{('0' if age < 10 else '') + str(age)}_"
-        f"{normalize_file_name(title)[:32]}_"
+        f"{name[:32]}_"
         f"{slugify(story_id)[:36]}"
     )
 

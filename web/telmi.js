@@ -22,12 +22,15 @@ export function slugify(value) {
   return stripDiacritics(value).toLowerCase().replace(/[^a-z0-9]+/g, "-");
 }
 
-export function storyDirName(title, storyId, age = 0, category = "") {
+export function storyDirName(title, storyId, age = 0, category = "", fallback = "") {
   const ageText = (age < 10 ? "0" : "") + age;
+  // A title outside the Latin alphabet normalizes to nothing, which would leave a
+  // blank where the player shows the name; the pack's own file name is next.
+  const name = normalizeFileName(title).trim() || normalizeFileName(fallback).trim() || "story";
   return [
     normalizeFileName(category).slice(0, 32),
     ageText,
-    normalizeFileName(title).slice(0, 32),
+    name.slice(0, 32),
     slugify(storyId).slice(0, 36),
   ].join("_");
 }

@@ -18,7 +18,7 @@ tk = pytest.importorskip("tkinter")
 
 from tkinter import ttk
 
-from daisy2telmi import covers, gui, images
+from daisy2telmi import covers, gui, images, settings
 from daisy2telmi.detector import DaisyPackError
 from daisy2telmi.extractor import AudioSegment, Book, Chapter
 
@@ -266,18 +266,52 @@ def test_the_options_page_carries_the_bar_choice(app: gui.App) -> None:
     assert app.frameless is True
 
 
-def test_the_output_folder_follows_the_pack(app: gui.App, tmp_path: Path) -> None:
-    app.pack_var.set(str(tmp_path / "Wesh.zip"))
-    assert app.out_var.get() == str(tmp_path)
+def test_a_pack_does_not_choose_where_its_story_goes(app: gui.App) -> None:
+    """Nothing is written next to a book on its own: the output folder is a choice."""
+    app.pack_var.set("/books/Rachel/pack.zip")
+    assert app.out_var.get() == ""
+    assert app._paths_line.cget("text") == "/books/Rachel/pack.zip"
 
-    app.pack_var.set(str(tmp_path / "Rachel" / "pack.zip"))
-    assert app.out_var.get() == str(tmp_path / "Rachel")
+    app.out_var.set("/stories")
+    assert app._paths_line.cget("text") == "/books/Rachel/pack.zip → /stories"
+
+    app.pack_var.set("/" + "deep" * 20 + "/pack.zip")
+    line = app._paths_line.cget("text")
+    assert line.endswith("pack.zip → /stories"), "a long path loses its front, not its end"
+    assert len(line) <= gui.PATH_READ + 1 + 3 + len("/stories"), "and the line does not widen the window"
 
 
-def test_an_output_folder_the_user_chose_is_left_alone(app: gui.App, tmp_path: Path) -> None:
-    app.out_var.set(str(tmp_path / "keep"))
-    app.pack_var.set(str(tmp_path / "Wesh.zip"))
-    assert app.out_var.get() == str(tmp_path / "keep")
+def test_the_book_and_the_output_are_picked_with_buttons(app: gui.App) -> None:
+    """Three buttons, no boxes: a pack is dropped on the window or picked from a list."""
+    picked = [app._labels[key] for key in ("browse_zip", "browse_folder", "output_label")]
+    assert all(isinstance(button, ttk.Button) for button in picked)
+    row = picked[0].master
+    assert row is picked[1].master is picked[2].master
+    assert len({button.winfo_y() for button in picked}) == 1, "one line, not a column"
+    assert row.winfo_rootx() < app.bar.winfo_rootx(), "the buttons stand left of the bar card"
+    assert row.winfo_rooty() < app.bar.winfo_rooty() + app.bar.winfo_height()
+
+    pending, drawn = [app.bar.master], []
+    while pending:
+        widget = pending.pop()
+        drawn.append(widget)
+        pending += widget.winfo_children()
+    assert not any(isinstance(widget, ttk.Entry) for widget in drawn), "no path is typed"
+
+
+def test_the_output_folder_picked_is_the_default_afterwards(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    stories = tmp_path / "stories"
+    stories.mkdir()
+    monkeypatch.setattr(app, "_browse", lambda *_: str(stories))
+    app._pick_out_dir()
+    assert app.options["output_dir"] == str(stories)
+
+    reopened = gui.App(gui.make_root(), options=settings.load())
+    try:
+        assert reopened.out_var.get() == str(stories)
+        assert app.t("log_folders_missing") not in reopened.log_view.get("1.0", "end")
+    finally:
+        reopened.root.destroy()
 
 
 def test_a_second_pack_loses_the_cover_the_app_found(app: gui.App, tmp_path: Path, monkeypatch) -> None:
@@ -719,7 +753,7 @@ def test_a_missing_pack_is_refused_before_any_work(app: gui.App) -> None:
 def test_an_empty_box_is_not_read_as_the_working_directory(app: gui.App, tmp_path) -> None:
     (tmp_path / "pack.zip").write_bytes(b"PK")
     app.pack_var.set(str(tmp_path / "pack.zip"))
-    app.out_var.set("")  # the pack would otherwise have filled it in
+    app.out_var.set("")  # nothing was picked, and no folder is assumed
     app._start()
     app._drain()
     assert "choose an output folder first" in app.log_view.get("1.0", "end")
@@ -793,7 +827,7 @@ def test_the_options_page_saves_what_it_shows(app: gui.App, tmp_path, monkeypatc
 
 def test_every_option_sits_inside_the_page_frame(app: gui.App) -> None:
     """A box parented to the window instead of its frame is drawn outside the window."""
-    pages = [(gui.Options(app), "language_box announce_box input_box output_box".split())]
+    pages = [(gui.Options(app), "language_box announce_box input_box".split())]
     pages.append(
         (
             gui.Speech(app),
@@ -845,33 +879,16 @@ def test_the_speech_page_saves_the_engine_the_device_and_the_speed(
     assert '"speed": "fast"' in saved
 
 
-def test_the_options_page_holds_the_folders_the_app_works_in(app: gui.App, tmp_path, monkeypatch) -> None:
+def test_the_options_page_holds_the_folder_the_file_lists_open_in(app: gui.App, tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     packs = tmp_path / "packs"
-    stories = tmp_path / "stories"
     packs.mkdir()
     page = gui.Options(app)
     page.input_box.insert(0, str(packs))
-    page.output_box.insert(0, str(stories))
     page._close()
 
     assert app.options["input_dir"] == str(packs)
-    assert app.options["output_dir"] == str(stories)
-    # The main window's own output field follows the folder named here.
-    assert app.out_var.get() == str(stories)
     assert app._start_dir() == str(packs)
-
-
-def test_the_output_folder_named_in_the_options_replaces_the_pack_folder(app: gui.App, tmp_path) -> None:
-    app.options["output_dir"] = str(tmp_path / "stories")
-    app.pack_var.set(str(tmp_path / "pack.zip"))
-    assert app.out_var.get() == str(tmp_path / "stories")
-
-    app.options["output_dir"] = None
-    app._auto_out = ""
-    app.out_var.set("")
-    app._follow_pack()
-    assert app.out_var.get() == str(tmp_path)
 
 
 def test_a_file_list_opens_in_the_folder_named_in_the_options(app: gui.App, tmp_path) -> None:
@@ -884,26 +901,25 @@ def test_a_file_list_opens_in_the_folder_named_in_the_options(app: gui.App, tmp_
     assert app._start_dir() == str(tmp_path)
 
 
-def test_the_options_page_asks_for_the_folders_it_does_not_have(app: gui.App, tmp_path) -> None:
-    """Two empty boxes are a question, so the page asks it instead of describing
-    what it does with an empty one."""
+def test_the_options_page_asks_for_the_folder_it_does_not_have(app: gui.App, tmp_path) -> None:
+    """An empty box is a question, so the page asks it instead of describing what it
+    does with an empty one."""
     quiet = gui.Options(app)
     try:
-        assert quiet.folders_hint.cget("text") == app.t("opt_folders_unset")
+        assert quiet.folders_hint.cget("text") == app.t("opt_input_unset")
     finally:
         quiet.top.destroy()
 
     app.options["input_dir"] = str(tmp_path)
-    app.options["output_dir"] = str(tmp_path / "stories")
     named = gui.Options(app)
     try:
-        assert named.folders_hint.cget("text") == app.t("opt_folders_hint")
+        assert named.folders_hint.cget("text") == app.t("opt_input_hint")
     finally:
         named.top.destroy()
 
 
-def test_the_window_stops_asking_once_the_folders_are_named(app: gui.App, tmp_path) -> None:
-    """A first run has no folders of its own, and says so once; naming them ends the ask."""
+def test_the_window_stops_asking_once_an_output_folder_is_named(app: gui.App, tmp_path) -> None:
+    """A first run has nowhere to write, and says so once; a picked folder ends the ask."""
     assert app.t("log_folders_missing") in app.log_view.get("1.0", "end")
 
     app.options["output_dir"] = str(tmp_path / "stories")

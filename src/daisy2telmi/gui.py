@@ -249,7 +249,7 @@ BAR_CLOSE_HOVER = "#8f3b34"
 # The window opens at a size of its own: Tk asks each widget how big it wants to be,
 # hands the total to the window manager and lets it decide, and a window the manager
 # does not manage is only as big as it is told. The floor is the size the window needs
-# to show its bar and the three columns of work under it.
+# to show its bar and the two columns of work under it.
 MIN_WIDTH = 900
 MIN_HEIGHT = 560
 WINDOW_MARGIN = 40
@@ -257,6 +257,10 @@ WINDOW_MARGIN = 40
 # Every box the window asks the user to fill in is the same width, so the fields read
 # as one column instead of a pile of rows of their own.
 FIELD_WIDTH = 34
+
+# How many characters the line under the buttons shows: each picked path gets half of
+# it, so the line never asks the window for more room than it was given.
+PATH_READ = 52
 
 
 class TitleBar(tk.Canvas):
@@ -634,8 +638,7 @@ class App:
         self._maximised = False
         self._restore_geometry = ""
         self.pack_var = tk.StringVar()
-        self.out_var = tk.StringVar()
-        self._auto_out = ""
+        self.out_var = tk.StringVar(value=self.options.get("output_dir") or "")
         # What the last pack's lookup filled in. A cover, an author and a title the
         # services gave belong to the pack they were found for; only what the user
         # typed or picked is a setting that carries to the next pack.
@@ -645,6 +648,7 @@ class App:
         theme(root)
         set_icon(root)
         self.pack_var.trace_add("write", self._follow_pack)
+        self.out_var.trace_add("write", lambda *_: self._show_paths())
         self.cover_var = tk.StringVar()
         self.author_var = tk.StringVar()
         self.title_var = tk.StringVar()
@@ -684,7 +688,7 @@ class App:
         self._crop_width = self._crop_room()
         self._build()
         self._size_window()
-        if not self.options.get("input_dir") and not self.options.get("output_dir"):
+        if not self.out_var.get():
             self._append(self.t("log_folders_missing"))
         if self.frameless:
             self._take_system_bar()
@@ -713,28 +717,31 @@ class App:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(1, weight=1)
 
-        # The bar is a card in the top right corner, and the two paths it used to sit
-        # above stand to its left: the band costs the window no height, and the width
-        # it gives up is where the paths are read. The name is repeated along the
-        # bottom with what the app is for.
+        # The bar is a card in the top right corner, and the three buttons that name
+        # the book and where its story goes stand to its left: the band costs the
+        # window no height, and the width it gives up is where the choices are made.
+        # Nothing is typed - a pack is dropped on the window or picked from a list -
+        # so the two boxes that held the paths are gone and the line under the buttons
+        # says what was picked. The name is repeated along the bottom with what the
+        # app is for.
         head = ttk.Frame(self.root, padding=(12, 8, 12, 0))
         head.grid(row=0, column=0, sticky="ew")
         head.columnconfigure(1, weight=1)
-        paths = ttk.Frame(head)
-        paths.grid(row=0, column=0, sticky="nw")
+        books = ttk.Frame(head)
+        books.grid(row=0, column=0, sticky="nw")
         self.bar = TitleBar(self, head)
         self.bar.grid(row=0, column=2, sticky="ne")
 
-        self._label(paths, "pack_label").grid(row=0, column=0, sticky="w")
-        ttk.Entry(paths, textvariable=self.pack_var, width=FIELD_WIDTH).grid(row=1, column=0, sticky="w")
-        pack_buttons = ttk.Frame(paths)
-        pack_buttons.grid(row=1, column=1, sticky="w", padx=(6, 0))
-        self._button(pack_buttons, "browse_zip", self._pick_pack_file).pack(side="left")
-        self._button(pack_buttons, "browse_folder", self._pick_pack_dir).pack(side="left", padx=(4, 0))
-
-        self._label(paths, "output_label").grid(row=2, column=0, sticky="w", pady=(6, 0))
-        ttk.Entry(paths, textvariable=self.out_var, width=FIELD_WIDTH).grid(row=3, column=0, sticky="w")
-        self._button(paths, "browse_output", self._pick_out_dir).grid(row=3, column=1, sticky="w", padx=(6, 0))
+        # Two rows of their own: packed straight into the frame, the line would be put
+        # beside the buttons rather than under them, and the frame would ask for the
+        # width of both at once and push the bar card out of the window.
+        picks = ttk.Frame(books)
+        picks.pack(anchor="w")
+        self._button(picks, "browse_zip", self._pick_pack_file).pack(side="left")
+        self._button(picks, "browse_folder", self._pick_pack_dir).pack(side="left", padx=(6, 0))
+        self._button(picks, "output_label", self._pick_out_dir).pack(side="left", padx=(12, 0))
+        self._paths_line = ttk.Label(books, text="", width=PATH_READ, style="Brand.TLabel")
+        self._paths_line.pack(anchor="w", pady=(4, 0))
 
         grid = ttk.Frame(self.root, padding=(12, 0))
         grid.grid(row=1, column=0, sticky="nsew")
@@ -1198,21 +1205,26 @@ class App:
         )
 
     def _follow_pack(self, *_: object) -> None:
-        """The story lands in the folder named in the options, or next to its pack.
-
-        Only the folder this put there last time is replaced: an output path the
-        user typed or picked themselves is never overwritten.
-        """
+        """A new book is a new book: the part numbers the last one's dropped parts
+        point at mean nothing here, the same as a different cut level."""
         pack = self._typed_path(self.pack_var)
         if pack != self._pack_path:
-            # A different book: the part numbers the last one's dropped parts point at
-            # mean nothing here, the same as a different cut level.
             self.dropped.clear()
             self._pack_path = pack
-        folder = self.options.get("output_dir") or ("" if pack is None else str(pack.parent))
-        if self.out_var.get() in ("", self._auto_out):
-            self._auto_out = folder
-            self.out_var.set(folder)
+        self._show_paths()
+
+    def _show_paths(self) -> None:
+        """What the three buttons picked, read under them.
+
+        The paths are not typed anywhere, so this line is the only place the window
+        says which book it holds and where its story will be written.
+        """
+        # A path is read from its end, so a long one loses its front rather than the
+        # part that says where things are.
+        room = (PATH_READ - 3) // 2
+        picked = [str(self._typed_path(self.pack_var) or ""), self.out_var.get().strip()]
+        parts = [part if len(part) <= room else "…" + part[-room:] for part in picked if part]
+        self._paths_line.configure(text=" → ".join(parts))
 
     def _start_dir(self, current: str = "") -> str:
         """Where a file list opens: the folder the field already names, then the
@@ -1414,9 +1426,16 @@ class App:
             log.warning("no browser opened: copy the link above into one")
 
     def _pick_out_dir(self) -> None:
+        """The folder every story is written into, until another one is picked.
+
+        It is kept as the app's own default, so the next run starts with it already
+        chosen; a run with none chosen is refused.
+        """
         path = self._browse("browse_output", self.out_var.get(), "folder")
         if path:
             self.out_var.set(path)
+            self.options["output_dir"] = path
+            settings.save(self.options)
 
     def _pick_cover(self) -> None:
         path = self._browse("browse_cover", self.cover_var.get(), "file")
@@ -2339,15 +2358,15 @@ class Options(Settings):
             )
             row += 2
 
+        # One folder here now: the output folder is picked on the main window, next to
+        # the book it is written for, and kept from that choice.
         folders = ttk.Labelframe(self.grid, text=app.t("opt_section_folders"), padding=(10, 6))
         folders.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(14, 0))
         folders.columnconfigure(1, weight=1)
         self.input_box = self._folder(folders, "opt_input_dir", 0, app.options["input_dir"])
-        self.output_box = self._folder(folders, "opt_output_dir", 1, app.options["output_dir"])
-        # Two empty boxes are a question the app is still asking, so the page asks it.
-        asked = "opt_folders_hint" if app.options.get("input_dir") and app.options.get("output_dir") else "opt_folders_unset"
+        asked = "opt_input_hint" if app.options.get("input_dir") else "opt_input_unset"
         self.folders_hint = ttk.Label(folders, text=app.t(asked), style="Brand.TLabel")
-        self.folders_hint.grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self.folders_hint.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         ttk.Button(self.grid, text=app.t("opt_close"), command=self._close).grid(
             row=row + 1, column=0, columnspan=2, sticky="e", pady=(12, 0)
@@ -2355,9 +2374,7 @@ class Options(Settings):
 
     def _close(self) -> None:
         input_dir = self.input_box.get().strip() or None
-        output_dir = self.output_box.get().strip() or None
         moved_input = input_dir != self.app.options.get("input_dir")
-        moved_output = output_dir != self.app.options.get("output_dir")
         self._save(
             {
                 "language": self._chosen(self.language_box, self.language_keys),
@@ -2365,7 +2382,6 @@ class Options(Settings):
                 "autoplay": self.autoplay_var.get(),
                 "card_total": self.card_total_var.get(),
                 "input_dir": input_dir,
-                "output_dir": output_dir,
                 "frameless": self.frameless_var.get(),
             }
         )
@@ -2373,15 +2389,9 @@ class Options(Settings):
             # A folder the user named beats the one a file list happened to end in.
             self.app.options["last_dir"] = None
             settings.save(self.app.options)
-        if moved_output:
-            # The main window's own field follows the folder named here, until the
-            # user types or picks another one.
-            self.app._auto_out = output_dir or ""
-            self.app.out_var.set(output_dir or "")
         self.app.language_var.set(self.app.options["language"])
         self.app.set_frameless(self.app.options["frameless"])
         self.app._relabel()
-        self.app._follow_pack()
         self.top.destroy()
 
 

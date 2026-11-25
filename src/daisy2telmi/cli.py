@@ -182,6 +182,12 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="how fast the cards are read; espeak-ng, Piper, say and Windows speech all take it",
     )
     speech.add_argument(
+        "--tts-expression",
+        choices=tts.EXPRESSIONS,
+        help="how expressive Chatterbox is: natural keeps its own defaults, expressive reads with "
+        "the tuning its README suggests for expressive speech",
+    )
+    speech.add_argument(
         "--read-voice",
         help="voice for the book's own text, where a pack carries none: a whole chapter is not read "
         "the way a card's few words are, so it often wants a different voice",
@@ -249,6 +255,7 @@ def announce_options(args: argparse.Namespace) -> Announce:
         clip=args.tts_clip or saved["clip"],
         device=args.tts_device or saved["device"],
         speed=args.tts_speed or saved["speed"],
+        expression=args.tts_expression or saved["expression"],
         read_voice=args.read_voice or saved["read_voice"],
         read_clip=args.read_clip or saved["read_clip"],
         read_speed=args.read_speed or saved["read_speed"],

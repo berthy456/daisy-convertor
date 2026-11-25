@@ -80,6 +80,11 @@ LENGTH_SCALES = {"slow": 1.25, "normal": 1.0, "fast": 0.8}
 # Windows speech counts steps either side of zero, and a step is about 5%.
 SAPI_RATES = {"slow": -3, "normal": 0, "fast": 3}
 
+EXPRESSIONS = ("natural", "expressive")
+# Chatterbox's two tuning knobs, in the pairs its own README puts together: the
+# defaults it says work well, and the pair it suggests for expressive speech.
+CHATTERBOX_TUNING = {"natural": (0.5, 0.5), "expressive": (0.7, 0.3)}
+
 # A card is heard over the narration, so it is levelled instead of left at whatever
 # the engine made: espeak lands near -25 LUFS and `say` near -16 on the same words.
 CARD_TARGET = -20.0
@@ -875,6 +880,7 @@ def _speak_batch(
     python: str | None,
     device: str,
     speed: str,
+    expression: str,
     loudness: str,
 ) -> None:
     """One process for the whole batch: loading a neural model costs far more
@@ -908,6 +914,8 @@ def _speak_batch(
             )
     else:
         manifest["clip"] = clip
+        pair = CHATTERBOX_TUNING.get(expression) or CHATTERBOX_TUNING["natural"]
+        manifest["exaggeration"], manifest["cfg_weight"] = pair
     label = LABELS[engine]
     log.info("speaking %d phrase(s) with %s in %s", len(phrases), label, exe)
     with tempfile.TemporaryDirectory(prefix=f"daisy2telmi-{engine}-") as tmp:
@@ -937,6 +945,7 @@ def synthesize_all(
     clip: str | None = None,
     device: str = AUTO,
     speed: str = "normal",
+    expression: str = "natural",
     loudness: str | None = None,
 ) -> None:
     """Speak every phrase into `dests`, one file each.
@@ -954,7 +963,7 @@ def synthesize_all(
         raise TtsError("speech is switched off")
     chain = card_loudness(None) if loudness is None else loudness
     if chosen in PACKAGES:
-        _speak_batch(chosen, list(phrases), lang, list(dests), voice, clip, python, device, speed, chain)
+        _speak_batch(chosen, list(phrases), lang, list(dests), voice, clip, python, device, speed, expression, chain)
         return
     for phrase, dest in zip(phrases, dests):
         _speak_one(phrase, lang, dest, chosen, voice, command, chain, speed)
@@ -971,9 +980,10 @@ def synthesize(
     clip: str | None = None,
     device: str = AUTO,
     speed: str = "normal",
+    expression: str = "natural",
 ) -> None:
     """Speak `phrase` into `dest` as an MP3 in the Telmi audio spec."""
-    synthesize_all([phrase], lang_code, [dest], engine, voice, command, python, clip, device, speed)
+    synthesize_all([phrase], lang_code, [dest], engine, voice, command, python, clip, device, speed, expression)
 
 
 _SENTENCE_BREAK = re.compile(r"(?<=[.!?:;…])\s+")
@@ -1015,6 +1025,7 @@ def narrate(
     clip: str | None = None,
     device: str = AUTO,
     speed: str = "normal",
+    expression: str = "natural",
 ) -> None:
     """Speak a whole part of a book into `dest`, chunked and joined back.
 
@@ -1027,6 +1038,6 @@ def narrate(
     with tempfile.TemporaryDirectory(prefix="daisy2telmi-narration-") as tmp:
         parts = [Path(tmp) / f"part{index}.mp3" for index in range(len(phrases))]
         synthesize_all(
-            phrases, lang_code, parts, engine, voice, command, python, clip, device, speed, UNLEVELLED
+            phrases, lang_code, parts, engine, voice, command, python, clip, device, speed, expression, UNLEVELLED
         )
         audio.render([AudioSegment(part) for part in parts], dest)

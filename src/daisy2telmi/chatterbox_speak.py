@@ -5,7 +5,8 @@ Chatterbox itself. It writes a manifest and runs this file with a Python the
 user installed `chatterbox-tts` into; the model loads once for the whole batch,
 which matters because loading it takes longer than speaking a chapter number.
 
-Manifest: {"phrases": [...], "outs": [...], "lang": "fr", "clip": "ref.wav"}
+Manifest: {"phrases": [...], "outs": [...], "lang": "fr", "clip": "ref.wav",
+           "exaggeration": 0.5, "cfg_weight": 0.5}
 """
 
 from __future__ import annotations
@@ -92,7 +93,10 @@ def speak(manifest: dict) -> None:
     device = _device(manifest.get("device"), torch)
     print(f"chatterbox speaking on {device}")
     model = ChatterboxMultilingualTTS.from_pretrained(device=device)
-    extra = {"audio_prompt_path": manifest["clip"]} if manifest.get("clip") else {}
+    extra: dict = {"audio_prompt_path": manifest["clip"]} if manifest.get("clip") else {}
+    for knob in ("exaggeration", "cfg_weight"):
+        if manifest.get(knob) is not None:
+            extra[knob] = manifest[knob]
     for phrase, out in zip(manifest["phrases"], manifest["outs"]):
         wav = model.generate(phrase, language_id=manifest["lang"], **extra)
         _write_wav(out, wav, model.sr)

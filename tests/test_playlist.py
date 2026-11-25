@@ -228,20 +228,22 @@ def test_interludes_are_named_after_the_chapter_and_levelled_against_it(tmp_path
     ]
     spoken: dict = {}
 
-    def fake(phrases, lang, dests, engine, voice, command, python, clip, device, speed, loudness):
+    def fake(phrases, lang, dests, engine, voice, command, python, clip, device, speed, expression, loudness):
         spoken["phrases"] = phrases
+        spoken["expression"] = expression
         spoken["loudness"] = loudness
         for dest in dests:
             dest.write_bytes(b"\xff\xfb")
 
     monkeypatch.setattr(tts, "synthesize_all", fake)
     monkeypatch.setattr(playlist.audio, "loudness", lambda _p: -18.0)
-    tracks = playlist._interludes(book, Announce(mode="prompt", language="fr"), folder, chapters)
+    tracks = playlist._interludes(book, Announce(mode="prompt", language="fr", expression="expressive"), folder, chapters)
     assert [t.file for t in tracks] == [
         "001 - Le loup et l'agneau - Le loup et l'agneau-intro.mp3",
         "002 - Le loup résigné - Le loup et l'agneau-intro.mp3",
     ]
     assert spoken["phrases"] == ["1. Le loup et l'agneau", "2. Le loup résigné"], "the card's prompt to press OK is dropped"
+    assert spoken["expression"] == "expressive"
     assert spoken["loudness"] == tts.card_loudness(-18.0)
 
 

@@ -748,7 +748,7 @@ def test_every_option_sits_inside_the_page_frame(app: gui.App) -> None:
     pages.append(
         (
             gui.Speech(app),
-            "engine_box voice_box speed_box device_box python_box clip_box "
+            "engine_box voice_box speed_box expression_box device_box python_box clip_box "
             "read_voice_box read_speed_box read_clip_box".split(),
         )
     )
@@ -1028,6 +1028,30 @@ def test_the_reading_rows_follow_the_engine_too(app: gui.App) -> None:
     page.read_clip_box.insert(0, "/tmp/reader.wav")
     page._close()
     assert app.options["read_clip"] == "/tmp/reader.wav"
+
+
+def test_the_expressiveness_row_follows_the_engine(app: gui.App) -> None:
+    app.options["tts"] = "piper"
+    page = gui.Speech(app)
+    assert str(page.expression_box.cget("state")) == "disabled"
+
+    page.engine_box.set(app.engine_name("chatterbox"))
+    page._show_engine()
+    assert str(page.expression_box.cget("state")) == "readonly"
+    assert list(page.expression_box.cget("values")) == [app.t("expression_natural"), app.t("expression_expressive")]
+    assert page.expression_box.get() == app.t("expression_natural")
+
+
+def test_the_cards_page_saves_the_expressiveness(app: gui.App, tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    app.options["tts"] = "chatterbox"
+    page = gui.Speech(app)
+    page.expression_box.set(app.t("expression_expressive"))
+    page._close()
+
+    assert app.options["expression"] == "expressive"
+    saved = (tmp_path / "daisy2telmi" / "config.json").read_text(encoding="utf-8")
+    assert '"expression": "expressive"' in saved
 
 
 def test_the_voice_list_follows_the_engine_and_language(app: gui.App) -> None:

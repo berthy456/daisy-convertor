@@ -728,6 +728,35 @@ def test_the_device_is_left_to_the_model_when_not_chosen(tmp_path, monkeypatch) 
     assert manifests[0]["device"] == "auto"
 
 
+@requires_ffmpeg
+@pytest.mark.parametrize("name", tts.EXPRESSIONS)
+def test_the_chatterbox_manifest_carries_the_tuning_of_the_choice(tmp_path, monkeypatch, name) -> None:
+    manifests: list[dict] = []
+    _fake_batch(monkeypatch, manifests)
+    tts.synthesize_all(["un"], "fr", [tmp_path / "c0.mp3"], engine=tts.CHATTERBOX, expression=name)
+    assert (manifests[0]["exaggeration"], manifests[0]["cfg_weight"]) == tts.CHATTERBOX_TUNING[name]
+
+
+@requires_ffmpeg
+def test_the_tuning_is_left_out_of_the_engine_that_has_no_such_knob(tmp_path, monkeypatch) -> None:
+    manifests: list[dict] = []
+    _fake_batch(monkeypatch, manifests)
+    voices = tmp_path / "voices"
+    voices.mkdir()
+    (voices / "fr_FR-siwis-medium.onnx").write_text("")
+    monkeypatch.setattr(tts.settings, "speech_voices", lambda: voices)
+    tts.synthesize_all(["un"], "fr", [tmp_path / "c0.mp3"], engine=tts.PIPER, expression="expressive")
+    assert "exaggeration" not in manifests[0] and "cfg_weight" not in manifests[0]
+
+
+@requires_ffmpeg
+def test_the_book_is_narrated_with_the_expression_chosen(tmp_path, monkeypatch) -> None:
+    manifests: list[dict] = []
+    _fake_batch(monkeypatch, manifests)
+    tts.narrate("Une phrase.", "fr", tmp_path / "s0.mp3", engine=tts.CHATTERBOX, expression="expressive")
+    assert manifests[0]["exaggeration"] == tts.CHATTERBOX_TUNING["expressive"][0]
+
+
 def test_the_piper_voice_folder_lists_only_the_language_it_holds(tmp_path, monkeypatch) -> None:
     voices = tmp_path / "voices"
     voices.mkdir()
@@ -891,6 +920,16 @@ def test_the_reading_voice_flag_overrides_the_saved_choice(monkeypatch, tmp_path
     forced = cli.announce_options(cli._parse_args(["pack.zip", "out", "--read-voice", "flag", "--read-speed", "fast"]))
     assert (saved.read_voice, saved.read_speed) == ("saved-reader", "slow")
     assert (forced.read_voice, forced.read_speed) == ("flag", "fast")
+
+
+def test_the_expression_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    settings.save({**settings.DEFAULTS, "expression": "expressive"})
+
+    saved = cli.announce_options(cli._parse_args(["pack.zip", "out"]))
+    forced = cli.announce_options(cli._parse_args(["pack.zip", "out", "--tts-expression", "natural"]))
+    assert saved.expression == "expressive", "the saved choice is used when no flag is given"
+    assert forced.expression == "natural"
 
 
 def test_auto_takes_the_apple_gpu_when_there_is_one() -> None:

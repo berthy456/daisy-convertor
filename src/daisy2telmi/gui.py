@@ -44,6 +44,7 @@ log = logging.getLogger("daisy2telmi")
 
 ANNOUNCE_KEYS = {mode: f"announce_{mode}" for mode in ANNOUNCE_MODES}
 SPEED_KEYS = {speed: f"speed_{speed}" for speed in tts.SPEEDS}
+EXPRESSION_KEYS = {name: f"expression_{name}" for name in tts.EXPRESSIONS}
 # Nothing chosen on the reading page means the book is read with the card's setting.
 SAME = {None: "speech_same_as_cards"}
 READ_SPEED_KEYS = {**SPEED_KEYS, None: "speech_same_as_cards"}
@@ -1155,6 +1156,7 @@ class App:
             clip=self.options["clip"],
             device=self.options["device"],
             speed=self.options["speed"],
+            expression=self.options["expression"],
             read_voice=self.options["read_voice"],
             read_clip=self.options["read_clip"],
             read_speed=self.options["read_speed"],
@@ -2372,7 +2374,7 @@ class Speech(Settings):
         tts.SAY: ("voice", "speed"),
         tts.SAPI: ("voice", "speed"),
         tts.COQUI: ("voice", "clip", "python", "device"),
-        tts.CHATTERBOX: ("voice", "clip", "python", "device"),
+        tts.CHATTERBOX: ("voice", "clip", "python", "device", "expression"),
         tts.COMMAND: (),
         "off": (),
     }
@@ -2400,6 +2402,8 @@ class Speech(Settings):
 
         self.voice_box = self._combo(cards, [None], app.options["voice"])
         self.speed_box = self._combo(cards, self.speed_keys, app.options["speed"], SPEED_KEYS)
+        self.expression_keys = list(tts.EXPRESSIONS)
+        self.expression_box = self._combo(cards, self.expression_keys, app.options["expression"], EXPRESSION_KEYS)
         self.python_box = ttk.Entry(cards, width=28)
         self.python_box.insert(0, app.options["python"] or "")
         self.device_box = self._combo(cards, self.device_keys, app.options["device"])
@@ -2417,10 +2421,11 @@ class Speech(Settings):
 
         self._row(cards, "opt_voice", 0, self.voice_box)
         self._row(cards, "opt_speed", 1, self.speed_box)
-        self._row(cards, "opt_python", 2, self.python_box)
-        self._row(cards, "opt_device", 3, self.device_box)
-        self._row(cards, "opt_clip", 4, clip_row)
-        self._row(cards, "speech_try_label", 5, try_row)
+        self._row(cards, "opt_expression", 2, self.expression_box)
+        self._row(cards, "opt_python", 3, self.python_box)
+        self._row(cards, "opt_device", 4, self.device_box)
+        self._row(cards, "opt_clip", 5, clip_row)
+        self._row(cards, "speech_try_label", 6, try_row)
 
         install = ttk.Labelframe(self.grid, text=app.t("speech_section"), padding=(10, 6))
         install.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(14, 0))
@@ -2485,6 +2490,7 @@ class Speech(Settings):
         live = self.LIVE.get(engine, ())
         combos = (
             ("voice", self.voice_box), ("speed", self.speed_box), ("device", self.device_box),
+            ("expression", self.expression_box),
             ("voice", self.read_voice_box), ("speed", self.read_speed_box),
         )
         for key, box in combos:
@@ -2548,6 +2554,7 @@ class Speech(Settings):
             "engine": self._chosen(self.engine_box, self.engine_keys),
             "voice": self._chosen(self.voice_box, self.voice_keys),
             "speed": self._chosen(self.speed_box, self.speed_keys, SPEED_KEYS),
+            "expression": self._chosen(self.expression_box, self.expression_keys, EXPRESSION_KEYS),
             "python": self.python_box.get().strip() or None,
             "clip": self.clip_box.get().strip() or None,
             "device": self._chosen(self.device_box, self.device_keys),
@@ -2593,7 +2600,7 @@ class Speech(Settings):
             tts.synthesize(
                 argument, code, self._try_folder / "try.mp3",
                 options["engine"], options["voice"], self.app.options["command"], options["python"],
-                clip, options["device"], options["speed"],
+                clip, options["device"], options["speed"], options["expression"],
             )
             self.events.put(("try", self._try_folder / "try.mp3"))
         except tts.TtsError as exc:
@@ -2625,6 +2632,7 @@ class Speech(Settings):
                 "tts": self._chosen(self.engine_box, self.engine_keys),
                 "voice": self._chosen(self.voice_box, self.voice_keys),
                 "speed": self._chosen(self.speed_box, self.speed_keys, SPEED_KEYS),
+                "expression": self._chosen(self.expression_box, self.expression_keys, EXPRESSION_KEYS),
                 "python": self.python_box.get().strip() or None,
                 "clip": self.clip_box.get().strip() or None,
                 "device": self._chosen(self.device_box, self.device_keys),

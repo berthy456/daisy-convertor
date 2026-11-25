@@ -343,3 +343,15 @@ def test_the_reading_voice_is_the_one_the_book_is_spoken_with(tmp_path, monkeypa
     monkeypatch.setattr(tts, "narrate", fake_narrate)
     narrate("Une phrase.", Announce(voice="card", read_voice="reader"), tmp_path / "s0.mp3")
     assert asked["voice"] == "reader", "the card's voice is not the one a chapter is read with"
+
+
+def test_the_book_is_spoken_with_the_expressiveness_the_cards_chose(tmp_path, monkeypatch) -> None:
+    asked: dict = {}
+
+    def fake_narrate(text, lang_code, dest, **options):
+        asked.update(options)
+        Path(dest).write_bytes(b"mp3")
+
+    monkeypatch.setattr(tts, "narrate", fake_narrate)
+    narrate("Une phrase.", Announce(expression="expressive"), tmp_path / "s0.mp3")
+    assert asked["expression"] == "expressive"

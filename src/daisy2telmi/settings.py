@@ -38,6 +38,7 @@ DEFAULTS: dict = {
     "tts": "auto",
     "voice": None,
     "speed": "normal",
+    "expression": "natural",
     "command": None,
     "python": None,
     "clip": None,

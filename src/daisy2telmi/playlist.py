@@ -283,6 +283,7 @@ def _interludes(book: Book, announce: Announce | None, folder: Path, chapters: l
             announce.clip,
             announce.device,
             announce.speed,
+            announce.expression,
             tts.card_loudness(story),
         )
     except tts.TtsError as exc:

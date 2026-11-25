@@ -260,7 +260,18 @@ jobs:
           Then run:
               ./daisy-convertor <daisy-pack.zip> <output-folder>
           TXT
-          hdiutil create -volname daisy-convertor -srcfolder "$staging" -ov -format UDZO "$image"
+          # The runner sometimes has a daisy-convertor volume still mounted from
+          # an earlier job, which makes hdiutil answer "Resource busy".
+          status=1
+          for try in 1 2 3; do
+            hdiutil detach /Volumes/daisy-convertor -force >/dev/null 2>&1 || true
+            if hdiutil create -volname daisy-convertor -srcfolder "$staging" -ov -format UDZO "$image"; then
+              status=0
+              break
+            fi
+            sleep 10
+          done
+          exit $status
       - uses: actions/upload-artifact@v4
         with:
           name: daisy-convertor-macos-${{ matrix.arch }}

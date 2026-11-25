@@ -11,7 +11,7 @@ _spec = importlib.util.spec_from_file_location(
 make_web_voices = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(make_web_voices)
 
-from daisy2telmi import tts
+from daisy2telmi import settings, tts
 from daisy2telmi.i18n import LANGUAGES
 
 MAX = 50
@@ -106,7 +106,12 @@ def test_the_two_sets_do_not_record_the_same_clip_twice():
             assert spoken & light == set(), f"{code}/{engine}"
 
 
-def test_only_an_engine_with_a_voice_for_the_language_is_used():
+def test_only_an_engine_with_a_voice_for_the_language_is_used(tmp_path, monkeypatch):
+    """Piper speaks a language once its voice file is in the app's voice folder,
+    and the Coqui model that covers Arabic only speaks with a recording to clone."""
+    monkeypatch.setattr(settings, "speech_voices", lambda: tmp_path)
+    assert not make_web_voices.speaks(tts.PIPER, LANGUAGES["fr"], None)
+    (tmp_path / "fr_FR-upmc-medium.onnx").write_bytes(b"")
     assert make_web_voices.speaks(tts.PIPER, LANGUAGES["fr"], None)
     assert not make_web_voices.speaks(tts.COQUI, LANGUAGES["ar"], None)
     assert make_web_voices.speaks(tts.COQUI, LANGUAGES["ar"], "someone.onnx")

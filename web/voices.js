@@ -2,9 +2,9 @@
 //
 // A browser tab can play speech but cannot capture it into a file, so the page
 // ships the phrases instead of synthesising them. `tools/make_web_voices.py`
-// regenerates them with Chatterbox or espeak-ng; the bare numbers and the word
-// before them are espeak-ng either way, because Chatterbox loses its place on a
-// one-word phrase.
+// regenerates them with Piper, Coqui, Chatterbox or espeak-ng. Chatterbox is the
+// one engine that loses its place on a bare number, and only its numbers and the
+// word before them are left to espeak-ng.
 //
 // What a card says is put together from those pieces: the number, with or
 // without the word chapter, then the total in the language's own words, then

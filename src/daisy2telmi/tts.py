@@ -116,8 +116,8 @@ PIPER_VOICES: dict[str, list[str]] = {
     "fr": ["fr_FR-upmc-medium", "fr_FR-siwis-medium", "fr_FR-tom-medium", "fr_FR-mls-medium", "fr_FR-siwis-low"],
     "it": ["it_IT-paola-medium", "it_IT-riccardo-x_low"],
     "nl": ["nl_NL-pim-medium", "nl_NL-ronnie-medium", "nl_NL-mls-medium", "nl_BE-nathalie-medium"],
-    "pt": ["pt_BR-faber-medium", "pt_BR-cadu-medium", "pt_BR-jeff-medium", "pt_PT-tugão-medium"],
-    "tr": ["tr_TR-fahrettin-medium", "tr_TR-dfki-medium", "tr_TR-fettah-medium"],
+    "pt": ["pt_BR-faber-medium", "pt_BR-cadu-medium", "pt_BR-jeff-medium"],
+    "tr": ["tr_TR-dfki-medium"],
     "zh": ["zh_CN-huayan-medium", "zh_CN-huayan-x_low"],
 }
 

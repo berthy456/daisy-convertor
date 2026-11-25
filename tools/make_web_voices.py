@@ -4,23 +4,28 @@ A browser tab can play speech but cannot capture it into a file, so the web
 converter ships these clips instead of synthesising them.
 
     .venv/bin/python tools/make_web_voices.py
+    .venv/bin/python tools/make_web_voices.py --engine piper --python ~/.venvs/piper/bin/python
     .venv/bin/python tools/make_web_voices.py --engine chatterbox --python /usr/bin/python3
 
 espeak-ng is the default because it is GPLv3 like the project and needs no
-download. Chatterbox gives a real voice instead of a robotic one, but it runs in
-a Python of your own (`pip install chatterbox-tts`) and takes a couple of minutes
-per language on a CPU. Both are levelled to the same loudness, so switching
-engine does not change how loud the cards sound next to the story.
+download. Piper, Coqui and Chatterbox give a real voice instead of a robotic
+one, but they run in a Python of your own (`pip install piper-tts`,
+`coqui-tts` or `chatterbox-tts`) and Piper downloads a voice per language into
+the app's voice folder. All of them are levelled to the same loudness, so
+switching engine does not change how loud the cards sound next to the story.
 
-The bare numbers and the word a language puts before them stay espeak-ng
-whatever --engine says: Chatterbox 0.1.7 loses its place on a one-word phrase
-and answers "of" with 23 seconds of noise. The total is recorded as the whole
-phrase after the number — " sur 20", "，共 20 章" — which it does say.
+Chatterbox is the one engine that cannot say a bare number: 0.1.7 loses its
+place on a one-word phrase and answers "of" with 23 seconds of noise, so its
+numbers and the word a language puts before them stay espeak-ng. Piper and
+Coqui read a number as the language reads it, so their numbers are theirs. The
+total is recorded as the whole phrase after the number — " sur 20", "，共 20 章"
+— which Chatterbox does say.
 
-Chatterbox also rambles now and then, so each phrase is measured against the
-time espeak-ng takes on it and anything three times longer is recorded again,
-the shorter take winning. A phrase that rambles through every take is left to
-espeak-ng rather than shipped as a stutter.
+Chatterbox rambles now and then and a Piper take sometimes cuts the word short,
+so each phrase is measured against the time espeak-ng takes on it and anything
+three times off that length is recorded again, the take nearer the espeak
+length winning. A phrase that is off beat through every take is left to
+espeak-ng rather than shipped as a stutter or a half-word.
 """
 
 from __future__ import annotations
@@ -32,13 +37,17 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from daisy2telmi import tts
+from daisy2telmi import settings, tts
 from daisy2telmi.i18n import LANGUAGES
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# A Chatterbox take this much longer than espeak-ng reading the same words is the
-# model repeating itself rather than speaking.
+# The engines that speak from a model, and so cost one process per language.
+NEURAL = (tts.PIPER, tts.COQUI, tts.CHATTERBOX)
+
+# A neural take this far off the espeak length of the same words — that much
+# longer, or that much shorter — is the model repeating itself or cutting the
+# word short rather than speaking.
 RAMBLE = 3.0
 RETRIES = 2
 
@@ -70,20 +79,32 @@ def total_phrase(lang, number: int) -> str:
     return f"{middle}{number}{last}"
 
 
-def rows(lang, max_number: int) -> list[tuple[str, str]]:
-    """The phrases the chosen engine records, with the file name each one becomes."""
-    every = [(lang.chapter.format(n=n), f"{n:02d}.mp3") for n in range(1, max_number + 1)]
-    totals = [(total_phrase(lang, n), f"of-{n:02d}.mp3") for n in range(1, max_number + 1)]
-    return every + totals + [(lang.next_prompt, "next.mp3")]
-
-
-def espeak_rows(lang, max_number: int) -> list[tuple[str, str]]:
-    """The phrases espeak-ng records whatever the engine is: each one is a bare
-    number or a single word, which is what Chatterbox turns into noise."""
+def number_rows(lang, max_number: int) -> list[tuple[str, str]]:
+    """The bare number, and the word a language puts before it, for a card that
+    does not say the word chapter."""
     head = around(lang.number_of)[0]
     bare = [(str(n), f"n-{n:02d}.mp3") for n in range(1, max_number + 1)]
     words = [(head, "of-pre.mp3")] if any(c.isalnum() for c in head) else []
     return bare + words
+
+
+def rows(lang, max_number: int, engine: str) -> list[tuple[str, str]]:
+    """The phrases the chosen engine records, with the file name each one becomes."""
+    every = [(lang.chapter.format(n=n), f"{n:02d}.mp3") for n in range(1, max_number + 1)]
+    totals = [(total_phrase(lang, n), f"of-{n:02d}.mp3") for n in range(1, max_number + 1)]
+    numbers = [] if engine == tts.CHATTERBOX else number_rows(lang, max_number)
+    return every + totals + [(lang.next_prompt, "next.mp3")] + numbers
+
+
+def espeak_rows(engine: str, lang, max_number: int) -> list[tuple[str, str]]:
+    """What espeak-ng records instead of the engine: Chatterbox is the one engine
+    that turns a bare number or a single word into noise.
+
+    Piper and Coqui read a number as the language reads it — `piper-phonemize`
+    answers "23" with twenty-three, three-and-twenty, ثلاثة وعشرون — so their own
+    voice carries the card number too.
+    """
+    return number_rows(lang, max_number) if engine == tts.CHATTERBOX else []
 
 
 def encode(raw: Path, dest: Path, bitrate: str) -> None:
@@ -139,58 +160,102 @@ def espeak_seconds(phrases: list[str], voice: str, folder: Path) -> list[float]:
     return out
 
 
-def chatterbox_run(phrases: list[str], lang, raws: list[Path], folder: Path, python, device: str) -> None:
+def speaks(engine: str, lang, voice: str | None) -> bool:
+    """Whether this engine has something to speak this language with.
+
+    Arabic is the gap: only Coqui's multilingual model speaks it, and that one
+    reads with a recording of the voice to clone, which this tool is not given.
+    """
+    if engine == tts.PIPER:
+        return bool(tts.piper_voice(lang, voice))
+    if engine == tts.COQUI:
+        return bool(voice) or any(m != tts.COQUI_MULTILINGUAL for m in tts.COQUI_MODELS.get(lang.code, []))
+    return True
+
+
+def speak_batch(
+    engine: str, phrases: list[str], lang, raws: list[Path], folder: Path, python, device: str, voice: str | None
+) -> None:
     """One process for the whole language: loading the model costs more than
     speaking a chapter number, and it would otherwise happen once per clip."""
-    manifest = folder / "manifest.json"
-    manifest.write_text(
-        json.dumps({"phrases": phrases, "outs": [str(raw) for raw in raws], "lang": lang.code, "device": device}),
-        encoding="utf-8",
-    )
+    manifest: dict = {"phrases": phrases, "outs": [str(raw) for raw in raws], "lang": lang.code, "device": device}
+    if engine == tts.PIPER:
+        manifest["model"] = str(tts.piper_voice(lang, voice))
+    elif engine == tts.COQUI:
+        manifest["model"] = voice or tts.COQUI_MODELS[lang.code][0]
+    path = folder / "manifest.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
     result = subprocess.run(
-        [python, "-I", str(tts._speak_script(tts.CHATTERBOX)), str(manifest)],
+        [python, "-I", str(tts._speak_script(engine)), str(path)],
         capture_output=True,
         text=True,
     )
     if result.returncode:
-        raise SystemExit(f"chatterbox failed: {(result.stderr or result.stdout).strip()}")
+        raise SystemExit(f"{engine} failed: {(result.stderr or result.stdout).strip()}")
     print(f"  {result.stdout.strip().splitlines()[0]}")
 
 
-def too_long(raws: list[Path], yardstick: list[float]) -> list[int]:
-    """Which takes ran on past three times the espeak length of their words."""
-    return [k for k, raw in enumerate(raws) if duration(raw) > RAMBLE * yardstick[k]]
+def off_beat(raws: list[Path], yardstick: list[float]) -> list[int]:
+    """Which takes came out far off the espeak length of their words."""
+    return [k for k, raw in enumerate(raws) if not yardstick[k] / RAMBLE <= duration(raw) <= RAMBLE * yardstick[k]]
 
 
-def speak_chatterbox(
-    phrases: list[str], lang, raws: list[Path], folder: Path, python, device: str, yardstick: list[float]
+def speak_neural(
+    engine: str,
+    phrases: list[str],
+    lang,
+    raws: list[Path],
+    folder: Path,
+    python,
+    device: str,
+    voice: str | None,
+    yardstick: list[float],
 ) -> tuple[int, int]:
-    """Record every phrase, then take again the ones that ran on too long.
+    """Record every phrase, then take again the ones that came out off beat.
 
     A take three times the length of espeak-ng reading the same words is the
     model repeating itself, not speaking: the published cards carried a 10 s
-    "Bölüm 30" before this existed. The shorter of the two takes is kept, and a
-    phrase that rambles through every take is given to espeak-ng rather than
-    shipped as a stutter — one robotic clip in a card is better than a card that
-    says the same number four times.
+    "Bölüm 30" before this existed. A take three times shorter has cut the word
+    short — these models draw their own pacing, so the same "cinq" comes out at
+    0.19 s on one run and 0.37 s on the next. The take nearer the espeak length
+    is kept, and a phrase that is off beat through every take is given to
+    espeak-ng rather than shipped as a stutter or a half-word.
 
     Returns how many takes were re-recorded and how many ended up espeak-ng.
     """
-    chatterbox_run(phrases, lang, raws, folder, python, device)
+    speak_batch(engine, phrases, lang, raws, folder, python, device, voice)
     retaken = 0
     for round_ in range(RETRIES):
-        long = too_long(raws, yardstick)
-        if not long:
+        off = off_beat(raws, yardstick)
+        if not off:
             break
-        again = [folder / f"retake{round_}-{k}.wav" for k in long]
-        chatterbox_run([phrases[k] for k in long], lang, again, folder, python, device)
-        for k, new in zip(long, again):
+        again = [folder / f"retake{round_}-{k}.wav" for k in off]
+        speak_batch(engine, [phrases[k] for k in off], lang, again, folder, python, device, voice)
+        for k, new in zip(off, again):
             retaken += 1
-            if duration(new) < duration(raws[k]):
+            if abs(duration(new) - yardstick[k]) < abs(duration(raws[k]) - yardstick[k]):
                 shutil.copyfile(new, raws[k])
-    stubborn = too_long(raws, yardstick)
+    stubborn = off_beat(raws, yardstick)
     speak_espeak([phrases[k] for k in stubborn], lang.espeak, [raws[k] for k in stubborn])
     return retaken, len(stubborn)
+
+
+def get_piper_voices(exe: str, voice: str | None) -> None:
+    """Download the Piper voice each language will be recorded with.
+
+    The weights are the one part of an engine this repo never ships, so a Piper
+    recording is made with the voices downloaded into the app's own folder — the
+    same folder the app looks in, which is why they are fetched there.
+    """
+    folder = settings.speech_voices()
+    folder.mkdir(parents=True, exist_ok=True)
+    for lang in LANGUAGES.values():
+        if tts.piper_voice(lang, voice):
+            continue
+        name = voice or tts.default_voice(lang.code)
+        if not name:
+            raise SystemExit(f"Piper has no voice listed for {lang.name}: pass --voice")
+        tts._download_voice(exe, name, folder)
 
 
 def main() -> int:
@@ -198,30 +263,34 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=ROOT / "web" / "voices")
     parser.add_argument("--max", type=int, default=50, help="highest chapter number to record")
     parser.add_argument("--bitrate", default="32")
-    parser.add_argument("--engine", choices=(tts.ESPEAK, tts.CHATTERBOX), default=tts.ESPEAK)
-    parser.add_argument("--python", default=None, help="interpreter --engine chatterbox runs in")
+    parser.add_argument("--engine", choices=(tts.ESPEAK, tts.PIPER, tts.COQUI, tts.CHATTERBOX), default=tts.ESPEAK)
+    parser.add_argument("--python", default=None, help="interpreter the package engines run in")
+    parser.add_argument("--voice", default=None, help="the Piper voice or the Coqui model to record with")
     parser.add_argument("--device", choices=tts.DEVICES, default=tts.AUTO)
     args = parser.parse_args()
 
-    python = tts._python(args.python) if args.engine == tts.CHATTERBOX else None
-    if args.engine == tts.CHATTERBOX and not python:
-        raise SystemExit("chatterbox runs in your own Python: pass --python")
+    python = tts._python(args.python) if args.engine in NEURAL else None
+    if args.engine in NEURAL and not python:
+        raise SystemExit(f"{tts.LABELS[args.engine]} runs in your own Python: pass --python")
+    if args.engine == tts.PIPER:
+        get_piper_voices(python, args.voice)
 
     total = 0
     written = 0
     for code, lang in LANGUAGES.items():
         directory = args.out / code
         directory.mkdir(parents=True, exist_ok=True)
-        wanted = rows(lang, args.max)
-        light = espeak_rows(lang, args.max)
+        engine = args.engine if speaks(args.engine, lang, args.voice) else tts.ESPEAK
+        wanted = rows(lang, args.max, engine)
+        light = espeak_rows(engine, lang, args.max)
         with tempfile.TemporaryDirectory(prefix="daisy2telmi-voices-") as tmp:
             folder = Path(tmp)
             raws = [folder / f"speech{k}.wav" for k in range(len(wanted) + len(light))]
             phrases = [phrase for phrase, _ in wanted]
-            if args.engine == tts.CHATTERBOX:
+            if engine in NEURAL:
                 yardstick = espeak_seconds(phrases, lang.espeak, folder)
-                retaken, robotic = speak_chatterbox(
-                    phrases, lang, raws[: len(wanted)], folder, python, args.device, yardstick
+                retaken, robotic = speak_neural(
+                    engine, phrases, lang, raws[: len(wanted)], folder, python, args.device, args.voice, yardstick
                 )
             else:
                 speak_espeak(phrases, lang.espeak, raws[: len(wanted)])
@@ -236,10 +305,10 @@ def main() -> int:
                 written += 1
                 if seconds > longest[0]:
                     longest = (seconds, name)
-        mixed = f", {len(light) + robotic} of them espeak-ng" if args.engine == tts.CHATTERBOX else ""
+        mixed = f", {len(light) + robotic} of them espeak-ng" if engine in NEURAL else ""
         again = f", {retaken} re-taken" if retaken else ""
         print(
-            f"{code}: {len(wanted) + len(light)} clip(s){mixed}{again} — "
+            f"{code}: {len(wanted) + len(light)} clip(s) with {tts.LABELS[engine]}{mixed}{again} — "
             f"longest {longest[1]} at {longest[0]:.2f} s"
         )
 

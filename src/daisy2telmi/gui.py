@@ -31,6 +31,7 @@ from .cli import CAPTION_FORMATS, CARD_FORMATS, FORMATS, convert
 from .detector import DaisyPackError, open_pack
 from .extractor import CUT_LEVELS, extract
 from .i18n import LANGUAGES, Language, text
+from .proc import NO_WINDOW
 from .telmi_builder import ANNOUNCE_MODES, Announce, slugify
 
 try:
@@ -177,6 +178,33 @@ def set_icon(root: tk.Misc) -> None:
     # a second root cannot use one made for the first.
     root._icon = tk.PhotoImage(master=root, file=str(ICON))
     root.iconphoto(True, root._icon)
+
+
+def system_bar_kept() -> bool:
+    """Whether the window has to keep the system's own bar.
+
+    Tk's only way to lose the title bar on Windows is `overrideredirect`, and on
+    Windows that takes the taskbar entry, the resize edges and the minimise with it -
+    a window the user cannot get back from the taskbar. The bar the app draws is worth
+    its cost on the other systems, not there.
+    """
+    return sys.platform == "win32"
+
+
+def open_url(url: str) -> bool:
+    """Hand a link to the machine's own browser, and answer whether anything took it.
+
+    The desktop's opener is asked first: `webbrowser` searches a fixed list of program
+    names and answers only True or False, so a button that opens nothing says nothing.
+    """
+    opener = {"linux": "xdg-open", "darwin": "open"}.get(sys.platform)
+    if opener is not None:
+        try:
+            subprocess.Popen([opener, url], creationflags=NO_WINDOW)
+            return True
+        except OSError:
+            pass
+    return webbrowser.open(url)
 
 
 # The window's own bar: the mark, what the window is for, and the three controls that
@@ -582,7 +610,7 @@ class App:
         self.events: queue.Queue = queue.Queue()
         self.options = dict(settings.DEFAULTS, **(options or settings.load()))
         self.windowingsystem = root.tk.call("tk", "windowingsystem")
-        self.frameless = bool(self.options.get("frameless"))
+        self.frameless = bool(self.options.get("frameless")) and not system_bar_kept()
         self._maximised = False
         self._restore_geometry = ""
         self.pack_var = tk.StringVar()
@@ -964,6 +992,8 @@ class App:
         self.root.destroy()
 
     def set_frameless(self, on: bool) -> None:
+        if system_bar_kept():
+            on = False
         if on == self.frameless:
             return
         self.frameless = on
@@ -1320,10 +1350,16 @@ class App:
         if not words.strip():
             return
         query = quote_plus(words.strip())
-        if engine == "ddg":
-            webbrowser.open(f"https://duckduckgo.com/?q={query}&iax=images&ia=images")
-        else:
-            webbrowser.open(f"https://www.google.com/search?tbm=isch&q={query}")
+        url = (
+            f"https://duckduckgo.com/?q={query}&iax=images&ia=images"
+            if engine == "ddg"
+            else f"https://www.google.com/search?tbm=isch&q={query}"
+        )
+        # The link is written whatever the machine did with it: a search that opens
+        # nothing still leaves a link to open by hand.
+        log.info("image search: %s", url)
+        if not open_url(url):
+            log.warning("no browser opened: copy the link above into one")
 
     def _pick_out_dir(self) -> None:
         path = self._browse("browse_output", self.out_var.get(), "folder")
@@ -1752,7 +1788,9 @@ class App:
         except Exception as exc:
             # A round has to close whatever this thread hits. Without the code the
             # bar keeps turning and the log frame says nothing about the failure.
-            log.error("%s: %s", type(exc).__name__, exc)
+            # The frames under it go too: a failure on a machine nobody has is
+            # only fixable from what the machine itself says.
+            log.error("%s: %s", type(exc).__name__, exc, exc_info=True)
             self.events.put(("code", 1))
 
     def _drain(self) -> None:
@@ -2239,15 +2277,19 @@ class Options(Settings):
         self._row(self.grid, "opt_announce", 1, self.announce_box)
         self._check(self.grid, "opt_card_total", 2, self.card_total_var)
         self._check(self.grid, "opt_autoplay", 3, self.autoplay_var)
-        self._check(self.grid, "opt_frameless", 4, self.frameless_var)
         # The bar is drawn either way; what the tick changes is whether the system's
-        # own bar is left above it, and what that bar was doing for the window.
-        ttk.Label(self.grid, text=app.t("opt_frameless_hint"), style="Brand.TLabel").grid(
-            row=5, column=0, columnspan=2, sticky="w"
-        )
+        # own bar is left above it, and what that bar was doing for the window. Where
+        # the window has to keep that bar, there is nothing to ask.
+        row = 4
+        if not system_bar_kept():
+            self._check(self.grid, "opt_frameless", row, self.frameless_var)
+            ttk.Label(self.grid, text=app.t("opt_frameless_hint"), style="Brand.TLabel").grid(
+                row=row + 1, column=0, columnspan=2, sticky="w"
+            )
+            row += 2
 
         folders = ttk.Labelframe(self.grid, text=app.t("opt_section_folders"), padding=(10, 6))
-        folders.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        folders.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(14, 0))
         folders.columnconfigure(1, weight=1)
         self.input_box = self._folder(folders, "opt_input_dir", 0, app.options["input_dir"])
         self.output_box = self._folder(folders, "opt_output_dir", 1, app.options["output_dir"])
@@ -2257,7 +2299,7 @@ class Options(Settings):
         self.folders_hint.grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         ttk.Button(self.grid, text=app.t("opt_close"), command=self._close).grid(
-            row=7, column=0, columnspan=2, sticky="e", pady=(12, 0)
+            row=row + 1, column=0, columnspan=2, sticky="e", pady=(12, 0)
         )
 
     def _close(self) -> None:

@@ -209,6 +209,25 @@ def test_the_band_draws_no_buttons_under_the_system_bar(app: gui.App) -> None:
         app.set_frameless(True)
 
 
+def test_the_windows_window_keeps_the_bar_it_is_given(app: gui.App, monkeypatch) -> None:
+    """Tk's only way to lose the title bar on Windows is `overrideredirect`, which
+    takes the taskbar entry, the resize edges and the minimise with it. A window the
+    user cannot get back from the taskbar is not a bar worth drawing, so Windows keeps
+    its own and the band there draws no buttons."""
+    monkeypatch.setattr(gui, "system_bar_kept", lambda: True)
+    app.set_frameless(True)
+    assert app.frameless is False
+    assert not app.root.overrideredirect()
+    assert app.bar_controls() == []
+
+    page = gui.Options(app)
+    try:
+        boxes = {item.cget("text") for item in page.grid.grid_slaves() if isinstance(item, ttk.Checkbutton)}
+        assert app.t("opt_frameless") not in boxes, "nothing to ask where there is no choice"
+    finally:
+        page.top.destroy()
+
+
 def test_the_window_opens_at_a_size_of_its_own(app: gui.App) -> None:
     """Tk leaves the size to the window manager, and a window the manager does not
     manage is only as big as it is told: untold, the AppImage's came up a small square."""
@@ -376,6 +395,48 @@ def test_a_link_to_no_picture_says_so(app: gui.App, monkeypatch) -> None:
     assert app.cover_var.get() == ""
 
 
+def test_a_search_link_is_handed_to_the_desktop_s_own_opener(monkeypatch) -> None:
+    """`webbrowser` searches a fixed list of program names and answers only True or
+    False, so a machine whose opener answers to another name opens nothing and says
+    nothing."""
+    started: list[list[str]] = []
+    monkeypatch.setattr(gui.sys, "platform", "linux")
+    monkeypatch.setattr(gui.subprocess, "Popen", lambda args, **flags: started.append(list(args)))
+
+    assert gui.open_url("https://duckduckgo.com/?q=x") is True
+    assert started == [["xdg-open", "https://duckduckgo.com/?q=x"]]
+
+
+def test_a_machine_with_no_opener_falls_back_to_webbrowser(monkeypatch) -> None:
+    monkeypatch.setattr(gui.sys, "platform", "linux")
+
+    def refuse(_args, **_flags):
+        raise OSError("no xdg-open")
+
+    opened: list[str] = []
+    monkeypatch.setattr(gui.subprocess, "Popen", refuse)
+    monkeypatch.setattr(gui.webbrowser, "open", lambda url: opened.append(url) or True)
+
+    assert gui.open_url("https://example.org") is True
+    assert opened == ["https://example.org"]
+
+
+def test_the_search_writes_the_link_it_tried(app: gui.App, monkeypatch) -> None:
+    """Where the machine opens nothing, the log still holds the link to open by hand."""
+    monkeypatch.setattr(gui, "open_url", lambda _url: False)
+    app.author_var.set("Rachel Corenblit")
+    app.title_var.set("Wesh la fée")
+    handler = gui.attach_log_handler(app)
+    try:
+        app._search_cover("ddg")
+        app._drain()
+    finally:
+        logging.getLogger("daisy2telmi").removeHandler(handler)
+
+    shown = app.log_view.get("1.0", "end")
+    assert "duckduckgo.com" in shown and "Wesh+la" in shown
+
+
 def test_a_second_pack_loses_the_parts_dropped_from_the_first(app: gui.App, tmp_path: Path) -> None:
     """A dropped part is a number in one book's part list. The next pack has its own
     list, and the same numbers would cut its opening away in silence."""
@@ -480,6 +541,15 @@ def test_the_list_is_a_window_of_its_own_not_three_rows(browser: gui.Browser) ->
     assert browser.WIDTH >= 1000 and browser.HEIGHT >= 600
     assert browser.top.grid_rowconfigure(1)["weight"] == 1
     assert set(browser.tree.grid_info()["sticky"]) == set("nsew")
+
+
+def test_the_file_list_marks_a_picked_row_in_the_same_blue(browser: gui.Browser) -> None:
+    """The list carries a style of its own for its taller rows, so the blue has to
+    reach the style the list actually uses, not only the plain Treeview."""
+    style = ttk.Style(browser.app.root)
+    name = browser.tree.cget("style")
+    assert style.lookup(name, "background", ("selected",)) == gui.NAVY
+    assert style.lookup(name, "foreground", ("selected",)) == "#ffffff"
 
 
 def test_a_folder_is_walked_into_and_a_file_ends_the_window(browser: gui.Browser, tmp_path: Path) -> None:

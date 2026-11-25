@@ -1,4 +1,4 @@
-"""The drawn scene images: the font table, the card labels, and the cover pass."""
+"""The drawn scene images: the card labels, the cards, and the cover pass."""
 
 from __future__ import annotations
 
@@ -25,16 +25,11 @@ def png_header(data: bytes) -> tuple[int, int, int]:
     return width, height, colour
 
 
-def test_every_glyph_is_five_by_seven() -> None:
-    for character, glyph in images.GLYPHS.items():
-        assert len(glyph) == 7, character
-        assert all(len(row) == 5 and set(row) <= {"0", "1"} for row in glyph), character
-
-
-def test_the_font_covers_every_card_word_it_claims() -> None:
+def test_the_typeface_can_write_every_card_word_it_claims() -> None:
+    card_font = images._card_typeface(images.IMAGE_SIZE[1])
     for code, language in LANGUAGES.items():
         drawn = images.card_label(code, 3, 12)
-        assert all(character in images.GLYPHS for character in drawn), (code, drawn)
+        assert images._letterable(card_font, drawn) == drawn, (code, drawn)
 
 
 def test_the_card_word_is_written_in_the_story_language() -> None:
@@ -55,25 +50,29 @@ def test_scripts_the_font_lacks_fall_back_to_the_number() -> None:
         assert images.card_label(code, 4, 23) == "4/23"
 
 
-def test_glyph_rows_put_the_characters_side_by_side() -> None:
-    rows = images.glyph_rows("10")
-    assert len(rows) == 7
-    assert all(len(row) == 11 for row in rows)  # two 5-wide glyphs and a gap
-    assert rows[0] == "00100 01110"
-
-
 def test_the_card_layer_is_white_ink_on_a_transparent_canvas() -> None:
     width, height, colour = png_header(images.card_layer_png("2/6", "the second of six parts"))
     assert colour == 6, "RGBA, so ffmpeg can overlay it"
     assert (width, height) == images.IMAGE_SIZE
 
 
+WORDS = "the second of six parts, and the words keep going past the line and on past the next one too, and past that"
+
+
 def test_a_card_shows_the_opening_words_in_three_lines() -> None:
-    lines = images.card_words("the second of six parts, and the words keep going past the line")
+    lines = images.card_words(WORDS)
     assert len(lines) == images.CARD_LINES
-    assert lines[0].startswith("THE SECOND")
-    assert all(len(line) * images.CARD_SCALE * 6 <= images.IMAGE_SIZE[0] for line in lines)
-    assert images.card_words("one two") == ["ONE TWO"]
+    assert lines[0].startswith("the second"), "the words keep the case they were written in"
+    room = images.IMAGE_SIZE[0] - 2 * images._layout(images.IMAGE_SIZE[0])[0]
+    font = images._card_typeface(images.IMAGE_SIZE[1])
+    assert all(font.getlength(line) <= room for line in lines)
+    assert images.card_words("one two") == ["one two"]
+
+
+def test_a_card_stops_at_its_twentieth_word() -> None:
+    """A card is a place marker, not the page."""
+    lines = images.card_words(" ".join(f"w{number}" for number in range(40)))
+    assert " ".join(lines).split()[-1] == f"w{images.CARD_WORDS - 1}"
 
 
 def test_words_the_font_cannot_write_leave_the_card_without_lines() -> None:
@@ -89,24 +88,28 @@ def test_each_player_draws_at_its_own_screen() -> None:
 
 
 def test_a_smaller_card_shrinks_everything_around_it() -> None:
-    """The font is a fixed 5x7 grid, so the card's furniture scales with its screen."""
-    assert images._layout(640) == (24, 120, 4, 6)
-    assert images._layout(320) == (12, 60, 2, 3)
+    """The margin and the height the cover keeps to itself scale with the screen."""
+    assert images._layout(640) == (24, 120)
+    assert images._layout(320) == (12, 60)
 
 
-def test_a_smaller_card_holds_the_same_words() -> None:
+def test_a_smaller_card_stops_earlier_in_the_same_sentence() -> None:
     sentence = "the second of six parts, and the words keep going past the line"
-    assert images.card_words(sentence, 320, 2) == images.card_words(sentence)
+    small = images.card_words(sentence, 320, 240)
+    big = images.card_words(sentence)
+    assert small[0].split() == big[0].split()[: len(small[0].split())]
 
 
 def test_the_lettering_of_every_card_stays_inside_its_screen() -> None:
     for player, (scene, _) in images.SCREENS.items():
-        margin, cover_top, scale, number_scale = images._layout(scene[0])
-        lines = images.card_words("the second of six parts, and the words keep going", scene[0], scale)
-        bottom = margin + cover_top + margin + (len(lines) - 1) * scale * 9 + 7 * scale
+        margin, cover_top = images._layout(scene[0])
+        font = images._card_typeface(scene[1])
+        lines = images.card_words("the second of six parts, and the words keep going", scene[0], scene[1])
+        pitch = round(font.size * images.CARD_WORD_PITCH)
+        bottom = margin + cover_top + margin + (len(lines) - 1) * pitch + sum(font.getmetrics())
         assert bottom <= scene[1], player
-        number = images.glyph_rows("213/213")
-        assert margin + len(number[0]) * number_scale <= scene[0], player
+        number = images._typeface(round(scene[1] / images.CARD_NUMBER_SIZE))
+        assert margin + number.getlength("213/213") <= scene[0], player
 
 
 CAPTION = "you will need to assess the unique set of potential hazards in your area and prepare for them accordingly"
@@ -586,47 +589,66 @@ def test_a_colour_card_fills_its_screen_with_the_cover_too(tmp_path: Path) -> No
     assert _pixel(card, 20, 220) == pytest.approx(corner, abs=2), "the cover reaches the corners"
 
 
-def _inked(ink: list[bytearray], top: int, bottom: int) -> tuple[int, int]:
-    """The leftmost and rightmost inked column across a band of rows."""
-    columns = [x for line in ink[top:bottom] for x, cell in enumerate(line) if cell in (1, 2)]
-    return min(columns), max(columns)
+def _layer(data: bytes) -> Image.Image:
+    """A card's lettering, read back as the pixels it was written as."""
+    return Image.open(io.BytesIO(data)).convert("RGBA")
 
 
-def _inked_rows(ink: list[bytearray]) -> list[int]:
-    """The rows that carry any lettering."""
-    return [y for y, line in enumerate(ink) if any(cell in (1, 2) for cell in line)]
+def _ink(layer: Image.Image, colour: tuple[int, int, int], top: int = 0, bottom: int | None = None) -> list[tuple[int, int]]:
+    """Every opaque pixel of a lettering layer that is exactly `colour`, between two rows."""
+    wanted = bytes(colour) + b"\xff"
+    room = layer.crop((0, top, layer.width, layer.height if bottom is None else bottom))
+    pixels = room.tobytes()
+    return [
+        (offset // 4 % layer.width, top + offset // 4 // layer.width)
+        for offset in range(0, len(pixels), 4)
+        if pixels[offset : offset + 4] == wanted
+    ]
+
+
+def _span(pixels: list[tuple[int, int]]) -> tuple[int, int]:
+    """The leftmost and the rightmost column a set of pixels reaches."""
+    return min(x for x, _ in pixels), max(x for x, _ in pixels)
+
+
+def _rows(pixels: list[tuple[int, int]]) -> list[int]:
+    """The rows a set of pixels covers."""
+    return sorted({y for _, y in pixels})
 
 
 def test_a_four_grey_card_carries_its_number_alone() -> None:
-    ink = images._card_grid("23", "the second of six parts", 320, 240, band=True)
-    rows = _inked_rows(ink)
-    left, right = _inked(ink, rows[0], rows[-1] + 1)
-    assert abs(left + right - 319) <= 1, "the number sits in the middle of its screen"
-    assert abs(rows[0] + rows[-1] - 239) <= 1, "and in the middle of it the other way"
-    strip = [y for y, line in enumerate(ink) if line[0] == 3]
-    assert ink[strip[0]][319] == 3, "the strip behind it reaches the edges"
-    assert 3 not in ink[0] and 3 not in ink[239], "the cover keeps the top and the bottom"
+    layer = _layer(images.card_layer_png("23", "the second of six parts", 320, 240, style="bw"))
+    number = _ink(layer, (0, 0, 0))
+    rows = _rows(number)
+    left, right = _span(number)
+    assert abs(left + right - 319) <= 2, "the number sits in the middle of its screen"
+    assert abs(rows[0] + rows[-1] - 239) <= 2, "and in the middle of it the other way"
+    strip = [y for y in range(240) if layer.getpixel((0, y))[3] == 255]
+    assert layer.getpixel((319, strip[0]))[3] == 255, "the strip behind it reaches the edges"
+    assert layer.getpixel((0, 0))[3] == 0 and layer.getpixel((0, 239))[3] == 0, "the cover keeps the top and the bottom"
     assert len(strip) < 240, "and the strip leaves the cover room"
-    bare = images._card_grid("23", "", 320, 240, band=True)
-    assert _inked_rows(bare) == rows, "the card draws no opening words"
+    bare = _layer(images.card_layer_png("23", "", 320, 240, style="bw"))
+    assert _ink(bare, (0, 0, 0)) == number, "the card draws no opening words"
 
 
 def test_a_three_digit_number_fills_a_lunii_screen() -> None:
     """The Lunii screen sits behind a plastic window, so its number is as big as it gets."""
-    one = images._card_grid("7", "", 320, 240, band=True)
-    three = images._card_grid("888", "", 320, 240, band=True)
-    left, right = _inked(three, 0, 240)
-    assert left <= 12 and right >= 304, "three digits reach the edges of the screen"
-    assert _inked_rows(one) == _inked_rows(three), "every card of a story is the same height"
+    one = _ink(_layer(images.card_layer_png("7", "", 320, 240, style="bw")), (0, 0, 0))
+    three = _ink(_layer(images.card_layer_png("888", "", 320, 240, style="bw")), (0, 0, 0))
+    left, right = _span(three)
+    assert left <= 24 and right >= 296, "three digits reach the edges of the screen"
+    assert abs(_rows(one)[0] - _rows(three)[0]) <= 3 and abs(_rows(one)[-1] - _rows(three)[-1]) <= 3, (
+        "every card of a story is the same height"
+    )
 
 
 def test_a_colour_card_still_numbers_itself_in_the_corner() -> None:
-    ink = images._card_grid("3/12", "the second of six parts", 640, 480)
-    margin, _, _, number_scale = images._layout(640)
-    left, right = _inked(ink, margin, margin + 7 * number_scale)
-    assert abs(right - (640 - margin)) <= 1
+    layer = _layer(images.card_layer_png("3/12", "the second of six parts", 640, 480))
+    margin, cover_top = images._layout(640)
+    left, right = _span(_ink(layer, (255, 255, 255), margin, margin + cover_top))
+    assert 640 - margin - 8 <= right <= 640 - margin, "the number ends at the right margin"
     assert left > 640 // 2, "the number stays in the corner"
-    assert 3 not in ink[0], "a colour card draws no strip behind its lettering"
+    assert layer.getpixel((0, 0))[3] == 0, "a colour card draws no strip behind its lettering"
 
 
 def test_the_negative_palette_lands_on_the_greys_the_lunii_keeps() -> None:

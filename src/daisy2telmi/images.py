@@ -1,10 +1,9 @@
 """Scene images: placeholders, and a user's cover cropped into Telmi's sizes.
 
-ffmpeg scales, crops and composites. A card's number is drawn here with a 5x7 grid
-font, so a card needs no image library; a sentence is drawn with a real typeface
-bundled in assets, because a small screen forces a size at which a grid font is no
-longer readable. Languages whose script neither font can write (Chinese, Arabic)
-get the number on its own, which needs no letters to be legible.
+ffmpeg scales, crops and composites. Every word — a card's number, a card's opening
+words, a whole sentence — is drawn with the typeface bundled in assets. Languages
+whose script that typeface cannot write (Chinese, Arabic) get the number on its
+own, which needs no letters to be legible.
 """
 
 from __future__ import annotations
@@ -77,89 +76,6 @@ def _palette(style: str, negative: bool = False) -> dict:
     return {key: (255 - value if isinstance(value, int) else tuple(255 - channel for channel in value))
             for key, value in palette.items()}
 
-# 5 columns, 7 rows, "1" is ink. Uppercase only: a card label is a title, and it
-# keeps the table to what eight Latin-script languages need.
-_LETTERS = {
-    "A": ("01110", "10001", "10001", "11111", "10001", "10001", "10001"),
-    "B": ("11110", "10001", "10001", "11110", "10001", "10001", "11110"),
-    "C": ("01110", "10001", "10000", "10000", "10000", "10001", "01110"),
-    "D": ("11110", "10001", "10001", "10001", "10001", "10001", "11110"),
-    "E": ("11111", "10000", "10000", "11110", "10000", "10000", "11111"),
-    "F": ("11111", "10000", "10000", "11110", "10000", "10000", "10000"),
-    "G": ("01110", "10001", "10000", "10111", "10001", "10001", "01111"),
-    "H": ("10001", "10001", "10001", "11111", "10001", "10001", "10001"),
-    "I": ("01110", "00100", "00100", "00100", "00100", "00100", "01110"),
-    "J": ("00111", "00010", "00010", "00010", "00010", "10010", "01100"),
-    "K": ("10001", "10010", "10100", "11000", "10100", "10010", "10001"),
-    "L": ("10000", "10000", "10000", "10000", "10000", "10000", "11111"),
-    "M": ("10001", "10001", "11011", "10101", "10001", "10001", "10001"),
-    "N": ("10001", "10001", "11001", "10101", "10011", "10001", "10001"),
-    "O": ("01110", "10001", "10001", "10001", "10001", "10001", "01110"),
-    "P": ("11110", "10001", "10001", "11110", "10000", "10000", "10000"),
-    "Q": ("01110", "10001", "10001", "10001", "10101", "10010", "01101"),
-    "R": ("11110", "10001", "10001", "11110", "10100", "10010", "10001"),
-    "S": ("01111", "10000", "10000", "01110", "00001", "00001", "11110"),
-    "T": ("11111", "00100", "00100", "00100", "00100", "00100", "00100"),
-    "U": ("10001", "10001", "10001", "10001", "10001", "10001", "01110"),
-    "V": ("10001", "10001", "10001", "10001", "10001", "01010", "00100"),
-    "W": ("10001", "10001", "10001", "10101", "11011", "10001", "10001"),
-    "X": ("10001", "10001", "01010", "00100", "01010", "10001", "10001"),
-    "Y": ("10001", "10001", "01010", "00100", "00100", "00100", "00100"),
-    "Z": ("11111", "00001", "00010", "00100", "01000", "10000", "11111"),
-    "Á": ("00100", "00010", "01110", "10001", "11111", "10001", "10001"),
-    "É": ("00100", "00010", "11111", "10000", "11110", "10000", "11111"),
-    "Í": ("00100", "00010", "01110", "00100", "00100", "00100", "01110"),
-    "Ó": ("00100", "00010", "01110", "10001", "10001", "10001", "01110"),
-    "Ö": ("00101", "00000", "01110", "10001", "10001", "10001", "01110"),
-    "Ü": ("00101", "00000", "10001", "10001", "10001", "10001", "01110"),
-    "Ç": ("01110", "10001", "10000", "10000", "10000", "10001", "01110"),
-    # The rest of what a French or German sentence needs: the accents the words
-    # carry, and the marks that hold a sentence together.
-    "À": ("00100", "01000", "01110", "10001", "11111", "10001", "10001"),
-    "Â": ("00100", "01010", "01110", "10001", "11111", "10001", "10001"),
-    "È": ("00100", "01000", "11111", "10000", "11110", "10000", "11111"),
-    "Ê": ("00100", "01010", "11111", "10000", "11110", "10000", "11111"),
-    "Ë": ("00101", "00000", "11111", "10000", "11110", "10000", "11111"),
-    "Î": ("00100", "01010", "01110", "00100", "00100", "00100", "01110"),
-    "Ï": ("00101", "00000", "01110", "00100", "00100", "00100", "01110"),
-    "Ô": ("00100", "01010", "01110", "10001", "10001", "10001", "01110"),
-    "Ù": ("00100", "01000", "10001", "10001", "10001", "10001", "01110"),
-    "Û": ("00100", "01010", "10001", "10001", "10001", "10001", "01110"),
-    "Ñ": ("01010", "10001", "11001", "10101", "10011", "10001", "10001"),
-    ".": ("00000", "00000", "00000", "00000", "00000", "01110", "01110"),
-    ",": ("00000", "00000", "00000", "00000", "01110", "01110", "00100"),
-    ":": ("00000", "01110", "01110", "00000", "01110", "01110", "00000"),
-    ";": ("00000", "01110", "01110", "00000", "01110", "01110", "00100"),
-    "!": ("00100", "00100", "00100", "00100", "00100", "00000", "00100"),
-    "?": ("01110", "10001", "00001", "00010", "00100", "00000", "00100"),
-    "'": ("00100", "00100", "00000", "00000", "00000", "00000", "00000"),
-    "’": ("00100", "00100", "00000", "00000", "00000", "00000", "00000"),
-    "“": ("01010", "01010", "00000", "00000", "00000", "00000", "00000"),
-    "”": ("01010", "01010", "00000", "00000", "00000", "00000", "00000"),
-    "«": ("00000", "00101", "01010", "10000", "01010", "00101", "00000"),
-    "»": ("00000", "10100", "01010", "00010", "01010", "10100", "00000"),
-    "-": ("00000", "00000", "00000", "11111", "00000", "00000", "00000"),
-    "(": ("00010", "00100", "01000", "01000", "01000", "00100", "00010"),
-    ")": ("01000", "00100", "00010", "00010", "00010", "00100", "01000"),
-    "/": ("00001", "00010", "00010", "00100", "01000", "01000", "10000"),
-    " ": ("00000", "00000", "00000", "00000", "00000", "00000", "00000"),
-}
-
-_DIGITS = {
-    "0": ("01110", "10001", "10011", "10101", "11001", "10001", "01110"),
-    "1": ("00100", "01100", "00100", "00100", "00100", "00100", "01110"),
-    "2": ("01110", "10001", "00001", "00010", "00100", "01000", "11111"),
-    "3": ("11111", "00010", "00100", "00010", "00001", "10001", "01110"),
-    "4": ("00010", "00110", "01010", "10010", "11111", "00010", "00010"),
-    "5": ("11111", "10000", "11110", "00001", "00001", "10001", "01110"),
-    "6": ("01110", "10001", "10000", "11110", "10001", "10001", "01110"),
-    "7": ("11111", "00001", "00010", "00100", "01000", "01000", "01000"),
-    "8": ("01110", "10001", "10001", "01110", "10001", "10001", "01110"),
-    "9": ("01110", "10001", "10001", "01111", "00001", "10001", "01110"),
-}
-
-GLYPHS = {**_DIGITS, **_LETTERS}
-
 
 class ImageError(RuntimeError):
     """Raised when ffmpeg cannot produce a scene image."""
@@ -193,149 +109,141 @@ def placeholder_png(
     return _png(width, height, rows)
 
 
-def glyph_rows(text: str) -> list[str]:
-    """The 7 rows of a 5x7 rendering of `text`, one character per column."""
-    return [" ".join(GLYPHS[character][y] for character in text) for y in range(7)]
-
-
 MARGIN = 24
 CARD_LINES = 3
 CARD_WORDS = 20
-CARD_SCALE = 4
-NUMBER_SCALE = 6
+# The card's two lettering sizes, as fractions of its screen's height, and the air
+# between two lines of its words. The web page sizes its cards the same way, so the
+# same part is the same card on both.
+CARD_NUMBER_SIZE = 11
+CARD_WORD_SIZE = 17
+CARD_WORD_PITCH = 1.3
+# A digit's ink is about three quarters of the font size, in any of them.
+DIGIT_INK = 0.72
 
 
-def _layout(width: int) -> tuple[int, int, int, int]:
-    """The margin, the height the cover keeps to itself, and the two lettering sizes.
+def _layout(width: int) -> tuple[int, int]:
+    """The margin and the height the cover keeps to itself.
 
-    The built-in font is a fixed 5x7 grid, so a smaller screen shrinks everything
-    around it by the same step and the card still holds the same words.
+    A smaller screen shrinks both by the same step, so a card keeps the same
+    furniture whatever it is drawn for.
     """
     step = width / IMAGE_SIZE[0]
-    return (
-        max(6, round(MARGIN * step)),
-        width // 4 * 3 // 4,
-        max(1, round(CARD_SCALE * step)),
-        max(2, round(NUMBER_SCALE * step)),
-    )
+    return max(6, round(MARGIN * step)), width // 4 * 3 // 4
 
 
-def _drawable(text: str) -> str:
-    """`text` upper cased with every character the built-in font lacks turned into a space."""
-    return "".join(character if character in GLYPHS else " " for character in text.upper())
+def _card_typeface(height: int) -> ImageFont.FreeTypeFont:
+    """The typeface a card's opening words are written in."""
+    return _typeface(max(1, round(height / CARD_WORD_SIZE)))
 
 
-def card_words(text: str, width: int = IMAGE_SIZE[0], scale: int = CARD_SCALE) -> list[str]:
+def _outline(size: int) -> int:
+    """The weight of a letter's border: the same at every screen size."""
+    return max(1, round(size / 7))
+
+
+def card_words(text: str, width: int = IMAGE_SIZE[0], height: int = IMAGE_SIZE[1]) -> list[str]:
     """The opening words of a part, as up to three lines the card can show.
 
-    The built-in font is 5x7 Latin, so a part whose words it cannot write gets no
-    lines at all: the number and the spoken snippet still place the listener.
+    The card's typeface has no letters for some scripts, so a part whose words it
+    cannot write gets no lines at all: the number and the spoken snippet still
+    place the listener.
     """
-    words = _drawable(text).split()[:CARD_WORDS]
+    font = _card_typeface(height)
+    words = _letterable(font, text).split()[:CARD_WORDS]
     if not words:
         return []
-    columns = (width - 2 * _layout(width)[0]) // (scale * 6)
-    lines: list[str] = []
-    for word in words:
-        if lines and len(lines[-1]) + 1 + len(word) <= columns:
-            lines[-1] = f"{lines[-1]} {word}"
-        elif len(lines) < CARD_LINES:
-            lines.append(word)
-        else:
-            break
-    return [line[:columns] for line in lines]
+    return _wrap(" ".join(words), font, width - 2 * _layout(width)[0])[:CARD_LINES]
 
 
-def _stamp(ink: list[bytearray], left: int, top: int, glyph: list[str], scale: int, border: int) -> None:
-    """Mark a 5x7 `glyph` into `ink`: 1 for the outline, 2 for the letter itself."""
-    for pass_number, value in ((1, 1), (2, 2)):
-        for y, row in enumerate(glyph):
-            for x, cell in enumerate(row):
-                if cell != "1":
-                    continue
-                grow = border if pass_number == 1 else 0
-                for py in range(top + y * scale - grow, top + (y + 1) * scale + grow):
-                    if 0 <= py < len(ink):
-                        line = ink[py]
-                        for px in range(left + x * scale - grow, left + (x + 1) * scale + grow):
-                            if 0 <= px < len(line):
-                                line[px] = value
-
-
-def _strip(ink: list[bytearray], top: int, bottom: int) -> None:
-    """Mark a full-width strip of the card where the lettering gets its own ground."""
-    for line in ink[max(0, top) : min(len(ink), bottom)]:
-        line[:] = bytes([3]) * len(line)
-
-
-def _number_grid(label: str, width: int, height: int) -> list[bytearray]:
-    """A four-grey card: the part's number alone, as large as the screen allows.
+def _number_card(drawn: ImageDraw.ImageDraw, label: str, width: int, height: int, palette: dict) -> None:
+    """Letter a four-grey card: its number alone, as large as the screen allows.
 
     The Lunii screen sits behind a plastic window, so nothing drawn small is
     readable there: no word, no total and no opening words, only the number. It is
     sized as a three-digit one, so every card of a story carries a number of the
     same height and a story of a hundred parts fills the width of the screen.
     """
-    margin, _, _, _ = _layout(width)
-    ink = [bytearray(width) for _ in range(height)]
-    rows = glyph_rows(label)
-    columns = len(rows[0])
-    size = min(
-        (width - 2 * margin) // max(columns, 3 * 6 - 1),
-        (height - 2 * margin) // len(rows),
+    margin = _layout(width)[0]
+    base = max(1, round(height / CARD_NUMBER_SIZE))
+    widest = max(_typeface(base).getlength(label), _typeface(base).getlength("888"))
+    size = int(min(base * (width - 2 * margin) / widest, (height - 2 * margin) / DIGIT_INK))
+    ink = round(size * DIGIT_INK)
+    middle = height // 2
+    drawn.rectangle(
+        (0, middle - ink // 2 - margin, width - 1, middle + ink // 2 + margin),
+        fill=_rgb(palette["background"]),
     )
-    top = (height - size * len(rows)) // 2
-    _strip(ink, top - margin, top + size * len(rows) + margin)
-    _stamp(ink, (width - columns * size) // 2, top, rows, size, max(2, size // 4))
-    return ink
+    font = _typeface(size)
+    # A typeface leaves room above and below the letters it draws, and the room is
+    # not the same for every digit: the number is centred on what it actually inks.
+    box = drawn.textbbox((width // 2, middle), label, font=font, anchor="mm")
+    drawn.text(
+        (width // 2, middle + middle - (box[1] + box[3]) // 2),
+        label,
+        font=font,
+        fill=_rgb(palette["ink"]),
+        stroke_width=max(4, round(size / 12)),
+        stroke_fill=_rgb(palette["border"]),
+        anchor="mm",
+    )
 
 
-def _card_grid(label: str, text: str, width: int, height: int, band: bool = False) -> list[bytearray]:
-    """One card's lettering: its number, and the words it opens with.
+def _lettering(label: str, text: str, width: int, height: int, style: str, negative: bool) -> Image.Image:
+    """One card's lettering on a transparent canvas: its number, and the words it opens with.
 
-    A colour card numbers itself top right, and its words start under the height
-    the cover keeps to itself. A four-grey card is the Lunii's, and draws the
-    number alone.
+    A colour card numbers itself top right, and its words start under the height the
+    cover keeps to itself. A four-grey card is the Lunii's, and draws the number alone.
     """
-    if band:
-        return _number_grid(label, width, height)
-    margin, cover_room, scale, number_scale = _layout(width)
-    ink = [bytearray(width) for _ in range(height)]
-    number = glyph_rows(label)
-    number_width = len(number[0]) * number_scale
-    left = width - margin - number_width
-    _stamp(ink, left, margin, number, number_scale, 1)
-
-    lines = card_words(text, width, scale)
-    top = margin + cover_room + margin
-    for offset, line in enumerate(lines):
-        _stamp(ink, margin, top + offset * scale * 9, glyph_rows(line), scale, 1)
-    return ink
-
-
-def _grid_png(
-    ink: list[bytearray], base: tuple[int, int, int] | None, style: str = "colour", negative: bool = False
-) -> bytes:
-    """Colour a card's lettering grid: over `base` for a whole card, transparent for an overlay."""
     palette = _palette(style, negative)
-    letter, border, ground = bytes(palette["ink"]), bytes(palette["border"]), bytes(palette["background"])
-    width, height = len(ink[0]), len(ink)
-    rows = []
-    for line in ink:
-        row = bytearray()
-        for cell in line:
-            if cell == 2:
-                row += letter + (b"" if base is not None else b"\xff")
-            elif cell == 1:
-                row += border + (b"" if base is not None else b"\xff")
-            elif cell == 3:
-                row += ground + (b"" if base is not None else b"\xff")
-            elif base is not None:
-                row += bytes(base)
-            else:
-                row += b"\x00\x00\x00\x00"
-        rows.append(bytes(row))
-    return _png(width, height, rows, colour_type=6 if base is None else 2)
+    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    drawn = ImageDraw.Draw(canvas)
+    margin = _layout(width)[0]
+    if style == "bw":
+        _number_card(drawn, label, width, height, palette)
+        return canvas
+
+    number_size = max(1, round(height / CARD_NUMBER_SIZE))
+    drawn.text(
+        (width - margin, margin),
+        label,
+        font=_typeface(number_size),
+        fill=_rgb(palette["ink"]),
+        stroke_width=_outline(number_size),
+        stroke_fill=_rgb(palette["border"]),
+        anchor="ra",
+    )
+    font = _card_typeface(height)
+    pitch = round(font.size * CARD_WORD_PITCH)
+    top = margin + _layout(width)[1] + margin
+    for offset, line in enumerate(card_words(text, width, height)):
+        drawn.text(
+            (margin, top + offset * pitch),
+            line,
+            font=font,
+            fill=_rgb(palette["ink"]),
+            stroke_width=_outline(font.size),
+            stroke_fill=_rgb(palette["border"]),
+            anchor="la",
+        )
+    return canvas
+
+
+# A letter edge is cut from a mask rather than kept as drawn: a grey card has sixteen
+# levels, and the half-greys a soft edge is made of are not among them.
+_HARD_EDGE = [0 if level < 128 else 255 for level in range(256)]
+
+
+def _hard_lettering(lettering: Image.Image) -> Image.Image:
+    """The lettering cut back to the card's own colours, in its ink and its ground and
+    its edges alike: a grey card has sixteen levels, and the half-greys a soft letter
+    edge is made of are not among them.
+
+    Drawing a letter blends its colour into whatever it lands on, so the blend has to
+    be cut on the colour as much as on the coverage — a hard edge over soft ink is
+    still soft ink.
+    """
+    return Image.merge("RGBA", [lettering.getchannel(band).point(_HARD_EDGE) for band in "RGBA"])
 
 
 def card_png(
@@ -347,12 +255,12 @@ def card_png(
     negative: bool = False,
 ) -> bytes:
     """A card on its own: the part number, and the words it opens with when we can draw them."""
-    return _grid_png(
-        _card_grid(label, text, width, height, band=style == "bw"),
-        _palette(style, negative)["background"],
-        style,
-        negative,
-    )
+    lettering = _lettering(label, text, width, height, style, negative)
+    if style == "bw":
+        lettering = _hard_lettering(lettering)
+    canvas = Image.new("RGB", (width, height), _rgb(_palette(style, negative)["background"]))
+    canvas.paste(lettering, (0, 0), lettering)
+    return _photo_png(canvas)
 
 
 def card_layer_png(
@@ -364,7 +272,8 @@ def card_layer_png(
     negative: bool = False,
 ) -> bytes:
     """The same lettering on a transparent canvas, to lay over a cropped cover."""
-    return _grid_png(_card_grid(label, text, width, height, band=style == "bw"), None, style, negative)
+    lettering = _lettering(label, text, width, height, style, negative)
+    return _photo_png(_hard_lettering(lettering) if style == "bw" else lettering)
 
 
 # A sentence's own picture: the whole of it, at the largest lettering the screen
@@ -497,12 +406,6 @@ def _photo_png(canvas: Image.Image) -> bytes:
     return buffer.getvalue()
 
 
-# A caption is filled from a mask rather than drawn in colour: the words keep one
-# colour on one ground, as a card's do, and a book carries a thousand of these
-# pictures. A screen reads a hard letter edge as well as a soft one.
-_HARD_EDGE = [0 if level < 128 else 255 for level in range(256)]
-
-
 def caption_png(
     text: str,
     width: int = IMAGE_SIZE[0],
@@ -537,16 +440,14 @@ def card_label(
 ) -> str:
     """The words drawn on a card, in the story's language.
 
-    The font is Latin, so Chinese and Arabic cards carry the number alone: it is
-    the part that has to be read, and the spoken card already says the word.
+    The typeface is Latin, so Chinese and Arabic cards carry the number alone: it
+    is the part that has to be read, and the spoken card already says the word.
     A part cut below chapter level gets the number alone as well, because none
     of the words we have would be the right one for it.
     """
     shown = f"{number}/{total}" if show_total else str(number)
     label = f"{language(language_code).card.upper()} {shown}" if word else shown
-    if all(character in GLYPHS for character in label):
-        return label
-    return shown
+    return label if _letterable(_card_typeface(IMAGE_SIZE[1]), label) == label else shown
 
 
 def _run(args: list[str], description: str) -> None:

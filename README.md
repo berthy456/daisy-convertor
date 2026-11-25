@@ -39,7 +39,7 @@ Only the plain Lunii's screen has no colour, so only next to it does a **Negativ
 
 ### 3. Give it a cover
 
-Audiobook packs rarely carry one, so you can: **Choose image...** picks a picture from your machine, and **Search online...** looks for the print book the audiobook was read from. The app searches by itself as soon as you pick the book, and leaves a cover you typed alone.
+Audiobook packs rarely carry one, so you can: **Choose image...** picks a picture from your machine, **Use this link** takes one from a web address you paste, and **Search in the app** looks for the print book the audiobook was read from. The search asks Open Library, Google Books and Apple Books in turn — by the pack's ISBN first, then by the title and author — says **Searching the web for a cover…** while it works, and has **Stop** beside it. **DuckDuckGo** and **Google** are links: they open in your browser, which is the only place those two answer. The app searches by itself as soon as you pick the book, and leaves a cover you typed alone.
 
 Without a cover the cards still work: they get a plain background and the chapter number.
 
@@ -92,7 +92,7 @@ The app can read the cards in a real voice. On the first conversion it offers to
 
 **The AppImage does not start.** Make it executable first: right-click → Properties, or `chmod +x daisy-convertor-*.AppImage` in a terminal.
 
-**No cover was found.** Not every audiobook names the print book it came from. Pick a picture yourself, or paste a link to one.
+**No cover was found.** Not every audiobook names the print book it came from: some carry the folder's own name as their title, or no author at all. Type the title and the author and press **Search in the app**, pick a picture yourself, or paste a link to one.
 
 **The cards say nothing.** Either the cards were set to silent, or the voice was not installed. **Options** says which voice is being used.
 

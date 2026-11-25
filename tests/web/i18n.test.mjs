@@ -22,7 +22,7 @@ test("every language translates every key", () => {
 // translates, and so are the two search engines; "beta" and "Zoom" are the words
 // the Latin-script languages all borrow as is; so does the machine's "OK", which the
 // five Latin-script dictionaries write as it is, while Arabic, Chinese and Turkish
-// write their own.
+// write their own; Dutch writes the button's "Stop" as it is too.
 // Anything else that matches was left untranslated.
 test("no language is left in English by accident", () => {
   const allowed = new Set([
@@ -38,6 +38,7 @@ test("no language is left in English by accident", () => {
     "cover_search_ddg",
     "cover_search_google",
     "crop_zoom",
+    "cover_stop",
     "emu_ok",
   ]);
   for (const code of LANGUAGES) {

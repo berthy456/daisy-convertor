@@ -84,12 +84,16 @@
             <input id="cover-url" type="url" data-i18n-placeholder="cover_url" />
             <button id="cover-use" type="button" data-i18n="cover_use"></button>
             <button id="cover-clear" type="button" hidden data-i18n="cover_clear"></button>
-            <!-- The lookup asks three services in turn, so it can take a second or
-                 two. The log says what it found; this says it is still working. -->
+            <!-- The lookup asks four services in turn, so it can take a second or
+                 two. The log says what it found; this says it is still working and
+                 gives the way to call it off. -->
             <span id="cover-spinner" class="spinner" aria-hidden="true" hidden></span>
+            <span id="cover-searching" class="muted" data-i18n="cover_searching" hidden></span>
+            <button id="cover-stop" type="button" data-i18n="cover_stop" hidden></button>
           </div>
-          <!-- None of the three services had the book: the two words typed here are
-               the search, on either engine that answers without an account. -->
+          <!-- None of the four services had the book: the two words typed here are
+               the search - asked of the same catalogues the pack's own metadata is
+               asked of, and of either engine that answers without an account. -->
           <div class="cover-row cover-search">
             <label>
               <span data-i18n="cover_author"></span>
@@ -99,6 +103,7 @@
               <span data-i18n="cover_book_title"></span>
               <input id="cover-title" type="text" />
             </label>
+            <button id="cover-search-app" type="button" data-i18n="cover_search_app" hidden></button>
             <span class="muted" data-i18n="cover_search_on"></span>
             <a id="cover-search-ddg" class="quiet" target="_blank" rel="noopener" data-i18n="cover_search_ddg" hidden></a>
             <a id="cover-search-google" class="quiet" target="_blank" rel="noopener" data-i18n="cover_search_google" hidden></a>

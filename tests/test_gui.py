@@ -17,7 +17,7 @@ tk = pytest.importorskip("tkinter")
 
 from tkinter import ttk
 
-from daisy2telmi import gui, images
+from daisy2telmi import covers, gui, images
 from daisy2telmi.detector import DaisyPackError
 from daisy2telmi.extractor import AudioSegment, Book, Chapter
 
@@ -269,6 +269,111 @@ def test_a_second_pack_loses_the_cover_the_app_found(app: gui.App, tmp_path: Pat
     app._find_cover()
     assert app.cover_var.get() == str(mine), "a cover the user picked is kept"
     assert app.author_var.get() == "Corenblit", "words the user typed are kept"
+
+
+def test_a_cover_lookup_says_it_is_searching_and_can_be_called_off(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    """Four services are asked before the answer says there is nothing, so the window
+    says it is working - and gives the way to call it off."""
+    monkeypatch.setattr(app, "_cover_lookup", lambda *args: None)
+    (tmp_path / "aiguille.zip").write_bytes(b"PK")
+    app.pack_var.set(str(tmp_path / "aiguille.zip"))
+    app._find_cover()
+    assert app.cover_note.winfo_manager() == "pack", "the window says it is searching"
+    assert app.cover_stop.winfo_manager() == "pack", "and offers the way to stop"
+
+    job = app._cover_job
+    app._stop_cover()
+    assert app.cover_note.winfo_manager() == "", "the waiting goes away with the stop"
+    assert app.cover_stop.winfo_manager() == ""
+    assert app.t("cover_stopped") in app.log_view.get("1.0", "end")
+
+    app._took_cover(job, str(tmp_path / "late.jpg"), "L'Aiguille creuse", "")
+    assert app.cover_var.get() == "", "the answer a stopped lookup posts is an old one"
+
+
+def test_the_words_typed_are_asked_of_the_catalogues(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    """`MaupassantUneVie` carries no title any catalogue has. Typing the real one and
+    asking here asks the same services the pack's own metadata is asked of, and takes
+    their answer into the Image box."""
+    asked: list[tuple[str, str]] = []
+
+    def find(words, dest: Path) -> Path:
+        asked.append((words.title, words.author))
+        dest.write_bytes(b"\xff\xd8\xff")
+        return dest
+
+    monkeypatch.setattr(covers, "find", find)
+    app.title_var.set("Une vie")
+    app.author_var.set("Guy de Maupassant")
+    app._search_words()
+    for _ in range(100):
+        app._drain()
+        if app.cover_var.get():
+            break
+        time.sleep(0.05)
+
+    assert asked == [("Une vie", "Guy de Maupassant")]
+    assert Path(app.cover_var.get()).read_bytes().startswith(b"\xff\xd8\xff")
+    assert app.cover_note.winfo_manager() == "", "the waiting goes away with the answer"
+
+
+def test_a_search_the_user_asked_replaces_the_cover_the_app_had_found(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    """The Image box holds a cover the app suggested from the pack's own words. A
+    search the user asked for is not a suggestion, so it takes the box over."""
+    monkeypatch.setattr(app, "_cover_lookup", lambda *args: None)
+    (tmp_path / "pack.zip").write_bytes(b"PK")
+    app.pack_var.set(str(tmp_path / "pack.zip"))
+    app._find_cover()
+    app._took_cover(app._cover_job, str(tmp_path / "wrong.jpg"), "MaupassantUneVie", "Unknown")
+    assert app.cover_var.get() == str(tmp_path / "wrong.jpg")
+
+    def find(_words, dest: Path) -> Path:
+        dest.write_bytes(b"\xff\xd8\xff")
+        return dest
+
+    monkeypatch.setattr(covers, "find", find)
+    app.title_var.set("Une vie")
+    app._search_words()
+    for _ in range(100):
+        app._drain()
+        if app.cover_var.get() != str(tmp_path / "wrong.jpg"):
+            break
+        time.sleep(0.05)
+
+    assert Path(app.cover_var.get()).read_bytes().startswith(b"\xff\xd8\xff")
+
+
+def test_a_pasted_link_becomes_the_cover(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    """A picture found in a browser is only a link until the app fetches it."""
+
+    def link(_url: str, dest: Path) -> Path:
+        dest.write_bytes(b"\xff\xd8\xff")
+        return dest
+
+    monkeypatch.setattr(covers, "link", link)
+    app.cover_link_var.set("https://example.org/cover.jpg")
+    app._use_cover_link()
+    for _ in range(100):
+        app._drain()
+        if app.cover_var.get():
+            break
+        time.sleep(0.05)
+
+    assert Path(app.cover_var.get()).read_bytes().startswith(b"\xff\xd8\xff")
+
+
+def test_a_link_to_no_picture_says_so(app: gui.App, monkeypatch) -> None:
+    monkeypatch.setattr(covers, "link", lambda _url, _dest: None)
+    app.cover_link_var.set("https://example.org/blank.gif")
+    app._use_cover_link()
+    for _ in range(100):
+        app._drain()
+        if app.t("cover_link_failed") in app.log_view.get("1.0", "end"):
+            break
+        time.sleep(0.05)
+
+    assert app.t("cover_link_failed") in app.log_view.get("1.0", "end")
+    assert app.cover_var.get() == ""
 
 
 def test_a_second_pack_loses_the_parts_dropped_from_the_first(app: gui.App, tmp_path: Path) -> None:

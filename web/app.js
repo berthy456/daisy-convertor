@@ -39,7 +39,10 @@ const coverAuthor = document.getElementById("cover-author");
 const coverTitle = document.getElementById("cover-title");
 const searchDdg = document.getElementById("cover-search-ddg");
 const searchGoogle = document.getElementById("cover-search-google");
+const searchApp = document.getElementById("cover-search-app");
 const coverSpinner = document.getElementById("cover-spinner");
+const coverSearching = document.getElementById("cover-searching");
+const coverStop = document.getElementById("cover-stop");
 const cutInputs = [...document.querySelectorAll('input[name="cut"]')];
 const cropCanvas = document.getElementById("crop-canvas");
 const cropInputs = [...document.querySelectorAll('input[name="crop"]')];
@@ -421,19 +424,65 @@ function clearCover() {
 async function suggestCover() {
   const job = ++coverJob;
   if (cover) return;
-  coverSpinner.hidden = false;
+  showSearching();
   let found = { bitmap: null };
   try {
     found = await findCover(extractBook(await packEntries(), cut), location.href);
   } catch {
     found = { bitmap: null };
   }
+  // Called off, or a newer pack took over: this answer is an old one.
   if (job !== coverJob) return;
   // A cover picked while the lookup ran wins over the suggestion, but either way
-  // this lookup is over and the spinner goes away.
-  coverSpinner.hidden = true;
+  // this lookup is over and the waiting goes away.
+  showSearchDone();
   if (cover) return;
   // The service names are its own, so they are not translated, only appended.
+  log(found.bitmap ? `${t("cover_found")} (${found.source})` : t("cover_none"));
+  if (found.bitmap) setCover(found.bitmap, true);
+}
+
+function showSearching() {
+  coverSpinner.hidden = false;
+  coverSearching.hidden = false;
+  coverStop.hidden = false;
+}
+
+function showSearchDone() {
+  coverSpinner.hidden = true;
+  coverSearching.hidden = true;
+  coverStop.hidden = true;
+}
+
+/**
+ * Call the lookup off. It is already running and cannot be recalled, so it is
+ * stopped by number: the answer it posts carries the number the ask started with,
+ * and raising the current number makes that answer an old one.
+ */
+function stopCoverSearch() {
+  coverJob += 1;
+  showSearchDone();
+  log(t("cover_stopped"));
+}
+
+/**
+ * The two words typed in the boxes, asked of the same services the pack's own
+ * metadata is asked of. A title the pack got wrong - a folder name, a producer's
+ * truncation - is corrected here rather than left to a browser search.
+ */
+async function searchCoverWords() {
+  const title = coverTitle.value.trim();
+  if (!title) return;
+  const job = ++coverJob;
+  showSearching();
+  let found = { bitmap: null };
+  try {
+    found = await findCover({ title, author: coverAuthor.value.trim() }, location.href);
+  } catch {
+    found = { bitmap: null };
+  }
+  if (job !== coverJob) return;
+  showSearchDone();
   log(found.bitmap ? `${t("cover_found")} (${found.source})` : t("cover_none"));
   if (found.bitmap) setCover(found.bitmap, true);
 }
@@ -536,6 +585,8 @@ function showCoverSearch(fallback = "") {
   searchGoogle.href = links.google;
   searchDdg.hidden = !words;
   searchGoogle.hidden = !words;
+  // The app's own search needs a title: the catalogues it asks answer by words.
+  searchApp.hidden = !coverTitle.value.trim();
 }
 
 function showSummary(story) {
@@ -894,6 +945,8 @@ coverUse.addEventListener("click", async () => {
 coverClear.addEventListener("click", clearCover);
 coverAuthor.addEventListener("input", () => showCoverSearch());
 coverTitle.addEventListener("input", () => showCoverSearch());
+coverStop.addEventListener("click", stopCoverSearch);
+searchApp.addEventListener("click", searchCoverWords);
 partsAll.addEventListener("click", keepAllParts);
 saveButton.addEventListener("click", saveStory);
 testButton.addEventListener("click", testStory);

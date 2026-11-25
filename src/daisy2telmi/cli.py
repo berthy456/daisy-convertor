@@ -83,8 +83,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--find-cover",
         action="store_true",
-        help="ask Open Library for the cover of the print book the pack names in dc:source, "
-        "and draw the cards over that instead of the placeholder",
+        help="ask Open Library, Google Books, Apple Books and the Open Library search, in that "
+        "order, for the cover of the print book the pack names, and draw the cards over that "
+        "instead of the placeholder",
     )
     parser.add_argument(
         "--cover-crop",

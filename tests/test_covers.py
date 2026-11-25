@@ -20,6 +20,7 @@ NOTHING = b"GIF89a" + b"\0" * 37
 # A cover, as far as these tests care: anything over the placeholder's size.
 COVER = b"\xff\xd8\xff" + b"x" * 4000
 APPLE_ART = "https://is1-ssl.mzstatic.com/image/thumb/x/9791036383786-001-x.jpeg/100x100bb.jpg"
+GOOGLE_THUMB = "https://books.google.com/books/content?id=abc123&printsec=frontcover&img=1&zoom=1&source=gbs_api"
 
 
 def book(**kwargs) -> Book:
@@ -41,6 +42,7 @@ class Answers:
 
     defaults = {
         "-L.jpg": NOTHING,
+        "googleapis.com": json.dumps({"totalItems": 0}).encode(),
         "itunes.apple.com": json.dumps({"resultCount": 0, "results": []}).encode(),
         "search.json": json.dumps({"numFound": 0, "docs": []}).encode(),
     }
@@ -101,7 +103,12 @@ def test_a_book_no_service_has_leaves_nothing_behind(offline: Answers, tmp_path:
     assert not dest.exists()
     # Every service is asked before the answer says there is nothing.
     asked = " ".join(offline.asked)
-    for part in ("covers.openlibrary.org/b/isbn", "itunes.apple.com", "openlibrary.org/search.json"):
+    for part in (
+        "covers.openlibrary.org/b/isbn",
+        "googleapis.com",
+        "itunes.apple.com",
+        "openlibrary.org/search.json",
+    ):
         assert part in asked
 
 
@@ -130,6 +137,80 @@ def test_apple_is_asked_at_the_largest_cover_it_gives(offline: Answers, tmp_path
     }
     covers.find(book(), tmp_path / "cover.jpg")
     assert "600x600bb" in offline.asked[-1]
+
+
+def test_the_isbn_is_asked_of_google_when_open_library_has_no_cover(offline: Answers, tmp_path: Path) -> None:
+    """`L'Aiguille creuse`: Open Library has no picture for the ISBN the pack
+    carries, and Google Books is the catalogue that holds that French edition."""
+    offline.replies = {
+        "googleapis.com": json.dumps(
+            {"totalItems": 1, "items": [{"volumeInfo": {"imageLinks": {"thumbnail": GOOGLE_THUMB}}}]}
+        ).encode(),
+        "zoom=3": COVER,
+    }
+    dest = tmp_path / "cover.jpg"
+    assert covers.find(book(), dest) == dest
+    assert offline.query("googleapis.com")["q"] == ["isbn:9791036364877"]
+    assert "zoom=3" in offline.asked[-1], "the largest picture Google gives, not its 128 px one"
+
+
+def test_google_answering_its_daily_quota_is_no_cover(offline: Answers, tmp_path: Path) -> None:
+    """A machine that has spent its day of keyless asks gets an error object back.
+    That is a service with nothing for this book: the next one is still asked."""
+    offline.replies = {
+        "googleapis.com": json.dumps({"error": {"code": 429, "message": "Quota exceeded"}}).encode(),
+        "search.json": json.dumps({"docs": [{"cover_i": 7}]}).encode(),
+        "b/id/7-L.jpg": COVER,
+    }
+    dest = tmp_path / "cover.jpg"
+    assert covers.find(book(), dest) == dest
+
+
+def test_a_producer_s_filler_is_not_searched_for(offline: Answers, tmp_path: Path) -> None:
+    """Dolphin EasyProducer writes `dc:creator=Unknown` when it has no author.
+    Asking a catalogue for the word costs a request and answers nothing."""
+    offline.replies = {"itunes.apple.com": json.dumps({"results": []}).encode()}
+    covers.find(book(source=None, author="Unknown"), tmp_path / "cover.jpg")
+    assert offline.query("itunes.apple.com")["term"] == ["Wesh la fée"]
+    query = offline.query("search.json")
+    assert query["title"] == ["Wesh la fée"]
+    assert "author" not in query
+
+
+def test_a_title_running_words_together_is_the_folder_not_the_book(offline: Answers, tmp_path: Path) -> None:
+    """`MaupassantUneVie` is the name the producer gave the folder it made the pack
+    from. No catalogue has a book by that name, so nothing is asked."""
+    assert covers.find(book(source=None, title="MaupassantUneVie"), tmp_path / "cover.jpg") is None
+    assert offline.asked == []
+
+
+def test_the_words_the_user_types_are_asked_like_a_pack_s(offline: Answers, tmp_path: Path) -> None:
+    """The Author and Title boxes are a pack of their own: they carry no ISBN, so
+    only the catalogues that answer by words are asked."""
+    offline.replies = {
+        "search.json": json.dumps({"docs": [{"cover_i": 6866195}]}).encode(),
+        "b/id/6866195-L.jpg": COVER,
+    }
+    dest = tmp_path / "cover.jpg"
+    assert covers.find(covers.Words("Une vie", "Guy de Maupassant"), dest) == dest
+    query = offline.query("search.json")
+    assert query["title"] == ["Une vie"]
+    assert query["author"] == ["Guy de Maupassant"]
+    assert not any("b/isbn" in url for url in offline.asked), "typed words carry no ISBN"
+
+
+def test_a_pasted_link_is_written_where_a_found_cover_goes(offline: Answers, tmp_path: Path) -> None:
+    offline.replies = {"example.org": COVER}
+    dest = tmp_path / "cover.jpg"
+    assert covers.link("https://example.org/cover.jpg", dest) == dest
+    assert dest.read_bytes() == COVER
+
+
+def test_a_pasted_link_to_no_picture_leaves_no_file(offline: Answers, tmp_path: Path) -> None:
+    offline.replies = {"example.org": NOTHING}
+    dest = tmp_path / "cover.jpg"
+    assert covers.link("https://example.org/blank.gif", dest) is None
+    assert not dest.exists()
 
 
 def test_an_exact_title_beats_apples_first_hit(offline: Answers, tmp_path: Path) -> None:

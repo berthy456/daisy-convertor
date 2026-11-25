@@ -56,7 +56,7 @@ Cover:
 | Flag | Values | Notes |
 | :--- | :--- | :--- |
 | `--cover IMAGE` | | draws the cards over this picture instead of the placeholder |
-| `--find-cover` | | asks Open Library for the print book named in `dc:source` (`dc:identifier` is the DAISY edition's own number, which no cover service knows); falls back to a title and author search with no ISBN |
+| `--find-cover` | | asks Open Library, Google Books, Apple Books and the Open Library search, in that order, for the print book named in `dc:source` (`dc:identifier` is the DAISY edition's own number, which no cover service knows); the ISBN asks come first and the title and author searches follow |
 | `--cover-crop` | `top` `center` `bottom` | `center` |
 | `--cover-zoom FACTOR` | 0–4 | 0 shows the whole picture and fills the frame's empty room with the card's own second colour, 1 fills the frame, more than 1 enlarges it past the frame so it can move sideways |
 
@@ -200,7 +200,13 @@ The web page writes the same folder, with the same four playlists and the same l
 
 ffmpeg crops the cover to `640x480` for `title.png` and every card, and to `512x512` for `cover.png`. The card text is drawn by the converter, not by ffmpeg: Homebrew's ffmpeg has no `drawtext`, so `src/daisy2telmi/images.py` draws the cards with a 5x7 bitmap font and the sentence pictures with the bundled Arimo, and ffmpeg only composites the result. The font is Latin, so Chinese and Arabic cards show the number alone; the spoken card still says the word.
 
-The GUI looks a cover up by itself as soon as a pack is picked or dropped, and never replaces one already typed. The web page does the same once it has read the pack. Both keep a link that opens a Google image search for the pack's title, and both take a cover from a file or from a link. Both draw one frame at the chosen player's ratio over the cover, moved by dragging, by the slider, the wheel or the arrow keys. The frame's place travels with the conversion: `images.crop_view` carries it as a focus point, and the desktop keeps it until the cover, the player or the zoom changes. Open Library is asked rather than isbndb.com because it needs no key and answers browser requests.
+The GUI looks a cover up by itself as soon as a pack is picked or dropped, and never replaces one already typed. The web page does the same once it has read the pack. Both say **Searching the web for a cover…** with a **Stop** beside it while the lookup runs. The lookup is a thread that cannot be recalled, so stopping it raises the number the answer carries (`gui._cover_job`, `coverJob` in the page) and the answer is dropped when it lands; each lookup writes its picture under its own number, so two lookups run in a row cannot overwrite each other.
+
+Both take a cover from a file or from a link the user pastes, and both search the title and author the user types as they search a pack's own metadata (`covers.Words`, `findCover({ title, author })`). A metadata value that is a producer's filler (`Unknown`) or a folder name running words together (`MaupassantUneVie`) is not searched for: `covers.term` answers the empty string for it. That is why a pack can find nothing while the same book is found as soon as its title is typed.
+
+The four asks are Open Library's ISBN cover, Google Books' ISBN volume, Apple Books' artwork and the Open Library title search. All four answer without a key and send `Access-Control-Allow-Origin: *`, which is what lets the web page ask them from the user's own browser: no server of ours stands in the middle, and the daily quota a lookup spends is the asking machine's own. Google Books answers 429 once that machine's quota is spent, and the next source is asked. isbndb.com carries French titles the others miss, but its API needs a paid key; DuckDuckGo answers 403 to anything but a browser, so its image search and Google's stay links the user opens.
+
+Both draw one frame at the chosen player's ratio over the cover, moved by dragging, by the slider, the wheel or the arrow keys. The frame's place travels with the conversion: `images.crop_view` carries it as a focus point, and the desktop keeps it until the cover, the player or the zoom changes.
 
 ## Speech
 

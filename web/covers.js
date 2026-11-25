@@ -2,18 +2,29 @@
 //
 // A 2.02 pack has no image, but its metadata names the print book it was read
 // from: `dc:source` holds that book's ISBN. No one service has every book, so
-// the page asks three of them in order and keeps the first real picture. Each
+// the page asks four of them in order and keeps the first real picture. Each
 // answers with no key and with `Access-Control-Allow-Origin: *`, which is what
-// a browser is allowed to ask in the first place.
+// lets a browser ask at all — and the ask comes from this browser, so the quota
+// it spends is this machine's own and no one else's.
 //
-// isbndb.com carries covers the others miss but needs a paid key, and Google
-// Books' keyless API is one shared quota, spent most days before anyone asks.
+// isbndb.com carries covers the others miss but needs a paid key. DuckDuckGo
+// answers 403 to anything but a browser, so its image search is a link the user
+// opens rather than results this page could show.
 
 import { loadCoverUrl } from "./cover.js";
 
 // Apple serves its covers at a few sizes; 600 is the largest without a key, and
 // the Telmi screen is 480 across.
 const APPLE_ART_SIZE = "600x600bb";
+// Google gives its thumbnails at three sizes; 3 is the largest.
+const GOOGLE_ZOOM = "zoom=3";
+
+// What a producer writes when it has nothing to write. `dc:creator=Unknown` is
+// Dolphin EasyProducer's own filler, and searching for it finds nothing.
+const PLACEHOLDERS = new Set(["", "-", "n/a", "na", "none", "inconnu", "unknown", "sans objet"]);
+// Several words run together with no space is a folder name copied into the title
+// field - `MaupassantUneVie` - rather than a title anyone catalogues.
+const RUNNED_TOGETHER = /[a-zà-ÿ][A-ZÀ-Ü]/;
 
 /**
  * The print book's ISBN. `dc:identifier` is the DAISY edition's own number, and
@@ -31,17 +42,50 @@ export function isbnOf(book) {
   return null;
 }
 
+/**
+ * A metadata value worth searching for, or the empty string.
+ *
+ * A pack's `dc:creator` is as likely to be a producer's filler as a name, and a
+ * title that runs several words together is the folder the pack was made from.
+ * Asking a catalogue for `Unknown` costs a request and answers nothing.
+ */
+export function term(value) {
+  const text = (value ?? "").trim();
+  if (PLACEHOLDERS.has(text.toLowerCase())) return "";
+  if (!text.includes(" ") && RUNNED_TOGETHER.test(text)) return "";
+  return text;
+}
+
 /** The exact answer: the print book's own ISBN, when the pack carries one. */
 export function openlibraryIsbn(book) {
   const isbn = isbnOf(book);
   return isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg` : null;
 }
 
+/**
+ * The same ISBN, asked of the one catalogue that carries the French editions Open
+ * Library has no record of at all.
+ *
+ * Its keyless quota is one day per machine, and a day spent answers an error
+ * object rather than a result list: that is a service with no cover for this
+ * book, not a failure.
+ */
+export async function googleBooks(book) {
+  const isbn = isbnOf(book);
+  if (!isbn) return null;
+  const params = new URLSearchParams({ q: `isbn:${isbn}`, maxResults: "1" });
+  const items = (await getJSON(`https://www.googleapis.com/books/v1/volumes?${params}`))?.items ?? [];
+  const thumbnail = items[0]?.volumeInfo?.imageLinks?.thumbnail;
+  return thumbnail ? thumbnail.replace("zoom=1", GOOGLE_ZOOM).replace("zoom=2", GOOGLE_ZOOM) : null;
+}
+
 /** No ISBN, or an ISBN Open Library has never heard of: ask by title and author. */
 export async function openlibraryTitle(book) {
-  if (!book.title) return null;
-  const params = new URLSearchParams({ title: book.title, limit: "5", fields: "cover_i" });
-  if (book.author) params.set("author", book.author);
+  const title = term(book.title);
+  if (!title) return null;
+  const params = new URLSearchParams({ title, limit: "5", fields: "cover_i" });
+  const author = term(book.author);
+  if (author) params.set("author", author);
   const docs = (await getJSON(`https://openlibrary.org/search.json?${params}`))?.docs ?? [];
   for (const doc of docs) {
     if (doc.cover_i) return `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`;
@@ -55,23 +99,27 @@ export async function openlibraryTitle(book) {
  * and the author narrows it.
  */
 export async function appleBooks(book) {
-  if (!book.title) return null;
+  const title = term(book.title);
+  if (!title) return null;
   const params = new URLSearchParams({
-    term: [book.title, book.author].filter(Boolean).join(" "),
+    term: [title, term(book.author)].filter(Boolean).join(" "),
     media: "ebook",
     limit: "5",
     output: "json",
   });
   const results = (await getJSON(`https://itunes.apple.com/search?${params}`))?.results ?? [];
-  const best = bestMatch(book.title, results);
+  const best = bestMatch(title, results);
   const artwork = best?.artworkUrl100;
   return artwork ? artwork.replace("100x100bb", APPLE_ART_SIZE) : null;
 }
 
-// Best guess first: an ISBN is the book, a title is only a strong hint. The
-// names are the services' own, which no language translates.
+// Best guess first: an ISBN is the book, a title is only a strong hint. Google
+// comes second because it is the one asked by ISBN that carries the French
+// editions Open Library has no record of. The names are the services' own, which
+// no language translates.
 export const SOURCES = [
   ["Open Library", openlibraryIsbn],
+  ["Google Books", googleBooks],
   ["Apple Books", appleBooks],
   ["Open Library search", openlibraryTitle],
 ];

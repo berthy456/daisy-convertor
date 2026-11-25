@@ -4,15 +4,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-const { appleBooks, findCover, isbnOf, openlibraryIsbn, openlibraryTitle } = await import(
-  "../../web/covers.js"
-);
+const { appleBooks, findCover, googleBooks, isbnOf, openlibraryIsbn, openlibraryTitle, term } =
+  await import("../../web/covers.js");
 
 // Values from the Rachel pack: dc:identifier is the DAISY edition's own number,
 // dc:source is the print book's ISBN.
 const DAISY_ID = "FR-ADV-1310715633";
 const PRINT_ISBN = "979-10-363-6487-7";
 const APPLE_ART = "https://is1-ssl.mzstatic.com/image/thumb/x/9791036383786-001-x.jpeg/100x100bb.jpg";
+const GOOGLE_THUMB =
+  "https://books.google.com/books/content?id=abc123&printsec=frontcover&img=1&zoom=1&source=gbs_api";
 // A cover, as far as these tests care: anything wider than one pixel.
 const COVER = "jpeg";
 
@@ -22,6 +23,7 @@ const book = (over = {}) => ({ title: "Wesh la fée", identifier: DAISY_ID, sour
 // out the part it is about. Open Library's "nothing" is a 1x1 GIF.
 const NOTHING = {
   "-L.jpg": "tiny",
+  "googleapis.com": { totalItems: 0 },
   "itunes.apple.com": { results: [] },
   "search.json": { docs: [] },
 };
@@ -93,7 +95,7 @@ test("a book no service has leaves nothing behind", async () => {
   assert.equal(found.source, undefined);
   assert.deepEqual(
     urls.map((url) => url.split("/")[2]),
-    ["covers.openlibrary.org", "itunes.apple.com", "openlibrary.org"],
+    ["covers.openlibrary.org", "www.googleapis.com", "itunes.apple.com", "openlibrary.org"],
     "every service is asked before the answer says there is nothing",
   );
 });
@@ -108,8 +110,8 @@ test("a book Open Library has never heard of is asked of Apple", async () => {
   assert.equal(found.source, "Apple Books", "the log says which service answered");
   assert.deepEqual(
     urls.map((url) => url.split("/")[2]),
-    ["covers.openlibrary.org", "itunes.apple.com", "is1-ssl.mzstatic.com"],
-    "the ISBN came back empty, so Apple was asked, and its answer stopped the asking",
+    ["covers.openlibrary.org", "www.googleapis.com", "itunes.apple.com", "is1-ssl.mzstatic.com"],
+    "both ISBN answers came back empty, so Apple was asked, and its answer stopped the asking",
   );
   assert.deepEqual(query(urls, "itunes.apple.com").getAll("term"), ["Wesh la fée"]);
   assert.deepEqual(query(urls, "itunes.apple.com").getAll("media"), ["ebook"]);
@@ -122,6 +124,68 @@ test("Apple is asked at the largest cover it gives", async () => {
   });
   await findCover(book(), "https://berthy456.github.io/daisy2telmi/");
   assert.ok(urls.at(-1).includes("600x600bb"));
+});
+
+test("the ISBN is asked of Google when Open Library has no cover", async () => {
+  // `L'Aiguille creuse`: Open Library holds no picture for the ISBN the pack
+  // carries, and Google Books is the catalogue that has that French edition.
+  const urls = asked({
+    "googleapis.com": { totalItems: 1, items: [{ volumeInfo: { imageLinks: { thumbnail: GOOGLE_THUMB } } }] },
+    "zoom=3": COVER,
+  });
+  const found = await findCover(book(), "https://x/y/");
+  assert.equal(found.source, "Google Books");
+  assert.deepEqual(query(urls, "googleapis.com").getAll("q"), ["isbn:9791036364877"]);
+  assert.ok(urls.at(-1).includes("zoom=3"), "the largest picture Google gives, not its 128 px one");
+});
+
+test("Google answering its daily quota is no cover", async () => {
+  // A machine that has spent its day of keyless asks gets an error object back.
+  // That is a service with nothing for this book: the next one is still asked.
+  asked({
+    "googleapis.com": { error: { code: 429, message: "Quota exceeded" } },
+    "search.json": { docs: [{ cover_i: 7 }] },
+    "b/id/7-L.jpg": COVER,
+  });
+  const found = await findCover(book(), "https://x/y/");
+  assert.equal(found.source, "Open Library search");
+});
+
+test("a producer's filler is not searched for", async () => {
+  // Dolphin EasyProducer writes `dc:creator=Unknown` when it has no author.
+  const urls = asked({});
+  await findCover(book({ source: null, author: "Unknown" }), "https://x/y/");
+  assert.deepEqual(query(urls, "itunes.apple.com").getAll("term"), ["Wesh la fée"]);
+  assert.deepEqual(query(urls, "search.json").getAll("title"), ["Wesh la fée"]);
+  assert.equal(query(urls, "search.json").has("author"), false);
+});
+
+test("a title running words together is the folder, not the book", async () => {
+  // `MaupassantUneVie` is the name the producer gave the folder it made the pack
+  // from. No catalogue has a book by that name, so nothing is asked.
+  const urls = asked({});
+  const found = await findCover(book({ source: null, title: "MaupassantUneVie" }), "https://x/y/");
+  assert.equal(found.bitmap, null);
+  assert.deepEqual(urls, []);
+});
+
+test("the words the user types are asked like a pack's", async () => {
+  // The Author and Title boxes are a book of their own: they carry no ISBN, so
+  // only the catalogues that answer by words are asked.
+  const urls = asked({ "search.json": { docs: [{ cover_i: 6866195 }] }, "b/id/6866195-L.jpg": COVER });
+  const found = await findCover({ title: "Une vie", author: "Guy de Maupassant" }, "https://x/y/");
+  assert.equal(found.source, "Open Library search");
+  assert.deepEqual(query(urls, "search.json").getAll("title"), ["Une vie"]);
+  assert.deepEqual(query(urls, "search.json").getAll("author"), ["Guy de Maupassant"]);
+  assert.equal(urls.some((url) => url.includes("b/isbn")), false, "typed words carry no ISBN");
+});
+
+test("a filler or a folder name is no search term", () => {
+  assert.equal(term("Unknown"), "");
+  assert.equal(term("inconnu"), "");
+  assert.equal(term("MaupassantUneVie"), "");
+  assert.equal(term("  Une vie  "), "Une vie");
+  assert.equal(term("Maupassant Une Vie"), "Maupassant Une Vie");
 });
 
 test("an exact title beats Apple's first hit", async () => {

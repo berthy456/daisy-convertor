@@ -604,6 +604,9 @@ class App:
         # session keeps one folder for them and each lookup replaces the last.
         self._cover_dir: Path | None = None
         self._cover_job = 0
+        # Which ask the newest cover answer answers: the pack's own metadata, the
+        # words the user typed, or a link they pasted.
+        self._cover_asked = "pack"
         self._spin_job = None
         self._pack_title: str | None = None
         self.crop_var = tk.StringVar(value=self.options["cover_crop"])
@@ -713,25 +716,39 @@ class App:
         self._label(cover_row, "cover_label").pack(side="left")
         ttk.Entry(cover_row, textvariable=self.cover_var, width=40).pack(side="left", padx=(6, 8))
         self._button(cover_row, "browse_cover", self._pick_cover).pack(side="left")
-        # A lookup takes a second or two on its own thread, and three services are
-        # asked before the answer says there is nothing: the window has to show it
-        # is waiting. An indeterminate bar is the closest Tk comes to a spinner.
+        # A lookup takes a second or two on its own thread, and four services are
+        # asked before the answer says there is nothing: the window has to say it is
+        # waiting, and let the user call it off. An indeterminate bar is the closest
+        # Tk comes to a spinner.
         self.cover_spin = ttk.Progressbar(cover_row, mode="indeterminate", length=44)
+        self.cover_note = self._label(cover_row, "cover_searching")
+        self.cover_stop = self._button(cover_row, "cover_stop", self._stop_cover)
 
         # When none of those services has the book, the two words the user types
-        # are the search: an image search on the author and the title, on either
-        # of the two engines that answer without an account.
+        # are the search: the app's own catalogues first, then an image search on
+        # either of the two engines that answer without an account - those two
+        # only open a browser, so their answer is a picture the user saves.
         search = ttk.Frame(grid)
         search.grid(row=7, column=0, columnspan=3, sticky="w", pady=(6, 0))
         self._label(search, "cover_author").pack(side="left")
         ttk.Entry(search, textvariable=self.author_var, width=18).pack(side="left", padx=(6, 12))
         self._label(search, "cover_book_title").pack(side="left")
         ttk.Entry(search, textvariable=self.title_var, width=24).pack(side="left", padx=(6, 12))
+        self._button(search, "cover_search_app", self._search_words).pack(side="left", padx=(0, 12))
         self._label(search, "cover_search_on").pack(side="left", padx=(0, 6))
         self._button(search, "cover_search_ddg", lambda: self._search_cover("ddg")).pack(side="left")
         self._button(search, "cover_search_google", lambda: self._search_cover("google")).pack(
             side="left", padx=(4, 0)
         )
+
+        # A picture found in a browser is only a link until it is fetched: pasting
+        # it here brings it into the Image box like a cover the services answered.
+        link_row = ttk.Frame(grid)
+        link_row.grid(row=8, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        self._label(link_row, "cover_link").pack(side="left")
+        self.cover_link_var = tk.StringVar()
+        ttk.Entry(link_row, textvariable=self.cover_link_var, width=44).pack(side="left", padx=(6, 8))
+        self._button(link_row, "cover_use", self._use_cover_link).pack(side="left")
 
         # The frame, its knobs and the log share the last row: a frame this wide
         # would push the log below the bottom of a laptop screen.
@@ -742,7 +759,7 @@ class App:
         self.crop_frame = tk.Canvas(
             grid, highlightthickness=0, cursor="fleur", takefocus=1, background=SUNK
         )
-        self.crop_frame.grid(row=8, column=0, sticky="n", pady=(6, 0))
+        self.crop_frame.grid(row=9, column=0, sticky="n", pady=(6, 0))
         self._crop_item = self.crop_frame.create_image(0, 0, anchor="nw")
         self.crop_frame.bind("<ButtonPress-1>", self._grab_crop)
         self.crop_frame.bind("<B1-Motion>", self._drag_crop)
@@ -765,7 +782,7 @@ class App:
         # the eye goes over a picture: which band to keep, how far in, then the way
         # the player's own grey screen reads the ink.
         side = ttk.Frame(grid)
-        side.grid(row=8, column=1, sticky="n", padx=(12, 0))
+        side.grid(row=9, column=1, sticky="n", padx=(12, 0))
         self.crop_side = side
         self._label(side, "cover_crop_label").pack(anchor="w")
         self.crop_boxes: dict[str, ttk.Radiobutton] = {}
@@ -808,7 +825,7 @@ class App:
         self.cover_var.trace_add("write", lambda *_: self._show_crop())
 
         controls = ttk.Frame(grid)
-        controls.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(8, 8))
+        controls.grid(row=10, column=0, columnspan=3, sticky="ew", pady=(8, 8))
         self.save_button = self._button(controls, "save", self._start, style="Work.TButton")
         self.save_button.pack(side="left")
         self._button(controls, "options", self._open_options).pack(side="left", padx=12)
@@ -830,7 +847,7 @@ class App:
         self._show_captions()
 
         log_frame = ttk.Frame(grid)
-        log_frame.grid(row=8, column=2, sticky="nsew", padx=(12, 0))
+        log_frame.grid(row=9, column=2, sticky="nsew", padx=(12, 0))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
         self.log_view = tk.Text(
@@ -1161,7 +1178,7 @@ class App:
         """Offer the cover of the print book the pack was read from.
 
         A 2.02 audio pack carries no picture, but its metadata names the book's
-        ISBN, and three services hold the cover for it between them. The answer
+        ISBN, and four services hold the cover for it between them. The answer
         arrives on its own thread: a lookup that takes a second should not stop
         the window from drawing. A cover the user already typed is never
         replaced, and the cover the last pack's lookup found is dropped before
@@ -1174,12 +1191,13 @@ class App:
         self._drop_lookup()
         if pack is None or not pack.exists() or self.cover_var.get().strip():
             return
-        if self._cover_dir is None:
-            self._cover_dir = Path(tempfile.mkdtemp(prefix="daisy2telmi-cover-"))
-        # One name per lookup, so two packs picked in a row cannot write over each other.
-        dest = self._cover_dir / f"cover-{self._cover_job}.jpg"
+        self._cover_asked = "pack"
         self._spin_on()
-        threading.Thread(target=self._cover_lookup, args=(pack, self._cover_job, dest), daemon=True).start()
+        threading.Thread(
+            target=self._cover_lookup,
+            args=(pack, self._cover_job, self._cover_dest(self._cover_job)),
+            daemon=True,
+        ).start()
 
     def _drop_lookup(self) -> None:
         """Clear what the previous pack's lookup filled in.
@@ -1194,11 +1212,13 @@ class App:
                 box.set("")
 
     def _spin_on(self) -> None:
-        """Show the bar and keep it turning: Tk only moves an indeterminate bar
-        when something steps it from the event loop."""
+        """Show the bar, the word about it and the way to call it off: Tk only moves
+        an indeterminate bar when something steps it from the event loop."""
         if self._spin_job is not None:
             return
         self.cover_spin.pack(side="left", padx=(6, 0))
+        self.cover_note.pack(side="left", padx=(6, 0))
+        self.cover_stop.pack(side="left", padx=(6, 0))
         self._spin_step()
 
     def _spin_step(self) -> None:
@@ -1210,6 +1230,19 @@ class App:
             self.root.after_cancel(self._spin_job)
             self._spin_job = None
         self.cover_spin.pack_forget()
+        self.cover_note.pack_forget()
+        self.cover_stop.pack_forget()
+
+    def _stop_cover(self) -> None:
+        """Call the lookup off.
+
+        The thread is already asked and cannot be recalled, so the lookup is
+        stopped by number: the answer it posts carries the number it started with,
+        and raising the current number makes that answer an old one.
+        """
+        self._cover_job += 1
+        self._spin_off()
+        self._append(self.t("cover_stopped"))
 
     def _cover_lookup(self, pack: Path, job: int, dest: Path) -> None:
         """Read the pack's own metadata off the worker thread, then post the picture back."""
@@ -1222,6 +1255,59 @@ class App:
             log.warning("no cover lookup for %s: %s", pack.name, exc)
             found, title, author = None, "", ""
         self.events.put(("cover", job, "" if found is None else str(found), title, author))
+
+    def _search_words(self) -> None:
+        """Ask the catalogues for the two words the boxes hold, and take their answer
+        back into the Image box.
+
+        The services answer for the book the words name, not for the pack, so a
+        title the pack got wrong - a folder name, a producer's truncation - is
+        corrected by typing the real one and asking again here.
+        """
+        title = self.title_var.get().strip()
+        if not title:
+            return
+        self._cover_job += 1
+        job = self._cover_job
+        self._cover_asked = "words"
+        dest = self._cover_dest(job)
+        self._spin_on()
+        words = covers.Words(title, self.author_var.get().strip())
+        threading.Thread(target=self._words_lookup, args=(words, job, dest), daemon=True).start()
+
+    def _cover_dest(self, job: int) -> Path:
+        """One name per lookup, so two lookups run in a row cannot write over each other."""
+        if self._cover_dir is None:
+            self._cover_dir = Path(tempfile.mkdtemp(prefix="daisy2telmi-cover-"))
+        return self._cover_dir / f"cover-{job}.jpg"
+
+    def _words_lookup(self, words: covers.Words, job: int, dest: Path) -> None:
+        try:
+            found = covers.find(words, dest)
+        except Exception as exc:
+            log.warning("no cover for %r: %s", words.title, exc)
+            found = None
+        self.events.put(("cover", job, "" if found is None else str(found), words.title, words.author))
+
+    def _use_cover_link(self) -> None:
+        """Fetch the picture a pasted link points at, on the same thread a lookup runs on."""
+        url = self.cover_link_var.get().strip()
+        if not url:
+            return
+        self._cover_job += 1
+        job = self._cover_job
+        self._cover_asked = "link"
+        dest = self._cover_dest(job)
+        self._spin_on()
+        threading.Thread(target=self._link_lookup, args=(url, job, dest), daemon=True).start()
+
+    def _link_lookup(self, url: str, job: int, dest: Path) -> None:
+        try:
+            found = covers.link(url, dest)
+        except Exception as exc:
+            log.warning("no picture at %s: %s", url, exc)
+            found = None
+        self.events.put(("cover", job, "" if found is None else str(found), "", ""))
 
     def _search_cover(self, engine: str) -> None:
         """Open an image search on the two words the boxes hold: the book's author
@@ -1692,27 +1778,33 @@ class App:
     def _took_cover(self, job: int, path: str, title: str, author: str) -> None:
         """Put a looked-up cover in the Image box.
 
-        Only the lookup the newest pack asked for counts, and a cover the user
-        typed or picked themselves is never replaced by a suggestion. The author
-        and the title the pack's own metadata gave go into the search boxes, so
-        the search is ready to make even when none of the services had the book.
+        Only the newest lookup counts, and a cover the user typed or picked
+        themselves is never replaced by a suggestion - but it is replaced by a
+        search they asked for, which is why the answer carries what was asked.
+        The author and the title the pack's own metadata gave go into the search
+        boxes, so the search is ready to make even when none of the services had
+        the book.
         """
         if job != self._cover_job:
             return
         self._spin_off()
-        self._pack_title = title
-        if author and not self.author_var.get().strip():
-            self._auto_author = author
-            self.author_var.set(author)
-        if title and not self.title_var.get().strip():
-            self._auto_title = title
-            self.title_var.set(title)
-        if self.cover_var.get().strip():
+        asked = self._cover_asked
+        if asked == "pack":
+            self._pack_title = title
+            if author and not self.author_var.get().strip():
+                self._auto_author = author
+                self.author_var.set(author)
+            if title and not self.title_var.get().strip():
+                self._auto_title = title
+                self.title_var.set(title)
+        if self.cover_var.get().strip() and asked == "pack":
             return
         if path:
             self._auto_cover = path
             self.cover_var.set(path)
             self._append(self.t("cover_found"))
+        elif asked == "link":
+            self._append(self.t("cover_link_failed"))
         else:
             self._append(self.t("cover_none"))
 

@@ -23,7 +23,7 @@ Python 3.11+. ffmpeg must be on `PATH` (`winget install Gyan.FFmpeg`, `brew inst
 daisy-convertor <pack> [output-folder]
 ```
 
-No arguments opens the GUI. The output folder is a parent: inside it the story gets Telmi's `<category>_<age>_<title>_<uuid>` name, unless the path already has that name.
+No arguments opens the GUI. The output folder is a parent: inside it the story gets Telmi's `<category>_<age>_<title>_<uuid>` name, unless the path already has that name. The title is normalized the way Telmi-Sync normalizes it, so a title outside the Latin alphabet leaves nothing: the input pack's own file name is used then, and `story` when there is none.
 
 | Exit | Meaning |
 | :--- | :--- |
@@ -204,7 +204,7 @@ The GUI looks a cover up by itself as soon as a pack is picked or dropped, and n
 
 Both take a cover from a file or from a link the user pastes, and both search the title and author the user types as they search a pack's own metadata (`covers.Words`, `findCover({ title, author })`). A metadata value that is a producer's filler (`Unknown`) or a folder name running words together (`MaupassantUneVie`) is not searched for: `covers.term` answers the empty string for it. That is why a pack can find nothing while the same book is found as soon as its title is typed.
 
-The four asks are Open Library's ISBN cover, Google Books' ISBN volume, Apple Books' artwork and the Open Library title search. All four answer without a key and send `Access-Control-Allow-Origin: *`, which is what lets the web page ask them from the user's own browser: no server of ours stands in the middle, and the daily quota a lookup spends is the asking machine's own. Google Books answers 429 once that machine's quota is spent, and the next source is asked. isbndb.com carries French titles the others miss, but its API needs a paid key; DuckDuckGo answers 403 to anything but a browser, so its image search and Google's stay links the user opens.
+The four asks are Open Library's ISBN cover, Google Books' ISBN volume, Apple Books' artwork and the Open Library title search. All four answer without a key and send `Access-Control-Allow-Origin: *`, which is what lets the web page ask them from the user's own browser: no server of ours stands in the middle, and the daily quota a lookup spends is the asking machine's own. Google Books answers 429 once that machine's quota is spent, and the next source is asked. isbndb.com carries French titles the others miss, but its API needs a paid key; DuckDuckGo answers 403 to anything but a browser, so its image search and Google's stay links the user opens. The app hands those links to the desktop's own opener (`xdg-open`, `open`) and only then to `webbrowser`, and writes the link in the log either way.
 
 Both draw one frame at the chosen player's ratio over the cover, moved by dragging, by the slider, the wheel or the arrow keys. The frame's place travels with the conversion: `images.crop_view` carries it as a focus point, and the desktop keeps it until the cover, the player or the zoom changes.
 
@@ -228,11 +228,11 @@ The built binaries carry espeak-ng, its shared libraries and its language data, 
 
 `daisy-convertor` with no arguments opens a Tkinter window: pick or drop a pack, pick an output folder and an optional cover, watch the same log the CLI writes. The conversion runs on a worker thread; each run starts on an empty log and ends with a report repeating its errors.
 
-The window draws its own bar along the top: the mark, its name, and the hide, enlarge and close controls. **Options → Draw the window's own bar instead of the system one** takes the system bar away; the window then moves by dragging that bar. On Linux and Windows that also leaves the window unmanaged, so it cannot be minimised or resized by its edges and the hide control is left out.
+The window draws its own bar along the top: the mark, its name and version, and the hide, enlarge and close controls when no system bar is left to provide them. **Options → Draw the window's own bar instead of the system one** takes the system bar away; the window then moves by dragging that bar. Without it the window is unmanaged, so it cannot be minimised or resized by its edges and the hide control is left out. Windows is not offered the choice: Tk's only way to remove the title bar there is `overrideredirect`, which removes the taskbar entry with it, so the window keeps the bar Windows gives it and the band draws no controls of its own.
 
 The main window asks which engine reads the cards, in a box beside the player the story is made for, with a **Configure the speech...** button beside it. That opens **Speech**: the engine, its voice, the reading speed, the Python the engine runs in, the device, the recording a cloning engine reads with, a text to hear that voice in, and the install rows — whether the engine's package is in the interpreter named, and the voices the language still lacks. A row the chosen engine cannot answer for is greyed out rather than removed.
 
-**Options** holds the rest: the interface language, what the cards say, whether the drawn card counts the parts, autoplay, the window bar, and the two folders the app works in — the one the file lists open in, and the one stories are written to. Closing either window writes `~/.config/daisy2telmi/config.json` (`%APPDATA%\daisy2telmi\config.json` on Windows), which the CLI reads too, so a flag only overrides what is already saved.
+**Options** holds the rest: the interface language, what the cards say, whether the drawn card counts the parts, autoplay, the window bar (everywhere but Windows), and the two folders the app works in — the one the file lists open in, and the one stories are written to. Closing either window writes `~/.config/daisy2telmi/config.json` (`%APPDATA%\daisy2telmi\config.json` on Windows), which the CLI reads too, so a flag only overrides what is already saved.
 
 **Show the words on screen** sits under the crop controls: each part gets a picture of its own words, shown while its audio plays. The box is live only for Telmi and Flam, and ticking it moves the cut to sentences.
 

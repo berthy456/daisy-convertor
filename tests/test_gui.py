@@ -437,6 +437,32 @@ def test_the_search_writes_the_link_it_tried(app: gui.App, monkeypatch) -> None:
     assert "duckduckgo.com" in shown and "Wesh+la" in shown
 
 
+def test_a_verbose_window_writes_the_command_lines_it_would_otherwise_hide(app: gui.App) -> None:
+    """On Windows the window is the only place the app can write: no terminal beside it."""
+    handler = gui.attach_log_handler(app, verbose=True)
+    try:
+        logging.getLogger("daisy2telmi").debug("running: ffmpeg -i s01.mp3 out.mp3")
+        logging.getLogger("daisy2telmi").info("wrote 6 file(s)")
+        app._drain()
+    finally:
+        logging.getLogger("daisy2telmi").removeHandler(handler)
+
+    shown = app.log_view.get("1.0", "end")
+    assert "ffmpeg -i s01.mp3" in shown, "the detailed log arrives in the frame"
+    assert "wrote 6 file(s)" in shown
+    assert app.log_view.tag_ranges("detail"), "the detailed lines read as fine print"
+
+
+def test_a_launch_with_only_a_verbosity_flag_opens_the_window(monkeypatch) -> None:
+    """`daisy-convertor --verbose` is the window, told to write everything it does."""
+    from daisy2telmi import cli
+
+    opened: list[bool] = []
+    monkeypatch.setattr(gui, "run_gui", lambda verbose=False: opened.append(verbose) or 0)
+    assert cli.main(["--verbose"]) == 0
+    assert opened == [True]
+
+
 def test_a_second_pack_loses_the_parts_dropped_from_the_first(app: gui.App, tmp_path: Path) -> None:
     """A dropped part is a number in one book's part list. The next pack has its own
     list, and the same numbers would cut its opening away in silence."""

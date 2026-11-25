@@ -408,8 +408,8 @@ class TitleBar(tk.Canvas):
 class _QueueHandler(logging.Handler):
     """Ship log records to the Tk thread; widgets are only touched from the main thread."""
 
-    def __init__(self, sink: queue.Queue) -> None:
-        super().__init__(logging.INFO)
+    def __init__(self, sink: queue.Queue, level: int = logging.INFO) -> None:
+        super().__init__(level)
         self.sink = sink
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -417,10 +417,12 @@ class _QueueHandler(logging.Handler):
 
 
 def _tag(line: str) -> tuple[str, ...]:
-    """Which of the log's two emphases a line gets, however the report indents it."""
+    """Which of the log's emphases a line gets, however the report indents it."""
     head = line.strip().split(":", 1)[0]
     if head in ("ERROR", "CRITICAL"):
         return ("error",)
+    if head == "DEBUG":
+        return ("detail",)
     return ("report",) if head == "REPORT" else ()
 
 
@@ -921,6 +923,9 @@ class App:
         bold.configure(weight="bold")
         self.log_view.tag_configure("error", foreground=ALERT, font=bold)
         self.log_view.tag_configure("report", foreground=INK, font=bold)
+        # The detailed log is fine print: ffmpeg's command lines are long, and they
+        # should not read like the progress lines they sit under.
+        self.log_view.tag_configure("detail", foreground=MUTED)
         self._errors: list[str] = []
 
         bar = ttk.Frame(self.root)
@@ -3034,13 +3039,18 @@ class Emulator:
         self.top.destroy()
 
 
-def attach_log_handler(app: App) -> logging.Handler:
-    """Route the converter's log records into the app's queue."""
-    handler = _QueueHandler(app.events)
+def attach_log_handler(app: App, verbose: bool = False) -> logging.Handler:
+    """Route the converter's log records into the app's queue.
+
+    Verbose is the whole log, ffmpeg's own command lines included: on Windows the
+    window is the only place the app can write, because its build carries no terminal.
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+    handler = _QueueHandler(app.events, level)
     handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
     log.addHandler(handler)
     # Without this the logger keeps the root's WARNING level and the window stays blank.
-    log.setLevel(logging.INFO)
+    log.setLevel(level)
     return handler
 
 
@@ -3049,11 +3059,11 @@ def make_root() -> tk.Misc:
     return TkinterDnD.Tk() if TkinterDnD else tk.Tk()
 
 
-def run_gui() -> int:
+def run_gui(verbose: bool = False) -> int:
     root = make_root()
     app = App(root)
     root.title(f"{app.t('app_title')} {__version__}")
-    handler = attach_log_handler(app)
+    handler = attach_log_handler(app, verbose)
     try:
         root.mainloop()
     finally:

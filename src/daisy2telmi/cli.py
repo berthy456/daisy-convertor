@@ -523,10 +523,13 @@ def convert(
 def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
-    if not argv:
+    # Nothing but a verbosity flag: the window opens, and the flag decides how much
+    # of the converter's log it writes. The window is the only place the app can
+    # write on Windows, where its build carries no terminal of its own.
+    if not argv or set(argv) <= {"-v", "--verbose"}:
         from .gui import run_gui
 
-        return run_gui()
+        return run_gui(verbose="-v" in argv or "--verbose" in argv)
     args = _parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,

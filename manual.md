@@ -23,7 +23,7 @@ Python 3.11+. ffmpeg must be on `PATH` (`winget install Gyan.FFmpeg`, `brew inst
 daisy-convertor <pack> [output-folder]
 ```
 
-No arguments opens the GUI. The output folder is a parent: inside it the story gets Telmi's `<category>_<age>_<title>_<uuid>` name, unless the path already has that name. The title is normalized the way Telmi-Sync normalizes it, so a title outside the Latin alphabet leaves nothing: the input pack's own file name is used then, and `story` when there is none.
+No arguments opens the GUI, and `-v` alone opens it with its log frame carrying every line the converter writes, ffmpeg's own command lines included. The output folder is a parent: inside it the story gets Telmi's `<category>_<age>_<title>_<uuid>` name, unless the path already has that name. The title is normalized the way Telmi-Sync normalizes it, so a title outside the Latin alphabet leaves nothing: the input pack's own file name is used then, and `story` when there is none.
 
 | Exit | Meaning |
 | :--- | :--- |

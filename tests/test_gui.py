@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import shutil
+import threading
 import time
 import zipfile
 from pathlib import Path
@@ -901,6 +902,44 @@ def _settled(app: gui.App, button: ttk.Button) -> None:
     pytest.fail("the job never reported back")
 
 
+def _probed(page: gui.Speech) -> None:
+    """The page asks its engine off its own thread: wait for the newest answer."""
+    for _ in range(300):
+        page.top.update()
+        if page._answered == page._probe:
+            return
+        time.sleep(0.01)
+    pytest.fail("the engine never answered")
+
+
+def test_the_window_lists_the_engines_without_asking_which_are_installed(app: gui.App, monkeypatch) -> None:
+    """The engine box shows names; asking costs a Python per candidate interpreter."""
+    asked: list[str] = []
+    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: asked.append(name) or False)
+
+    keys = gui.engine_keys()
+    assert keys[0] == "auto" and keys[-1] == "off"
+    assert gui.tts.CHATTERBOX in keys
+    assert asked == []
+
+
+def test_the_speech_page_asks_its_engine_off_the_window_thread(app: gui.App, monkeypatch) -> None:
+    """Asked on the window's own thread, the page sits frozen until every answer is in."""
+    threads: list[str] = []
+
+    def slow(name: str, python: str | None = None) -> bool:
+        threads.append(threading.current_thread().name)
+        return False
+
+    monkeypatch.setattr(gui.tts, "available", slow)
+    app.options["tts"] = "chatterbox"
+    page = gui.Speech(app)
+    _probed(page)
+
+    assert threads, "the page did ask its engine"
+    assert threading.main_thread().name not in threads, "the window kept moving while it asked"
+
+
 def test_the_speech_page_installs_the_engine_it_shows(app: gui.App, monkeypatch) -> None:
     installed: list[tuple[str, str | None, str]] = []
     monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
@@ -911,6 +950,7 @@ def test_the_speech_page_installs_the_engine_it_shows(app: gui.App, monkeypatch)
     )
     app.options["tts"] = "piper"
     page = gui.Speech(app)
+    _probed(page)
     page.python_box.insert(0, "/opt/python")
     assert page.engine_state.cget("text") == app.t("speech_missing").format(engine="Piper")
 
@@ -1087,6 +1127,7 @@ def test_the_voice_list_follows_the_engine_and_language(app: gui.App) -> None:
     if not espeak.found:
         pytest.skip("no espeak-ng on this machine")
     page = gui.Speech(app)
+    _probed(page)
     assert any("French" in name or "fr" in name for name in page.voice_box.cget("values"))
 
 

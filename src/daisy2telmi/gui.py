@@ -51,8 +51,13 @@ READ_SPEED_KEYS = {**SPEED_KEYS, None: "speech_same_as_cards"}
 
 
 def engine_keys() -> list[str]:
-    """Every engine the app can be told to read with: automatic first, silence last."""
-    return ["auto"] + [engine.name for engine in tts.engines()] + ["off"]
+    """Every engine the app can be told to read with: automatic first, silence last.
+
+    The names, not `tts.engines()`: asking which of them is installed starts a
+    Python per candidate interpreter, and the window's own engine list has no use
+    for the answer.
+    """
+    return ["auto", *(n for n in tts.ENGINES if n not in (tts.AUTO, tts.OFF)), "off"]
 
 # The crop frame is drawn this wide, whatever the player's ratio: the same room to
 # move the cover in on every machine, and the web page draws it at the same size.
@@ -1478,7 +1483,7 @@ class App:
             return self.t("engine_auto")
         if key == "off":
             return self.t("engine_off")
-        return next((e.label for e in tts.engines() if e.name == key), key)
+        return tts.LABELS.get(key, key)
 
     def _show_engines(self) -> None:
         """Refill the box in this language, and put it back on the chosen engine."""
@@ -2204,7 +2209,7 @@ class Settings:
             return self.app.t("engine_off")
         if key in LANGUAGES:
             return f"{key} - {LANGUAGES[key].name}"
-        return next((e.label for e in tts.engines() if e.name == key), key)
+        return tts.LABELS.get(key, key)
 
     def _combo(
         self, parent: tk.Widget, keys: list[str | None], current: str | None,
@@ -2392,6 +2397,8 @@ class Speech(Settings):
         self.speed_keys = list(tts.SPEEDS)
         self._try_folder: Path | None = None
         self._playing: subprocess.Popen | None = None
+        self._probe = 0
+        self._answered = 0
 
         self.engine_box = self._combo(self.grid, self.engine_keys, app.options["tts"])
         self._row(self.grid, "opt_engine", 0, self.engine_box)
@@ -2405,7 +2412,9 @@ class Speech(Settings):
         self.tabs.add(cards, text=app.t("speech_tab_cards"))
         self.tabs.add(reading, text=app.t("speech_tab_reading"))
 
-        self.voice_box = self._combo(cards, [None], app.options["voice"])
+        self.voice_keys: list[str | None] = [None]
+        self.read_voice_keys: list[str | None] = [None]
+        self.voice_box = self._combo(cards, self.voice_keys, app.options["voice"])
         self.speed_box = self._combo(cards, self.speed_keys, app.options["speed"], SPEED_KEYS)
         self.expression_keys = list(tts.EXPRESSIONS)
         self.expression_box = self._combo(cards, self.expression_keys, app.options["expression"], EXPRESSION_KEYS)
@@ -2438,7 +2447,7 @@ class Speech(Settings):
         ttk.Label(install, text=app.t("speech_hint"), style="Brand.TLabel").grid(
             row=0, column=0, columnspan=2, sticky="w", pady=(0, 6)
         )
-        self.engine_state = ttk.Label(install, text=self._engine_text())
+        self.engine_state = ttk.Label(install, text="")
         self.engine_state.grid(row=1, column=0, sticky="w")
         self.install_button = ttk.Button(install, text=app.t("speech_install"), command=self._install_engine)
         self.install_button.grid(row=1, column=1, sticky="e", padx=(8, 0))
@@ -2455,7 +2464,7 @@ class Speech(Settings):
             row=0, column=0, columnspan=2, sticky="w", pady=(0, 8)
         )
         self.read_speed_keys: list[str | None] = [None, *self.speed_keys]
-        self.read_voice_box = self._combo(reading, [None], app.options["read_voice"], SAME)
+        self.read_voice_box = self._combo(reading, self.read_voice_keys, app.options["read_voice"], SAME)
         self.read_speed_box = self._combo(reading, self.read_speed_keys, app.options["read_speed"], READ_SPEED_KEYS)
         read_clip_row = ttk.Frame(reading)
         self.read_clip_box = ttk.Entry(read_clip_row, width=22)
@@ -2484,11 +2493,45 @@ class Speech(Settings):
         return self.language().chapter.format(n=1)
 
     def _show_engine(self) -> None:
-        """Refill the voice lists and grey out the rows this engine cannot answer for."""
-        self._fill_voices()
+        """Grey out the rows this engine cannot answer for, then ask it what it has.
+
+        The asking is the slow half of the page: a voice list can mean PowerShell,
+        and whether an engine is installed means starting a Python per candidate
+        interpreter. Asked on the window's own thread, the page sits frozen until
+        every one of them has answered.
+        """
         self._fill_downloads()
         self._show_live()
-        self.engine_state.configure(text=self._engine_text())
+        engine = self._chosen(self.engine_box, self.engine_keys)
+        if engine in (tts.PIPER, tts.COQUI):
+            # Both keep their voices where the app can read them without asking: a
+            # folder of models on disk, or a table the app already holds.
+            self._fill_voices(tts.voices(engine, self.language(), any_language=True))
+        elif engine in (None, "auto", "off"):
+            self._fill_voices([])
+        if engine not in tts.PACKAGES:
+            self.engine_state.configure(text=self.app.t("speech_builtin"))
+        self._ask_engine()
+
+    def _ask_engine(self) -> None:
+        self._probe += 1
+        threading.Thread(
+            target=self._engine_answers,
+            args=(
+                self._probe,
+                self._chosen(self.engine_box, self.engine_keys),
+                self.language(),
+                self.python_box.get().strip() or None,
+            ),
+            daemon=True,
+        ).start()
+
+    def _engine_answers(self, token: int, engine: str, language: Language, python: str | None) -> None:
+        # None means the window already answered that half on its own thread.
+        listed = engine not in (None, "auto", "off", tts.PIPER, tts.COQUI)
+        names = tts.voices(engine, language, any_language=True) if listed else None
+        found = engine not in tts.PACKAGES or tts.available(engine, python)
+        self.events.put(("engine", (token, names, found)))
 
     def _show_live(self) -> None:
         engine = self._chosen(self.engine_box, self.engine_keys)
@@ -2506,30 +2549,27 @@ class Speech(Settings):
         self.download_button.state(["!disabled"] if "download" in live and self.download_keys else ["disabled"])
         self.install_button.state(["!disabled"] if engine in tts.PACKAGES else ["disabled"])
 
-    def _engine_text(self) -> str:
+    def _engine_text(self, found: bool) -> str:
         engine = self._chosen(self.engine_box, self.engine_keys)
         if engine not in tts.PACKAGES:
             return self.app.t("speech_builtin")
-        if tts.available(engine, self.python_box.get().strip() or None):
+        if found:
             return self.app.t("speech_found").format(engine=tts.LABELS[engine])
         return self.app.t("speech_missing").format(engine=tts.LABELS[engine])
 
     def _recheck(self) -> None:
-        self.engine_state.configure(text=self._engine_text())
+        self._ask_engine()
 
-    def _fill_voices(self) -> None:
-        """Every voice the engine has on this machine, on both pages."""
-        engine = self._chosen(self.engine_box, self.engine_keys)
-        names: list[str | None] = [None]
-        if engine not in (None, "auto", "off"):
-            names += tts.voices(engine, self.language(), any_language=True)
-        self.voice_keys = names
-        self.read_voice_keys = names
-        self.voice_box.configure(values=[self._label_text(k) for k in names])
-        self.read_voice_box.configure(values=[self._label_text(k, SAME) for k in names])
-        for box, key, labels in ((self.voice_box, "voice", None), (self.read_voice_box, "read_voice", SAME)):
-            saved = self.app.options[key]
-            box.set(self._label_text(saved if saved in names else None, labels))
+    def _fill_voices(self, names: list[str]) -> None:
+        """Both voice boxes, filled with the voices the engine answered with."""
+        keys: list[str | None] = [None, *names]
+        self.voice_keys = keys
+        self.read_voice_keys = keys
+        self.voice_box.configure(values=[self._label_text(k) for k in keys])
+        self.read_voice_box.configure(values=[self._label_text(k, SAME) for k in keys])
+        for box, option, labels in ((self.voice_box, "voice", None), (self.read_voice_box, "read_voice", SAME)):
+            saved = self.app.options[option]
+            box.set(self._label_text(saved if saved in keys else None, labels))
 
     def _fill_downloads(self) -> None:
         """The Piper voices this language has that are not on the machine yet."""
@@ -2613,7 +2653,15 @@ class Speech(Settings):
             self.events.put((kind, None))
 
     def finished(self, kind: str, result: object) -> None:
-        if kind == "install":
+        if kind == "engine":
+            token, names, found = result
+            self._answered = token
+            if token != self._probe:
+                return  # an answer about an engine the user has already moved on from
+            if names is not None:
+                self._fill_voices(names)
+            self.engine_state.configure(text=self._engine_text(found))
+        elif kind == "install":
             if result and not self.python_box.get().strip():
                 # The app built its own Python: show the user which one now speaks.
                 self.python_box.insert(0, str(result))

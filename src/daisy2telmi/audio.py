@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .extractor import AudioSegment
+from .proc import NO_WINDOW, UTF8
 
 log = logging.getLogger(__name__)
 
@@ -85,7 +86,7 @@ def ffmpeg_failure(args: Sequence[str], returncode: int, stderr: str) -> str:
 
 def _run(args: list[str], description: str) -> None:
     log.debug("running: %s", " ".join(args))
-    result = subprocess.run(args, capture_output=True, text=True)
+    result = subprocess.run(args, capture_output=True, creationflags=NO_WINDOW, **UTF8)
     if result.returncode != 0:
         raise AudioError(f"{description}: {ffmpeg_failure(args, result.returncode, result.stderr or result.stdout)}")
 
@@ -109,7 +110,10 @@ def _header(src: str | Path) -> tuple[float | None, tuple[str, int, str] | None]
     path = Path(src)
     if path not in _headers:
         result = subprocess.run(
-            [require_ffmpeg(), "-hide_banner", "-i", str(path)], capture_output=True, text=True
+            [require_ffmpeg(), "-hide_banner", "-i", str(path)],
+            capture_output=True,
+            creationflags=NO_WINDOW,
+            **UTF8,
         )
         seconds = None
         found = _DURATION.search(result.stderr)
@@ -296,7 +300,8 @@ def loudness(path: str | Path) -> float | None:
     result = subprocess.run(
         [exe, "-hide_banner", "-nostats", "-i", str(path), "-af", "ebur128", "-f", "null", "-"],
         capture_output=True,
-        text=True,
+        creationflags=NO_WINDOW,
+        **UTF8,
     )
     found = re.findall(r"I:\s+(-?[\d.]+) LUFS", result.stderr)
     if not found or found[-1] == "-inf":

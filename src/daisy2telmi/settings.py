@@ -18,6 +18,7 @@ from pathlib import Path
 
 from . import __version__
 from .i18n import LANGUAGES
+from .proc import NO_WINDOW, UTF8
 
 log = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ _WINDOWS_LANGUAGES = {
 def _apple_languages() -> str:
     try:
         return subprocess.run(
-            ["defaults", "read", "-g", "AppleLanguages"], capture_output=True, text=True
+            ["defaults", "read", "-g", "AppleLanguages"], capture_output=True, creationflags=NO_WINDOW, **UTF8
         ).stdout
     except OSError:
         return ""

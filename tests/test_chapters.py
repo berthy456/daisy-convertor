@@ -107,7 +107,7 @@ def test_a_preview_is_played_by_a_player_the_app_started(monkeypatch) -> None:
     app has to own the player: the desktop's opener takes the file and lets go."""
     started: list[list[str]] = []
     monkeypatch.setattr(chapters.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(subprocess, "Popen", lambda args: started.append(list(args)))
+    monkeypatch.setattr(subprocess, "Popen", lambda args, **flags: started.append(list(args)))
 
     monkeypatch.setattr(chapters.sys, "platform", "darwin")
     chapters.open_preview(Path("/tmp/01 One.mp3"))
@@ -124,7 +124,7 @@ def test_a_resumed_clip_asks_for_the_player_that_can_start_mid_clip(monkeypatch)
     even on macOS, and says where to pick it up."""
     started: list[list[str]] = []
     monkeypatch.setattr(chapters.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(subprocess, "Popen", lambda args: started.append(list(args)))
+    monkeypatch.setattr(subprocess, "Popen", lambda args, **flags: started.append(list(args)))
     monkeypatch.setattr(chapters.sys, "platform", "darwin")
 
     chapters.open_preview(Path("/tmp/01 One.mp3"), 12.5)
@@ -139,14 +139,14 @@ def test_a_preview_falls_back_to_the_desktop_when_there_is_no_player(monkeypatch
     started: list[list[str]] = []
     monkeypatch.setattr(chapters.shutil, "which", lambda name: None)
     monkeypatch.setattr(chapters.sys, "platform", "linux")
-    monkeypatch.setattr(subprocess, "Popen", lambda args: started.append(list(args)))
+    monkeypatch.setattr(subprocess, "Popen", lambda args, **flags: started.append(list(args)))
 
     assert chapters.open_preview(Path("/tmp/01 One.mp3")) is None
     assert started == [["xdg-open", "/tmp/01 One.mp3"]]
 
 
 def test_a_machine_with_no_way_to_play_says_so(monkeypatch) -> None:
-    def refuse(args):
+    def refuse(args, **flags):
         raise OSError("no default player")
 
     monkeypatch.setattr(chapters.shutil, "which", lambda name: None)
@@ -191,7 +191,7 @@ class _Player:
 
 
 def test_a_machine_with_no_player_at_all_says_so(monkeypatch) -> None:
-    def refuse(args):
+    def refuse(args, **flags):
         raise OSError("no player")
 
     monkeypatch.setattr(chapters.sys, "platform", "linux")

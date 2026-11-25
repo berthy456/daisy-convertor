@@ -22,6 +22,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .audio import ffmpeg_failure, require_ffmpeg
 from .i18n import language
+from .proc import NO_WINDOW, UTF8
 
 TITLE_IMAGE = "title.png"
 COVER_IMAGE = "cover.png"
@@ -549,7 +550,7 @@ def card_label(
 
 
 def _run(args: list[str], description: str) -> None:
-    result = subprocess.run(args, capture_output=True, text=True)
+    result = subprocess.run(args, capture_output=True, creationflags=NO_WINDOW, **UTF8)
     if result.returncode != 0:
         raise ImageError(
             f"{description}: {ffmpeg_failure(args, result.returncode, result.stderr or result.stdout)}"

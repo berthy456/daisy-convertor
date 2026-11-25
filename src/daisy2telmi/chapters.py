@@ -20,6 +20,7 @@ from typing import Sequence
 
 from . import audio
 from .extractor import Book, Chapter
+from .proc import NO_WINDOW
 
 log = logging.getLogger(__name__)
 
@@ -164,7 +165,7 @@ def open_preview(path: Path, resume: float = 0.0) -> subprocess.Popen | None:
             if resume > 0:
                 args += ["-ss", f"{resume:.3f}"]
             args.append(str(path))
-        return subprocess.Popen(args)
+        return subprocess.Popen(args, creationflags=NO_WINDOW)
     if sys.platform == "win32":
         try:
             os.startfile(str(path))  # type: ignore[attr-defined]
@@ -172,7 +173,7 @@ def open_preview(path: Path, resume: float = 0.0) -> subprocess.Popen | None:
             raise ChapterError(f"could not open {path.name}: {exc}")
         return None
     try:
-        subprocess.Popen(["xdg-open", str(path)])
+        subprocess.Popen(["xdg-open", str(path)], creationflags=NO_WINDOW)
         return None
     except OSError:
         raise ChapterError(f"no player on this machine: play {path} yourself")

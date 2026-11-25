@@ -20,6 +20,7 @@ from uuid import UUID
 
 from . import audio
 from .lunii import IMAGE_EXTS, LuniiError, _media, build_story_json
+from .proc import NO_WINDOW
 
 FORMAT_VERSION = 1
 HEADER_SIZE = 0x200
@@ -46,7 +47,7 @@ def _records(stems: list[str]) -> bytes:
 
 def _ffmpeg(args: list[str], what: str) -> bytes:
     """Run ffmpeg, and say which picture failed when it does not."""
-    result = subprocess.run(args, capture_output=True)
+    result = subprocess.run(args, capture_output=True, creationflags=NO_WINDOW)
     if result.returncode != 0:
         raise LuniiError(
             f"{what}: {audio.ffmpeg_failure(args, result.returncode, result.stderr.decode('utf-8', 'replace'))}"

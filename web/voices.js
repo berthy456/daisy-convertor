@@ -2,13 +2,16 @@
 //
 // A browser tab can play speech but cannot capture it into a file, so the page
 // ships the phrases instead of synthesising them. `tools/make_web_voices.py`
-// regenerates them with espeak-ng.
+// regenerates them with Chatterbox or espeak-ng; the bare numbers and the word
+// before them are espeak-ng either way, because Chatterbox loses its place on a
+// one-word phrase.
 //
 // What a card says is put together from those pieces: the number, with or
 // without the word chapter, then the total in the language's own words, then
-// the question that invites the listener to go on. The three pieces of the
-// total come from the language's own "{n} of {total}" pattern, so a language
-// that puts the word after the number, or before both, is recorded as it speaks.
+// the question that invites the listener to go on. The total is one recording
+// per number — " of 20", " 章，共 20 章" — taken from the language's own
+// "{n} of {total}" pattern, so a language that names the part after the total
+// says it as it speaks.
 
 import { concatMp3 } from "./mp3.js";
 
@@ -30,16 +33,23 @@ export function numberPath(language, number) {
   return inRange(number) ? `./voices/${language}/n-${String(number).padStart(2, "0")}.mp3` : null;
 }
 
-/** One of the words around the numbers: "of", or what a language puts there. */
-export function fragmentPath(language, which) {
-  return `./voices/${language}/of-${which}.mp3`;
+/** The word a language puts before its chapter number, for a card that does not say it. */
+export function prefixPath(language) {
+  return `./voices/${language}/of-pre.mp3`;
+}
+
+/** The recording naming the total: " of 20", "，共 20 章". */
+export function totalPath(language, count) {
+  return inRange(count) ? `./voices/${language}/of-${String(count).padStart(2, "0")}.mp3` : null;
 }
 
 async function load(path) {
   if (clips.has(path)) return clips.get(path);
   const response = await fetch(path);
-  if (!response.ok) return null;
-  const data = new Uint8Array(await response.arrayBuffer());
+  // A missing clip is remembered too: English and Turkish have no word before
+  // their number, so a card asked without the word would ask for of-pre.mp3 and
+  // get a 404 on every single card.
+  const data = response.ok ? new Uint8Array(await response.arrayBuffer()) : null;
   clips.set(path, data);
   return data;
 }
@@ -56,7 +66,7 @@ export async function cardAudio(language, number, options = {}, get = load) {
   // word even when the card was asked not to say it, because without it the
   // phrase is not that language any more.
   if (!word) {
-    const before = await get(fragmentPath(language, "pre"));
+    const before = await get(prefixPath(language));
     if (before !== null) pieces.push(before);
   }
   const said = word ? clipPath(language, number) : numberPath(language, number);
@@ -64,18 +74,10 @@ export async function cardAudio(language, number, options = {}, get = load) {
   if (numberClip === null) return null;
   pieces.push(numberClip);
 
-  const totalPath = count === null ? null : numberPath(language, count);
-  if (totalPath !== null) {
-    // A language whose total needs no word of its own — English's " of " is the
-    // only sound between them — still says the number.
-    const middle = await get(fragmentPath(language, "mid"));
-    const total = await get(totalPath);
-    if (total !== null) {
-      if (middle !== null) pieces.push(middle);
-      pieces.push(total);
-      const after = await get(fragmentPath(language, "post"));
-      if (after !== null) pieces.push(after);
-    }
+  const total = count === null ? null : totalPath(language, count);
+  if (total !== null) {
+    const named = await get(total);
+    if (named !== null) pieces.push(named);
   }
 
   if (prompt) {

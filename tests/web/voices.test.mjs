@@ -51,19 +51,14 @@ test("a language that puts its word before the number keeps it", async () => {
   assert.deepEqual(asked, ["./voices/ar/of-pre.mp3", "./voices/ar/n-04.mp3"]);
 });
 
-test("the total goes between the words the language puts around it", async () => {
+test("the total is one recording that names it", async () => {
   const silence = new Uint8Array(await readFile("web/silence.mp3"));
   const asked = [];
   await cardAudio("fr", 4, { count: 12 }, async (path) => {
     asked.push(path);
-    return path.endsWith("of-post.mp3") ? null : silence;
+    return silence;
   });
-  assert.deepEqual(asked, [
-    "./voices/fr/04.mp3",
-    "./voices/fr/of-mid.mp3",
-    "./voices/fr/n-12.mp3",
-    "./voices/fr/of-post.mp3",
-  ]);
+  assert.deepEqual(asked, ["./voices/fr/04.mp3", "./voices/fr/of-12.mp3"]);
 });
 
 test("a total beyond the recorded range is left out rather than half said", async () => {
@@ -84,6 +79,9 @@ test("every language ships its numbers, its total and its prompt", async () => {
       "n-01.mp3",
       "n-07.mp3",
       `n-${String(MAX_CARD).padStart(2, "0")}.mp3`,
+      "of-01.mp3",
+      "of-12.mp3",
+      `of-${String(MAX_CARD).padStart(2, "0")}.mp3`,
       "next.mp3",
     ]) {
       const bytes = await readFile(`web/voices/${code}/${name}`);

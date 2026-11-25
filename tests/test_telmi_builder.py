@@ -18,6 +18,7 @@ from daisy2telmi.telmi_builder import (
     build_nodes,
     build_notes,
     build_story,
+    narrate,
     story_dir_name,
     story_uuid,
 )
@@ -319,3 +320,26 @@ def test_each_spoken_card_is_named_after_its_chapter(tmp_path, monkeypatch) -> N
     cards, spoken = build_card_audio(3, Announce(language="fr"), tmp_path)
     assert cards == ["c0.mp3", "c1.mp3", "c2.mp3"]
     assert spoken == 3
+
+
+def test_the_book_text_can_be_read_by_another_voice_than_the_cards() -> None:
+    """A card says a few words; a chapter is a page. The voice wanted for one is
+    not always the voice wanted for the other."""
+    split = Announce(voice="card", clip="card.wav", speed="slow", read_voice="reader", read_speed="fast")
+    assert split.reading() == ("reader", "card.wav", "fast")
+
+
+def test_the_book_text_falls_back_to_the_card_settings() -> None:
+    assert Announce(voice="card", clip="card.wav", speed="slow").reading() == ("card", "card.wav", "slow")
+
+
+def test_the_reading_voice_is_the_one_the_book_is_spoken_with(tmp_path, monkeypatch) -> None:
+    asked: dict = {}
+
+    def fake_narrate(text, lang_code, dest, **options):
+        asked.update(options)
+        Path(dest).write_bytes(b"mp3")
+
+    monkeypatch.setattr(tts, "narrate", fake_narrate)
+    narrate("Une phrase.", Announce(voice="card", read_voice="reader"), tmp_path / "s0.mp3")
+    assert asked["voice"] == "reader", "the card's voice is not the one a chapter is read with"

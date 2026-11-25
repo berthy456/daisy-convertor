@@ -42,6 +42,11 @@ DEFAULTS: dict = {
     "python": None,
     "clip": None,
     "device": "auto",
+    # A whole chapter is not read the way a card's few words are. Empty takes the
+    # card's engine, voice, clip and speed.
+    "read_voice": None,
+    "read_clip": None,
+    "read_speed": None,
     "input_dir": None,
     "output_dir": None,
 }

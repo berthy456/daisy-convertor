@@ -90,6 +90,16 @@ class Announce:
     clip: str | None = None
     device: str = tts.AUTO
     speed: str = "normal"
+    # The book's own text, when it has to be spoken rather than read off the pack,
+    # can be given a voice of its own: the short phrase a card says and a page of
+    # prose are not read the same way. Each one falls back to the card's setting.
+    read_voice: str | None = None
+    read_clip: str | None = None
+    read_speed: str | None = None
+
+    def reading(self) -> tuple[str | None, str | None, str]:
+        """The voice, the reference clip and the speed the book's text gets."""
+        return self.read_voice or self.voice, self.read_clip or self.clip, self.read_speed or self.speed
 
     def phrase(self, number: int, total: int | None = None, title: str = "") -> str | None:
         """What the card says for one part.
@@ -290,18 +300,19 @@ def narrate(text: str, announce: Announce | None, dest: Path) -> None:
     so the failure is raised rather than logged.
     """
     voice = announce or Announce()
+    read_voice, read_clip, read_speed = voice.reading()
     try:
         tts.narrate(
             text,
             voice.language,
             dest,
             engine=voice.engine,
-            voice=voice.voice,
+            voice=read_voice,
             command=voice.command,
             python=voice.python,
-            clip=voice.clip,
+            clip=read_clip,
             device=voice.device,
-            speed=voice.speed,
+            speed=read_speed,
         )
     except tts.TtsError as exc:
         raise StoryError(f"this pack has no audio, and its text cannot be spoken: {exc}") from exc

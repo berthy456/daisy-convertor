@@ -872,6 +872,16 @@ def test_the_card_total_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -
     assert hidden.show_total is False
 
 
+def test_the_reading_voice_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    settings.save({**settings.DEFAULTS, "read_voice": "saved-reader", "read_speed": "slow"})
+
+    saved = cli.announce_options(cli._parse_args(["pack.zip", "out"]))
+    forced = cli.announce_options(cli._parse_args(["pack.zip", "out", "--read-voice", "flag", "--read-speed", "fast"]))
+    assert (saved.read_voice, saved.read_speed) == ("saved-reader", "slow")
+    assert (forced.read_voice, forced.read_speed) == ("flag", "fast")
+
+
 def test_auto_takes_the_apple_gpu_when_there_is_one() -> None:
     class Mps:
         class cuda:

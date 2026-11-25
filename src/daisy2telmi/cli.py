@@ -182,6 +182,20 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="how fast the cards are read; espeak-ng, Piper, say and Windows speech all take it",
     )
     speech.add_argument(
+        "--read-voice",
+        help="voice for the book's own text, where a pack carries none: a whole chapter is not read "
+        "the way a card's few words are, so it often wants a different voice",
+    )
+    speech.add_argument(
+        "--read-clip",
+        help="reference clip the book's text is read with, for --tts chatterbox or --tts coqui",
+    )
+    speech.add_argument(
+        "--read-speed",
+        choices=tts.SPEEDS,
+        help="how fast the book's own text is read",
+    )
+    speech.add_argument(
         "--tts-python",
         help="interpreter the engine runs in, for a Python where its package was pip-installed",
     )
@@ -235,6 +249,9 @@ def announce_options(args: argparse.Namespace) -> Announce:
         clip=args.tts_clip or saved["clip"],
         device=args.tts_device or saved["device"],
         speed=args.tts_speed or saved["speed"],
+        read_voice=args.read_voice or saved["read_voice"],
+        read_clip=args.read_clip or saved["read_clip"],
+        read_speed=args.read_speed or saved["read_speed"],
     )
 
 

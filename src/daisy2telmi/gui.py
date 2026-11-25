@@ -1143,6 +1143,9 @@ class App:
             clip=self.options["clip"],
             device=self.options["device"],
             speed=self.options["speed"],
+            read_voice=self.options["read_voice"],
+            read_clip=self.options["read_clip"],
+            read_speed=self.options["read_speed"],
         )
 
     def _follow_pack(self, *_: object) -> None:

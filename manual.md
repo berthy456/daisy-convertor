@@ -76,6 +76,9 @@ Chapter card speech:
 | `--tts-python` | | the interpreter that has `piper-tts`, `coqui-tts` or `chatterbox-tts` |
 | `--tts-device` | `auto` `cpu` `mps` `cuda` | `auto` takes the fastest device for Coqui and Chatterbox, and the CPU for Piper; a forced device the machine lacks stops the run |
 | `--tts-command` | | a template with `{text}` `{out}` `{lang}` `{locale}` `{voice}` |
+| `--read-voice` | | the voice the book's own text is spoken with, on a pack that carries no audio. Empty takes `--tts-voice` |
+| `--read-clip` | | the reference clip the book's text is read with. Empty takes `--tts-clip` |
+| `--read-speed` | `slow` `normal` `fast` | how fast the book's text is read. Empty takes `--tts-speed` |
 
 Cards get a spoken number only when the cut is by chapter. At paragraph or sentence level a card plays the opening seconds of its own part instead, which is the only way to tell hundreds of cards apart.
 

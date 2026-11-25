@@ -62,11 +62,26 @@ jobs:
           $zip = (Get-ChildItem dist\daisy-convertor-*-windows-*.zip).FullName
           Expand-Archive -Path $zip -DestinationPath C:\smoke -Force
           $exe = "C:\smoke\daisy-convertor\daisy-convertor.exe"
-          cmd /c "`"$exe`" --version"
+          # A windowed build carries no console of its own: launcher.py asks the
+          # terminal it was started from back. Nothing written back means the log
+          # went nowhere and a `-v` run is unreadable on that machine.
+          $seen = cmd /c "`"$exe`" --version"
           if ($LASTEXITCODE) { Write-Error "the exe did not run"; exit 1 }
+          if (-not ($seen -match "daisy-convertor")) { Write-Error "the exe wrote nothing to its terminal"; exit 1 }
           cmd /c "`"$exe`" gon-ruby-mp3.zip C:\smoke\story --announce off --cover src\daisy2telmi\assets\icon.png"
           if ($LASTEXITCODE) { Write-Error "the exe could not convert the pack"; exit 1 }
           $count = (Get-ChildItem C:\smoke\story\*\audios\s*.mp3).Count
+          if ($count -ne 6) { Write-Error "expected 6 scene clips, found $count"; exit 1 }
+      # Opening a pack in the window starts a cover lookup on its own thread, and
+      # that is where the Windows reports died. The lookup is a suggestion, so the
+      # test asks for no cover found - only that the exe survives it and still
+      # writes the story.
+      - name: Smoke test the cover lookup
+        run: |
+          $exe = "C:\smoke\daisy-convertor\daisy-convertor.exe"
+          cmd /c "`"$exe`" gon-ruby-mp3.zip C:\smoke\lookup --find-cover --announce off"
+          if ($LASTEXITCODE) { Write-Error "the exe crashed while looking the cover up"; exit 1 }
+          $count = (Get-ChildItem C:\smoke\lookup\*\audios\s*.mp3).Count
           if ($count -ne 6) { Write-Error "expected 6 scene clips, found $count"; exit 1 }
       - uses: actions/upload-artifact@v4
         with:
@@ -106,6 +121,15 @@ jobs:
           dist/daisy-convertor gon-ruby-mp3.zip /tmp/smoke --announce prompt --language fr
           count=$(ls /tmp/smoke/*/audios/c*.mp3 | wc -l)
           [ "$count" -eq 6 ] || { echo "expected 6 spoken cards, found $count"; exit 1; }
+      # Looking a cover up is the one part of a conversion that needs the network,
+      # and the frozen binary has to trust a certificate with nothing installed on
+      # the machine. No cover is asserted — the point is that a lookup which finds
+      # nothing, or nothing answers, must still leave a story.
+      - name: Smoke test the cover lookup
+        run: |
+          dist/daisy-convertor gon-ruby-mp3.zip /tmp/lookup --find-cover --announce off
+          count=$(ls /tmp/lookup/*/audios/s*.mp3 | wc -l)
+          [ "$count" -eq 6 ] || { echo "expected 6 scene clips, found $count"; exit 1; }
       # A sentence picture is drawn with a font PyInstaller has to be told about, so
       # a build that dropped it would still convert and still play — with blank screens.
       - name: Smoke test the sentence pictures
@@ -177,6 +201,15 @@ jobs:
                      usr/share/icons/hicolor/16x16/apps/daisy-convertor.png; do
             test -f "squashfs-root/$one" || { echo "the AppImage carries no $one"; exit 1; }
           done
+          # The AppImage is what the user runs, so it is asked to convert a book
+          # from inside itself: the ffmpeg it carries, and the cover lookup, which
+          # is the only part of a run that needs the network and had never been
+          # asked of the packaged file. No cover is asserted — a lookup that finds
+          # nothing must still leave a story.
+          ./squashfs-root/AppRun "$GITHUB_WORKSPACE/gon-ruby-mp3.zip" /tmp/appimage-story \
+            --find-cover --announce off
+          count=$(ls /tmp/appimage-story/*/audios/s*.mp3 | wc -l)
+          [ "$count" -eq 6 ] || { echo "expected 6 scene clips, found $count"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
           name: daisy-convertor-appimage

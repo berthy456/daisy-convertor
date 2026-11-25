@@ -283,7 +283,7 @@ python build_binary.py
 
 Produces `dist\daisy-convertor-<version>-windows-<arch>.zip`, holding the folder the exe lives in (`dist/daisy-convertor` on macOS and Linux, where the packaging steps name the file the user downloads). `lxml.etree` and `lxml._elementpath` are passed as hidden imports; PyInstaller's own lxml hook does the rest.
 
-Windows is `--onedir --windowed`: a one-file exe unpacks its whole payload, ffmpeg being most of it, into a temporary folder on every start, and a console build opens a terminal the GUI does not use. `launcher.py` gives `sys.stdout` and `sys.stderr` a devnull when there is no console. `ffmpeg` and `ffplay` are excluded from UPX.
+Windows is `--onedir --windowed`: a one-file exe unpacks its whole payload, ffmpeg being most of it, into a temporary folder on every start, and a console build opens a terminal the GUI does not use. A windowed build has no terminal even when it is started from one, so `launcher.py` asks the parent's back (`AttachConsole`, then `CONOUT$`) and `-v` writes into it; with no terminal to attach — a double-click — the log goes to the window's log frame instead of a devnull. `ffmpeg` and `ffplay` are excluded from UPX.
 
 `assets/icon.svg` is the one drawing; `tools/make_icons.py` redraws `assets/icon.ico`, `assets/icon.icns` and the three PNGs in `src/daisy2telmi/assets` from it, and those are committed because no build runner has an SVG rasteriser. `build_binary.py` passes the `.icns` on macOS and the `.ico` on Windows, and unpacks `icon.png` next to `gui.py`, which is where the window looks for it; `tools/make_appimage.py` uses it for the desktop file. Tk cannot scale a photo image, so the header's 64-pixel mark and the status bar's 16-pixel one are separate files.
 

@@ -96,8 +96,8 @@ def _controls(app: gui.App) -> list[str]:
 
 def test_the_window_draws_its_own_bar(app: gui.App) -> None:
     """The bar is the app's own, so its controls are there on every platform and in a
-    frameless window too: a rounded card, the mark, its two lines of words with the
-    version beside the name, the controls."""
+    frameless window too: a rounded card, the mark, the name with the version beside
+    it, the controls."""
     app.root.update()
     bar = app.bar
     kinds = [bar.type(item) for item in bar.find_all()]
@@ -108,8 +108,27 @@ def test_the_window_draws_its_own_bar(app: gui.App) -> None:
     assert {bar.itemcget(item, "text") for item in _bar_items(app, "text")} == {
         app.t("app_title"),
         gui.__version__,
-        app.t("app_headline"),
     }
+
+
+def test_the_bar_is_a_card_in_the_top_right_corner(app: gui.App) -> None:
+    """The two paths stand to the bar's left, so the bar is a card in the corner and not
+    a band across the window: the height it does not take is the window's."""
+    app.root.geometry("1100x600")
+    app.root.update()
+    assert app.bar.winfo_width() <= gui.BAR_WIDTH < app.root.winfo_width() // 2
+    assert app.bar.winfo_height() <= gui.BAR_HEIGHT
+    right = app.bar.winfo_rootx() + app.bar.winfo_width() - app.root.winfo_rootx()
+    assert right > app.root.winfo_width() - 40, "the card stands at the window's right edge"
+
+
+def test_the_headline_stands_beside_the_brand(app: gui.App) -> None:
+    """What the window is for is said under the work, not inside the corner card the
+    controls live in."""
+    app.root.update()
+    assert app._labels["app_headline"].master is app._labels["brand"].master
+    in_bar = {app.bar.itemcget(item, "text") for item in _bar_items(app, "text")}
+    assert app.t("app_headline") not in in_bar
 
 
 def test_the_bar_card_holds_its_mark(app: gui.App) -> None:
@@ -144,10 +163,11 @@ def test_the_bar_controls_stand_at_its_right_edge(app: gui.App) -> None:
 def test_the_bar_moves_its_controls_when_the_window_widens(app: gui.App) -> None:
     app.root.geometry("700x600")
     app.root.update()
-    narrow = _bar_boxes(app)["close"]
+    narrow = app.bar.winfo_rootx() + _bar_boxes(app)["close"]
     app.root.geometry("1100x600")
     app.root.update()
-    assert _bar_boxes(app)["close"] > narrow, "the controls follow the edge they belong to"
+    wide = app.bar.winfo_rootx() + _bar_boxes(app)["close"]
+    assert wide > narrow, "the controls follow the edge they belong to"
 
 
 def test_the_bar_enlarges_the_window_and_puts_it_back(app: gui.App) -> None:
@@ -182,8 +202,9 @@ def test_the_bar_follows_the_language(app: gui.App) -> None:
     app.language_var.set("fr")
     app._relabel()
     texts = {app.bar.itemcget(item, "text") for item in _bar_items(app, "text")}
-    assert app.t("app_headline") in texts
-    assert english not in texts
+    assert app.t("app_title") in texts
+    assert app._labels["app_headline"].cget("text") == app.t("app_headline")
+    assert app._labels["app_headline"].cget("text") != english
 
 
 def test_a_frameless_window_drops_the_control_it_cannot_honour(app: gui.App) -> None:
@@ -605,9 +626,10 @@ def test_the_folder_button_hands_back_the_folder_being_shown(app: gui.App, tmp_p
 
 def test_the_player_is_chosen_before_the_cover(app: gui.App) -> None:
     """The player decides the size of every picture, so it is asked before the cover."""
-    player_row = int(app.format_box.master.grid_info()["row"])
-    cover_row = int(app._labels["cover_label"].master.grid_info()["row"])
-    assert player_row < cover_row
+    player = app.format_box.grid_info()
+    cover = app._labels["cover_label"].grid_info()
+    assert player["in"] is cover["in"], "the two stand in the same column of fields"
+    assert int(player["row"]) < int(cover["row"])
 
 
 def test_conversion_log_lines_reach_the_window(app: gui.App) -> None:
@@ -1563,12 +1585,11 @@ def test_an_mp3_pack_hides_the_picture_and_the_emulator(app: gui.App) -> None:
     """A plain player is given no cards, so the window has nothing to draw or preview."""
     app.format_var.set("mp3")
     app._show_cover()
-    assert not app.crop_frame.grid_info(), "the picture frame has nothing to show"
-    assert not app.crop_side.grid_info(), "nor its knobs"
+    assert not app.crop_preview.grid_info(), "the picture frame and its knobs have nothing to show"
     assert app.test_button.instate(["disabled"]), "there is no story to test"
     app.format_var.set("telmi")
     app._show_cover()
-    assert app.crop_frame.grid_info(), "and the frame comes back for a story-teller"
+    assert app.crop_preview.grid_info(), "and the frame comes back for a story-teller"
     assert app.test_button.instate(["!disabled"])
 
 
@@ -1584,11 +1605,11 @@ def test_the_negative_is_offered_for_the_grey_screen_only(app: gui.App) -> None:
 
 def test_the_crop_knobs_stand_beside_the_frame(app: gui.App) -> None:
     """The choice is made on the picture, so what changes it sits next to it."""
-    frame = app.crop_frame.grid_info()
-    side = app.negative_box.master
-    beside = side.grid_info()
-    assert int(frame["column"]) == 0 and int(beside["column"]) == 1, "the knobs are to the right of the frame"
-    assert beside["row"] == frame["row"], "the same row as the frame"
+    app.root.update()
+    frame, side = app.crop_frame, app.negative_box.master
+    gap = side.winfo_x() - (frame.winfo_x() + frame.winfo_width())
+    assert 0 <= gap <= 24, "the knobs stand next to the frame, not in the next column over"
+    assert side.winfo_y() == frame.winfo_y(), "the top of the frame is where they start"
     assert all(box.master is side for box in app.crop_boxes.values()), "the three bands too"
     assert app.crop_zoom.master.master is side, "and the zoom"
     assert app.captions_box.master is side, "and the words on screen"
@@ -1705,9 +1726,15 @@ def test_a_cover_is_drawn_under_the_crop_frame(app: gui.App, tmp_path) -> None:
     cover.write_bytes(images.placeholder_png(300, 900))
     app.cover_var.set(str(cover))
     assert app.crop_frame.itemcget(app._crop_item, "image"), "the frame carries the cover"
-    # A 300x900 cover under a 720x540 frame is drawn 720x2160 to fill it, so the
-    # frame shows 540 of its 2160 lines; centred, it starts 810 lines in.
-    assert tuple(app.crop_frame.coords(app._crop_item)) == (0, -810), "the frame sits in the middle of the cover"
+    # A 300x900 cover under a 320x240 frame is drawn 320x960 to fill it, so the frame
+    # shows 240 of its 960 lines; centred, it starts 360 lines in.
+    frame = (int(app.crop_frame.cget("width")), int(app.crop_frame.cget("height")))
+    drawn = (app._crop_photo.width(), app._crop_photo.height())
+    assert drawn == (frame[0], round(900 * frame[0] / 300)), "the cover fills the frame's width"
+    assert tuple(app.crop_frame.coords(app._crop_item)) == (
+        0,
+        -round((drawn[1] - frame[1]) / 2),
+    ), "the frame sits in the middle of the cover"
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
@@ -1734,7 +1761,9 @@ def test_a_moved_frame_goes_back_to_the_band_it_is_clicked_onto(app: gui.App, tm
     app.crop_var.set("bottom")
     app._pick_crop()
 
-    assert app.crop_frame.coords(app._crop_item)[1] == -1620, "the frame sits on the band's edge"
+    frame = (int(app.crop_frame.cget("width")), int(app.crop_frame.cget("height")))
+    drawn = (app._crop_photo.width(), app._crop_photo.height())
+    assert app.crop_frame.coords(app._crop_item)[1] == -(drawn[1] - frame[1]), "the frame sits on the band's edge"
 
 
 def test_the_frame_is_drawn_before_a_cover_exists(app: gui.App) -> None:
@@ -1742,16 +1771,36 @@ def test_the_frame_is_drawn_before_a_cover_exists(app: gui.App) -> None:
     fitted to, so it is on screen from the start and not only once a cover is picked."""
     width = int(app.crop_frame.cget("width"))
     height = int(app.crop_frame.cget("height"))
-    assert (width, height) == images.preview_size(app.format_var.get(), gui.CROP_WIDTH)
+    assert (width, height) == images.preview_size(app.format_var.get(), app._crop_width)
     assert app.crop_frame.cget("background") == images.band_colour("colour")
     assert not app.crop_frame.itemcget(app._crop_item, "image"), "no cover, so no picture"
 
     app.format_var.set("lunii")
     app._pick_format()
     assert (int(app.crop_frame.cget("width")), int(app.crop_frame.cget("height"))) == images.preview_size(
-        "lunii", gui.CROP_WIDTH
+        "lunii", app._crop_width
     )
     assert app.crop_frame.cget("background") == images.band_colour("bw")
+
+
+def test_the_crop_frame_keeps_the_players_own_shape(app: gui.App) -> None:
+    """The frame is the chosen machine's screen, at a width the window can spare: a
+    frame wider than any screen it previews made the window wider and taller than a
+    laptop, and Tk cuts what hangs past the bottom instead of shrinking it."""
+    scene = images.SCREENS[app.format_var.get()][0]
+    width = int(app.crop_frame.cget("width"))
+    height = int(app.crop_frame.cget("height"))
+    assert width <= gui.CROP_WIDTH
+    assert round(height / width) == round(scene[1] / scene[0]), "the frame is the screen's own shape"
+
+
+def test_the_crop_frame_shrinks_on_a_short_screen(app: gui.App, monkeypatch) -> None:
+    """Tk cuts what hangs past the bottom of the screen instead of shrinking the
+    window, and the buttons and the log are what hangs there."""
+    monkeypatch.setattr(app.root, "winfo_screenheight", lambda: 700)
+    assert app._crop_room() == 700 - gui.CROP_ROOM
+    monkeypatch.setattr(app.root, "winfo_screenheight", lambda: 300)
+    assert app._crop_room() == gui.CROP_MIN, "the frame never shrinks past a usable preview"
 
 
 def test_the_negative_turns_the_preview_inside_out(app: gui.App) -> None:

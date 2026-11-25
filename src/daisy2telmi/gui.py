@@ -59,11 +59,14 @@ def engine_keys() -> list[str]:
     """
     return ["auto", *(n for n in tts.ENGINES if n not in (tts.AUTO, tts.OFF)), "off"]
 
-# The crop frame is drawn this wide, whatever the player's ratio: the same room to
-# move the cover in on every machine, and the web page draws it at the same size.
-# It is wider than any screen it previews, so the cover's own lettering can be read
-# in it while it is being placed.
-CROP_WIDTH = 720
+# The crop frame is the chosen player's own screen, drawn at its own size: what sits
+# inside it is what the card carries. A frame wider than any screen it previews made
+# the window 1200 wide and pushed the log and the buttons off a small one, so the
+# width is what the screen leaves over the rest of the window, and the web page draws
+# its canvas at the same size.
+CROP_WIDTH = 320
+CROP_MIN = 200
+CROP_ROOM = 420
 
 # Tk has no theme of its own that looks the same on the three platforms, so the
 # window brings its own: one flat set of colours, drawn by `clam` everywhere. The
@@ -227,17 +230,19 @@ def open_url(url: str) -> bool:
 
 # The window's own bar: the mark, what the window is for, and the three controls that
 # stand in for a system bar's. Tk cannot round the corners of a window it does not
-# draw, so the bar draws a rounded card of its own and sets its controls in it.
-BAR_WIDTH = 900
+# draw, so the bar draws a rounded card of its own and sets its controls in it. It is
+# a card in the top right corner, not a band across the window: the width it does not
+# use is where the two paths stand, and the height it does not use is the window's.
+BAR_WIDTH = 380
 BAR_INSET = 10
-BAR_RADIUS = 14
-BAR_MARK = 112
+BAR_RADIUS = 12
+BAR_MARK = 64
 # The card has to be taller than the mark it holds, or the mark spills past its
-# rounded edge: 140 - 2 * 10 = 120 against a 112 mark.
-BAR_HEIGHT = 140
-BAR_BUTTON = 30
-BAR_BUTTON_RADIUS = 9
-BAR_GAP = 8
+# rounded edge: 84 - 2 * 10 = 64 against a 64 mark.
+BAR_HEIGHT = 84
+BAR_BUTTON = 26
+BAR_BUTTON_RADIUS = 8
+BAR_GAP = 6
 BAR_HOVER = "#565274"
 BAR_CLOSE_HOVER = "#8f3b34"
 
@@ -249,6 +254,10 @@ MIN_WIDTH = 900
 MIN_HEIGHT = 560
 WINDOW_MARGIN = 40
 
+# Every box the window asks the user to fill in is the same width, so the fields read
+# as one column instead of a pile of rows of their own.
+FIELD_WIDTH = 34
+
 
 class TitleBar(tk.Canvas):
     """The window's own bar: the mark, its name, and the controls it needs.
@@ -259,9 +268,9 @@ class TitleBar(tk.Canvas):
     mark and the name.
     """
 
-    def __init__(self, app: App) -> None:
+    def __init__(self, app: App, parent: tk.Widget) -> None:
         super().__init__(
-            app.root,
+            parent,
             width=BAR_WIDTH,
             height=BAR_HEIGHT,
             background=PAPER,
@@ -293,15 +302,15 @@ class TitleBar(tk.Canvas):
         )
         if self.mark:
             self.create_image(BAR_INSET + BAR_RADIUS, height // 2, image=self.mark, anchor="w")
-        left = BAR_INSET + BAR_RADIUS + BAR_MARK + 16
-        self._title_y = height // 2 - 11
+        left = BAR_INSET + BAR_RADIUS + BAR_MARK + 14
+        self._title_y = height // 2
         self._words["title"] = self.create_text(
             left,
             self._title_y,
             anchor="w",
             text=self.app.t("app_title"),
             fill=INK,
-            font=("TkDefaultFont", 15, "bold"),
+            font=("TkDefaultFont", 13, "bold"),
         )
         title = self.bbox(self._words["title"])
         self._words["version"] = self.create_text(
@@ -312,14 +321,6 @@ class TitleBar(tk.Canvas):
             fill=MUTED,
             font=("TkDefaultFont", 11),
         )
-        self._words["headline"] = self.create_text(
-            left,
-            height // 2 + 11,
-            anchor="w",
-            text=self.app.t("app_headline"),
-            fill=MUTED,
-            font=("TkDefaultFont", 10),
-        )
         self._controls(width, height)
         if self.frameless:
             # With no system bar to pull on, the bar's own card and words move the window.
@@ -329,7 +330,6 @@ class TitleBar(tk.Canvas):
 
     def relabel(self) -> None:
         self.itemconfigure(self._words["title"], text=self.app.t("app_title"))
-        self.itemconfigure(self._words["headline"], text=self.app.t("app_headline"))
         title = self.bbox(self._words["title"])
         if title:
             self.coords(self._words["version"], title[2] + 10, self._title_y)
@@ -681,6 +681,7 @@ class App:
         self._test_key: tuple | None = None
         self._on_done = None
         self._labels: dict[str, tk.Widget] = {}
+        self._crop_width = self._crop_room()
         self._build()
         self._size_window()
         if not self.options.get("input_dir") and not self.options.get("output_dir"):
@@ -712,102 +713,116 @@ class App:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(1, weight=1)
 
-        # The window's own bar along the top — the mark, its name and its controls —
-        # and the name again along the bottom: the work itself sits between them.
-        self.bar = TitleBar(self)
-        self.bar.grid(row=0, column=0, sticky="ew")
+        # The bar is a card in the top right corner, and the two paths it used to sit
+        # above stand to its left: the band costs the window no height, and the width
+        # it gives up is where the paths are read. The name is repeated along the
+        # bottom with what the app is for.
+        head = ttk.Frame(self.root, padding=(12, 8, 12, 0))
+        head.grid(row=0, column=0, sticky="ew")
+        head.columnconfigure(1, weight=1)
+        paths = ttk.Frame(head)
+        paths.grid(row=0, column=0, sticky="nw")
+        self.bar = TitleBar(self, head)
+        self.bar.grid(row=0, column=2, sticky="ne")
+
+        self._label(paths, "pack_label").grid(row=0, column=0, sticky="w")
+        ttk.Entry(paths, textvariable=self.pack_var, width=FIELD_WIDTH).grid(row=1, column=0, sticky="w")
+        pack_buttons = ttk.Frame(paths)
+        pack_buttons.grid(row=1, column=1, sticky="w", padx=(6, 0))
+        self._button(pack_buttons, "browse_zip", self._pick_pack_file).pack(side="left")
+        self._button(pack_buttons, "browse_folder", self._pick_pack_dir).pack(side="left", padx=(4, 0))
+
+        self._label(paths, "output_label").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(paths, textvariable=self.out_var, width=FIELD_WIDTH).grid(row=3, column=0, sticky="w")
+        self._button(paths, "browse_output", self._pick_out_dir).grid(row=3, column=1, sticky="w", padx=(6, 0))
 
         grid = ttk.Frame(self.root, padding=(12, 0))
         grid.grid(row=1, column=0, sticky="nsew")
-        # Three columns: the picture on the left, the knobs that change it in the
-        # middle, the log on the right. Both stretchy columns share the spare width
-        # when the window is widened.
+        # Two columns: the fields, the picture and its knobs down the left, the log down
+        # the right. The log takes the spare width when the window is widened.
         grid.columnconfigure(1, weight=1)
-        grid.columnconfigure(2, weight=1)
-        grid.rowconfigure(8, weight=1)
+        grid.rowconfigure(1, weight=1)
 
-        self._label(grid, "pack_label").grid(row=0, column=0, sticky="w")
-        ttk.Entry(grid, textvariable=self.pack_var).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        buttons = ttk.Frame(grid)
-        buttons.grid(row=1, column=2, sticky="e", padx=(6, 0))
-        self._button(buttons, "browse_zip", self._pick_pack_file).pack(side="left")
-        self._button(buttons, "browse_folder", self._pick_pack_dir).pack(side="left", padx=(4, 0))
-
-        self._label(grid, "output_label").grid(row=2, column=0, sticky="w")
-        ttk.Entry(grid, textvariable=self.out_var).grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        self._button(grid, "browse_output", self._pick_out_dir).grid(row=3, column=2, sticky="e", padx=(6, 0))
+        # Every field on one grid: the label above its box, every box the same width,
+        # every button in the same column, so the whole page reads down one edge.
+        fields = ttk.Frame(grid)
+        fields.grid(row=0, column=0, sticky="nw")
 
         # The player comes first: its screen decides the size every picture is drawn at.
         # Five names do not fit on one line in every language, so they share a box.
-        format_row = ttk.Frame(grid)
-        format_row.grid(row=4, column=0, columnspan=3, sticky="w", pady=(0, 8))
-        self._label(format_row, "format_label").pack(side="left", padx=(0, 10))
-        self.format_box = ttk.Combobox(format_row, values=self.format_names(), state="readonly", width=20)
-        self.format_box.pack(side="left")
+        self._label(fields, "format_label").grid(row=0, column=0, sticky="w")
+        self.format_box = ttk.Combobox(fields, values=self.format_names(), state="readonly", width=FIELD_WIDTH)
+        self.format_box.grid(row=1, column=0, sticky="w")
         self.format_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_format())
         self._show_formats()
 
         # The voice the cards get is picked here, next to the machine they are read
         # on; everything that goes with it - voices, installs, a sample to clone -
         # sits behind its own button, on a page of its own.
-        speech_row = ttk.Frame(grid)
-        speech_row.grid(row=5, column=0, columnspan=3, sticky="w", pady=(0, 8))
-        self._label(speech_row, "speech_label").pack(side="left", padx=(0, 10))
-        self.speech_box = ttk.Combobox(speech_row, values=self.engine_names(), state="readonly", width=20)
-        self.speech_box.pack(side="left")
+        self._label(fields, "speech_label").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        self.speech_box = ttk.Combobox(fields, values=self.engine_names(), state="readonly", width=FIELD_WIDTH)
+        self.speech_box.grid(row=3, column=0, sticky="w")
         self.speech_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_engine())
-        self._button(speech_row, "speech_configure", self._open_speech).pack(side="left", padx=(10, 0))
+        self._button(fields, "speech_configure", self._open_speech).grid(row=3, column=1, sticky="w", padx=(6, 0))
         self._show_engines()
 
-        cover_row = ttk.Frame(grid)
-        cover_row.grid(row=6, column=0, columnspan=3, sticky="w", pady=(0, 4))
-        self._label(cover_row, "cover_label").pack(side="left")
-        ttk.Entry(cover_row, textvariable=self.cover_var, width=40).pack(side="left", padx=(6, 8))
-        self._button(cover_row, "browse_cover", self._pick_cover).pack(side="left")
+        self._label(fields, "cover_label").grid(row=4, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(fields, textvariable=self.cover_var, width=FIELD_WIDTH).grid(row=5, column=0, sticky="w")
+        self._button(fields, "browse_cover", self._pick_cover).grid(row=5, column=1, sticky="w", padx=(6, 0))
         # A lookup takes a second or two on its own thread, and four services are
         # asked before the answer says there is nothing: the window has to say it is
         # waiting, and let the user call it off. An indeterminate bar is the closest
         # Tk comes to a spinner.
-        self.cover_spin = ttk.Progressbar(cover_row, mode="indeterminate", length=44)
-        self.cover_note = self._label(cover_row, "cover_searching")
-        self.cover_stop = self._button(cover_row, "cover_stop", self._stop_cover)
+        cover_wait = ttk.Frame(fields)
+        cover_wait.grid(row=5, column=2, sticky="w", padx=(6, 0))
+        self.cover_spin = ttk.Progressbar(cover_wait, mode="indeterminate", length=44)
+        self.cover_note = self._label(cover_wait, "cover_searching")
+        self.cover_stop = self._button(cover_wait, "cover_stop", self._stop_cover)
 
         # When none of those services has the book, the two words the user types
         # are the search: the app's own catalogues first, then an image search on
         # either of the two engines that answer without an account - those two
         # only open a browser, so their answer is a picture the user saves.
-        search = ttk.Frame(grid)
-        search.grid(row=7, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        self._label(search, "cover_author").pack(side="left")
-        ttk.Entry(search, textvariable=self.author_var, width=18).pack(side="left", padx=(6, 12))
-        self._label(search, "cover_book_title").pack(side="left")
-        ttk.Entry(search, textvariable=self.title_var, width=24).pack(side="left", padx=(6, 12))
-        self._button(search, "cover_search_app", self._search_words).pack(side="left", padx=(0, 12))
-        self._label(search, "cover_search_on").pack(side="left", padx=(0, 6))
-        self._button(search, "cover_search_ddg", lambda: self._search_cover("ddg")).pack(side="left")
-        self._button(search, "cover_search_google", lambda: self._search_cover("google")).pack(
+        search = ttk.Frame(fields)
+        search.grid(row=6, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        words = ttk.Frame(search)
+        words.pack(anchor="w")
+        self._label(words, "cover_author").pack(side="left")
+        ttk.Entry(words, textvariable=self.author_var, width=12).pack(side="left", padx=(6, 12))
+        self._label(words, "cover_book_title").pack(side="left")
+        ttk.Entry(words, textvariable=self.title_var, width=16).pack(side="left", padx=(6, 0))
+        # The three ways of asking are a second line rather than a wider one: a row
+        # this wide would push the log off the window.
+        engines = ttk.Frame(search)
+        engines.pack(anchor="w", pady=(4, 0))
+        self._button(engines, "cover_search_app", self._search_words).pack(side="left")
+        self._label(engines, "cover_search_on").pack(side="left", padx=(12, 6))
+        self._button(engines, "cover_search_ddg", lambda: self._search_cover("ddg")).pack(side="left")
+        self._button(engines, "cover_search_google", lambda: self._search_cover("google")).pack(
             side="left", padx=(4, 0)
         )
 
         # A picture found in a browser is only a link until it is fetched: pasting
         # it here brings it into the Image box like a cover the services answered.
-        link_row = ttk.Frame(grid)
-        link_row.grid(row=8, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        self._label(link_row, "cover_link").pack(side="left")
+        self._label(fields, "cover_link").grid(row=7, column=0, sticky="w", pady=(8, 0))
         self.cover_link_var = tk.StringVar()
-        ttk.Entry(link_row, textvariable=self.cover_link_var, width=44).pack(side="left", padx=(6, 8))
-        self._button(link_row, "cover_use", self._use_cover_link).pack(side="left")
+        ttk.Entry(fields, textvariable=self.cover_link_var, width=FIELD_WIDTH).grid(row=8, column=0, sticky="w")
+        self._button(fields, "cover_use", self._use_cover_link).grid(row=8, column=1, sticky="w", padx=(6, 0))
 
-        # The frame, its knobs and the log share the last row: a frame this wide
-        # would push the log below the bottom of a laptop screen.
-        #
+        # The frame and its knobs are one card: what changes the picture stands next to
+        # it, not in the next column over. The log takes the column beside them and the
+        # height they leave over.
+        preview = ttk.Frame(grid)
+        preview.grid(row=1, column=0, sticky="nw", pady=(6, 0))
+        self.crop_preview = preview
+
         # The frame the chosen player shows, drawn from the cover: drag it to move,
         # the wheel or the arrows to enlarge. What is inside here is what the story
         # carries, so the choice is made on the picture instead of described to it.
         self.crop_frame = tk.Canvas(
-            grid, highlightthickness=0, cursor="fleur", takefocus=1, background=SUNK
+            preview, highlightthickness=0, cursor="fleur", takefocus=1, background=SUNK
         )
-        self.crop_frame.grid(row=9, column=0, sticky="n", pady=(6, 0))
+        self.crop_frame.pack(side="left", anchor="n")
         self._crop_item = self.crop_frame.create_image(0, 0, anchor="nw")
         self.crop_frame.bind("<ButtonPress-1>", self._grab_crop)
         self.crop_frame.bind("<B1-Motion>", self._drag_crop)
@@ -829,8 +844,8 @@ class App:
         # Everything that changes what the frame shows stands beside it, in the order
         # the eye goes over a picture: which band to keep, how far in, then the way
         # the player's own grey screen reads the ink.
-        side = ttk.Frame(grid)
-        side.grid(row=9, column=1, sticky="n", padx=(12, 0))
+        side = ttk.Frame(preview)
+        side.pack(side="left", anchor="n", padx=(12, 0))
         self.crop_side = side
         self._label(side, "cover_crop_label").pack(anchor="w")
         self.crop_boxes: dict[str, ttk.Radiobutton] = {}
@@ -873,7 +888,7 @@ class App:
         self.cover_var.trace_add("write", lambda *_: self._show_crop())
 
         controls = ttk.Frame(grid)
-        controls.grid(row=10, column=0, columnspan=3, sticky="ew", pady=(8, 8))
+        controls.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 8))
         self.save_button = self._button(controls, "save", self._start, style="Work.TButton")
         self.save_button.pack(side="left")
         self._button(controls, "options", self._open_options).pack(side="left", padx=12)
@@ -895,7 +910,7 @@ class App:
         self._show_captions()
 
         log_frame = ttk.Frame(grid)
-        log_frame.grid(row=9, column=2, sticky="nsew", padx=(12, 0))
+        log_frame.grid(row=0, column=1, rowspan=2, sticky="nsew", padx=(12, 0))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
         self.log_view = tk.Text(
@@ -939,6 +954,7 @@ class App:
         if self._stamp:
             ttk.Label(bar, image=self._stamp).pack(side="left")
         self._label(bar, "brand", style="Brand.TLabel").pack(side="left", padx=(6, 0))
+        self._label(bar, "app_headline", style="Brand.TLabel").pack(side="left", padx=(12, 0))
 
         hint = self.t("drop_hint") if DND_FILES else self.t("drop_unavailable")
         self._append(hint)
@@ -1031,6 +1047,15 @@ class App:
         self.root.deiconify()
         self.bar.frameless = on
         self.bar.redraw()
+
+    def _crop_room(self) -> int:
+        """How wide the crop frame may be on this screen.
+
+        The frame is the one part of the window that grows on its own, and a window
+        taller than the screen is not scrolled or shrunk — Tk simply cuts what hangs
+        past the bottom, which is where the buttons and the log were.
+        """
+        return max(CROP_MIN, min(CROP_WIDTH, self.root.winfo_screenheight() - CROP_ROOM))
 
     def _size_window(self) -> None:
         """Open the window at a size of its own, in the middle of the screen.
@@ -1429,11 +1454,10 @@ class App:
         """An mp3 pack carries no pictures, so the frame and its knobs have nothing
         to show for it, and there is no story graph for the emulator to play."""
         cards = self.format_var.get() in CARD_FORMATS
-        for widget in (self.crop_frame, self.crop_side):
-            if cards:
-                widget.grid()
-            else:
-                widget.grid_remove()
+        if cards:
+            self.crop_preview.grid()
+        else:
+            self.crop_preview.grid_remove()
         self.test_button.configure(state="normal" if cards else "disabled")
 
     def _show_negative(self) -> None:
@@ -1513,7 +1537,7 @@ class App:
         """
         if self.format_var.get() not in CARD_FORMATS:
             return
-        size = images.preview_size(self.format_var.get(), CROP_WIDTH)
+        size = images.preview_size(self.format_var.get(), self._crop_width)
         # A cover smaller than the frame leaves its room empty on the canvas, which
         # is the card's band colour and not the window's.
         style = "bw" if self.format_var.get() == "lunii" else "colour"
@@ -1542,7 +1566,7 @@ class App:
         if self._crop_cover is None:
             return
         png, picture = self._crop_cover[4]
-        frame = images.preview_size(self.format_var.get(), CROP_WIDTH)
+        frame = images.preview_size(self.format_var.get(), self._crop_width)
         focus = self._crop_focus or images.CROP_FOCUS.get(self.crop_var.get(), images.CROP_FOCUS["center"])
         self._crop_photo = tk.PhotoImage(master=self.root, data=png)
         self.crop_frame.itemconfigure(self._crop_item, image=self._crop_photo)
@@ -1577,14 +1601,14 @@ class App:
 
     def _step_crop(self, dx: int, dy: int) -> None:
         """The keyboard reaches the same frame: the arrows move it by a tenth."""
-        self._move_crop(dx * CROP_WIDTH / 10, dy * CROP_WIDTH / 10)
+        self._move_crop(dx * self._crop_width / 10, dy * self._crop_width / 10)
 
     def _move_crop(
         self, dx: float, dy: float, start: tuple[float, float] | None = None
     ) -> None:
         if self._crop_cover is None:
             return
-        frame = images.preview_size(self.format_var.get(), CROP_WIDTH)
+        frame = images.preview_size(self.format_var.get(), self._crop_width)
         picture = self._crop_cover[4][1]
         focus = start or self._current_focus()
         room = (picture[0] - frame[0], picture[1] - frame[1])

@@ -744,6 +744,17 @@ def test_the_piper_voice_folder_lists_only_the_language_it_holds(tmp_path, monke
     assert tts.piper_voice("de") is None
 
 
+def test_the_voice_folder_can_be_listed_whatever_language_it_holds(tmp_path, monkeypatch) -> None:
+    voices = tmp_path / "voices"
+    voices.mkdir()
+    for name in ("fr_FR-upmc-medium", "en_US-lessac-medium"):
+        (voices / f"{name}.onnx").write_text("")
+    monkeypatch.setattr(tts.settings, "speech_voices", lambda: voices)
+
+    assert tts.piper_voices("fr") == ["fr_FR-upmc-medium"]
+    assert tts.piper_voices("fr", any_language=True) == ["fr_FR-upmc-medium", "en_US-lessac-medium"]
+
+
 def test_downloading_a_voice_runs_piper_in_the_engine_python(tmp_path, monkeypatch) -> None:
     started: list[list[str]] = []
     voices = tmp_path / "voices"

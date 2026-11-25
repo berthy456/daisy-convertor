@@ -745,7 +745,13 @@ def test_the_options_page_saves_what_it_shows(app: gui.App, tmp_path, monkeypatc
 def test_every_option_sits_inside_the_page_frame(app: gui.App) -> None:
     """A box parented to the window instead of its frame is drawn outside the window."""
     pages = [(gui.Options(app), "language_box announce_box input_box output_box".split())]
-    pages.append((gui.Speech(app), "engine_box voice_box speed_box device_box python_box clip_box".split()))
+    pages.append(
+        (
+            gui.Speech(app),
+            "engine_box voice_box speed_box device_box python_box clip_box "
+            "read_voice_box read_speed_box read_clip_box".split(),
+        )
+    )
     for page, names in pages:
         frames = page.top.winfo_children()
         assert len(frames) == 1, "the window holds one frame"
@@ -953,6 +959,75 @@ def test_the_speech_page_greys_out_the_rows_the_engine_cannot_answer_for(app: gu
     page._show_engine()
     assert str(page.clip_box.cget("state")) == "normal"
     assert str(page.device_box.cget("state")) == "readonly"
+
+
+def test_the_speech_page_has_one_page_for_the_cards_and_one_for_the_book(app: gui.App) -> None:
+    page = gui.Speech(app)
+    assert [page.tabs.tab(tab, "text") for tab in page.tabs.tabs()] == [
+        app.t("speech_tab_cards"),
+        app.t("speech_tab_reading"),
+    ]
+    page.top.destroy()
+
+
+def test_the_reading_page_starts_by_taking_the_card_settings(app: gui.App) -> None:
+    app.options["tts"] = "piper"
+    page = gui.Speech(app)
+    assert page.read_voice_box.get() == app.t("speech_same_as_cards")
+    assert page.read_speed_box.get() == app.t("speech_same_as_cards")
+
+    page._close()
+    assert app.options["read_voice"] is None
+    assert app.options["read_speed"] is None
+
+
+def test_the_reading_page_saves_its_own_voice_and_speed(app: gui.App, tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    voices = tmp_path / "voices"
+    voices.mkdir()
+    (voices / "fr_FR-siwis-medium.onnx").write_text("")
+    monkeypatch.setattr(gui.tts.settings, "speech_voices", lambda: voices)
+    app.options["language"] = "fr"
+    app.options["tts"] = "piper"
+
+    page = gui.Speech(app)
+    page.read_voice_box.set("fr_FR-siwis-medium")
+    page.read_speed_box.set(app.t("speed_fast"))
+    page._close()
+
+    assert app.options["read_voice"] == "fr_FR-siwis-medium"
+    assert app.options["read_speed"] == "fast"
+    assert app.options["voice"] is None, "the cards keep their own voice"
+    saved = (tmp_path / "daisy2telmi" / "config.json").read_text(encoding="utf-8")
+    assert '"read_voice": "fr_FR-siwis-medium"' in saved
+    assert '"read_speed": "fast"' in saved
+
+
+def test_the_voice_lists_hold_the_voices_installed_for_another_language(app: gui.App, tmp_path, monkeypatch) -> None:
+    voices = tmp_path / "voices"
+    voices.mkdir()
+    (voices / "en_US-lessac-medium.onnx").write_text("")
+    monkeypatch.setattr(gui.tts.settings, "speech_voices", lambda: voices)
+    app.options["language"] = "fr"
+    app.options["tts"] = "piper"
+
+    page = gui.Speech(app)
+    assert "en_US-lessac-medium" in page.voice_keys
+    assert "en_US-lessac-medium" in page.read_voice_keys
+
+
+def test_the_reading_rows_follow_the_engine_too(app: gui.App) -> None:
+    app.options["tts"] = "piper"
+    page = gui.Speech(app)
+    assert str(page.read_speed_box.cget("state")) == "readonly"
+    assert str(page.read_clip_box.cget("state")) == "disabled"
+
+    page.engine_box.set(app.engine_name("chatterbox"))
+    page._show_engine()
+    assert str(page.read_clip_box.cget("state")) == "normal"
+    page.read_clip_box.insert(0, "/tmp/reader.wav")
+    page._close()
+    assert app.options["read_clip"] == "/tmp/reader.wav"
 
 
 def test_the_voice_list_follows_the_engine_and_language(app: gui.App) -> None:

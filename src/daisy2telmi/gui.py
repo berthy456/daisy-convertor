@@ -44,6 +44,9 @@ log = logging.getLogger("daisy2telmi")
 
 ANNOUNCE_KEYS = {mode: f"announce_{mode}" for mode in ANNOUNCE_MODES}
 SPEED_KEYS = {speed: f"speed_{speed}" for speed in tts.SPEEDS}
+# Nothing chosen on the reading page means the book is read with the card's setting.
+SAME = {None: "speech_same_as_cards"}
+READ_SPEED_KEYS = {**SPEED_KEYS, None: "speech_same_as_cards"}
 
 
 def engine_keys() -> list[str]:
@@ -127,6 +130,15 @@ def theme(root: tk.Misc) -> None:
         "TCombobox",
         selectbackground=[("readonly", FIELD)],
         selectforeground=[("readonly", INK)],
+    )
+    # The page marks are the only way to see which half of the speech page is open,
+    # so the open one carries the same blue as the work button.
+    style.configure("TNotebook", borderwidth=0)
+    style.configure("TNotebook.Tab", background=FIELD, foreground=MUTED, padding=(12, 6), borderwidth=0)
+    style.map(
+        "TNotebook.Tab",
+        background=[("selected", NAVY)],
+        foreground=[("selected", "#ffffff")],
     )
     style.configure("Treeview", background=SUNK, fieldbackground=SUNK, bordercolor=LINE, rowheight=22)
     style.map("Treeview", background=[("selected", NAVY)], foreground=[("selected", "#ffffff")])
@@ -2340,6 +2352,11 @@ class Options(Settings):
 class Speech(Settings):
     """The voice the chapter cards get, and everything that goes with it.
 
+    Two pages, because a card and a chapter are read differently: one says a few
+    words, the other is a page of prose, and each gets its own voice, reference
+    clip and speed. The engine and its installer are one choice for both, so they
+    sit outside the pages, above and below them.
+
     The engines that are packages rather than parts of the app are installed from
     here, into a Python of their own; so are the Piper voices they read with. A box
     the chosen engine has nothing to do with is greyed out rather than taken away,
@@ -2370,33 +2387,43 @@ class Speech(Settings):
         self._playing: subprocess.Popen | None = None
 
         self.engine_box = self._combo(self.grid, self.engine_keys, app.options["tts"])
-        self.voice_box = self._combo(self.grid, [None], app.options["voice"])
-        self.speed_box = self._combo(self.grid, self.speed_keys, app.options["speed"], SPEED_KEYS)
-        self.python_box = ttk.Entry(self.grid, width=28)
+        self._row(self.grid, "opt_engine", 0, self.engine_box)
+
+        self.tabs = ttk.Notebook(self.grid)
+        self.tabs.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(10, 0))
+        cards = ttk.Frame(self.tabs, padding=(10, 8))
+        cards.columnconfigure(1, weight=1)
+        reading = ttk.Frame(self.tabs, padding=(10, 8))
+        reading.columnconfigure(1, weight=1)
+        self.tabs.add(cards, text=app.t("speech_tab_cards"))
+        self.tabs.add(reading, text=app.t("speech_tab_reading"))
+
+        self.voice_box = self._combo(cards, [None], app.options["voice"])
+        self.speed_box = self._combo(cards, self.speed_keys, app.options["speed"], SPEED_KEYS)
+        self.python_box = ttk.Entry(cards, width=28)
         self.python_box.insert(0, app.options["python"] or "")
-        self.device_box = self._combo(self.grid, self.device_keys, app.options["device"])
-        clip_row = ttk.Frame(self.grid)
+        self.device_box = self._combo(cards, self.device_keys, app.options["device"])
+        clip_row = ttk.Frame(cards)
         self.clip_box = ttk.Entry(clip_row, width=22)
         self.clip_box.insert(0, app.options["clip"] or "")
         self.clip_box.pack(side="left")
         ttk.Button(clip_row, text=app.t("browse_output"), command=self._pick_clip).pack(side="left", padx=(6, 0))
-        try_row = ttk.Frame(self.grid)
+        try_row = ttk.Frame(cards)
         self.try_box = ttk.Entry(try_row, width=22)
         self.try_box.insert(0, self._sample_text())
         self.try_box.pack(side="left")
         self.try_button = ttk.Button(try_row, text=app.t("speech_try"), command=self._try_voice)
         self.try_button.pack(side="left", padx=(6, 0))
 
-        self._row(self.grid, "opt_engine", 0, self.engine_box)
-        self._row(self.grid, "opt_voice", 1, self.voice_box)
-        self._row(self.grid, "opt_speed", 2, self.speed_box)
-        self._row(self.grid, "opt_python", 3, self.python_box)
-        self._row(self.grid, "opt_device", 4, self.device_box)
-        self._row(self.grid, "opt_clip", 5, clip_row)
-        self._row(self.grid, "speech_try_label", 6, try_row)
+        self._row(cards, "opt_voice", 0, self.voice_box)
+        self._row(cards, "opt_speed", 1, self.speed_box)
+        self._row(cards, "opt_python", 2, self.python_box)
+        self._row(cards, "opt_device", 3, self.device_box)
+        self._row(cards, "opt_clip", 4, clip_row)
+        self._row(cards, "speech_try_label", 5, try_row)
 
         install = ttk.Labelframe(self.grid, text=app.t("speech_section"), padding=(10, 6))
-        install.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        install.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(14, 0))
         install.columnconfigure(1, weight=1)
         ttk.Label(install, text=app.t("speech_hint"), style="Brand.TLabel").grid(
             row=0, column=0, columnspan=2, sticky="w", pady=(0, 6)
@@ -2414,8 +2441,25 @@ class Speech(Settings):
         self.download_button.pack(side="left", padx=(6, 0))
         self._row(install, "speech_download_label", 2, download_row)
 
+        ttk.Label(reading, text=app.t("speech_read_hint"), style="Brand.TLabel", wraplength=420).grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 8)
+        )
+        self.read_speed_keys: list[str | None] = [None, *self.speed_keys]
+        self.read_voice_box = self._combo(reading, [None], app.options["read_voice"], SAME)
+        self.read_speed_box = self._combo(reading, self.read_speed_keys, app.options["read_speed"], READ_SPEED_KEYS)
+        read_clip_row = ttk.Frame(reading)
+        self.read_clip_box = ttk.Entry(read_clip_row, width=22)
+        self.read_clip_box.insert(0, app.options["read_clip"] or "")
+        self.read_clip_box.pack(side="left")
+        ttk.Button(read_clip_row, text=app.t("browse_output"), command=self._pick_read_clip).pack(
+            side="left", padx=(6, 0)
+        )
+        self._row(reading, "opt_voice", 1, self.read_voice_box)
+        self._row(reading, "opt_speed", 2, self.read_speed_box)
+        self._row(reading, "opt_clip", 3, read_clip_row)
+
         ttk.Button(self.grid, text=app.t("opt_close"), command=self._close).grid(
-            row=8, column=0, columnspan=2, sticky="e", pady=(12, 0)
+            row=3, column=0, columnspan=2, sticky="e", pady=(12, 0)
         )
 
         self.engine_box.bind("<<ComboboxSelected>>", lambda _e: self._show_engine())
@@ -2439,9 +2483,13 @@ class Speech(Settings):
     def _show_live(self) -> None:
         engine = self._chosen(self.engine_box, self.engine_keys)
         live = self.LIVE.get(engine, ())
-        for key, box in (("voice", self.voice_box), ("speed", self.speed_box), ("device", self.device_box)):
+        combos = (
+            ("voice", self.voice_box), ("speed", self.speed_box), ("device", self.device_box),
+            ("voice", self.read_voice_box), ("speed", self.read_speed_box),
+        )
+        for key, box in combos:
             box.configure(state="readonly" if key in live else "disabled")
-        for key, box in (("python", self.python_box), ("clip", self.clip_box)):
+        for key, box in (("python", self.python_box), ("clip", self.clip_box), ("clip", self.read_clip_box)):
             box.configure(state="normal" if key in live else "disabled")
         self.download_box.configure(state="readonly" if "download" in live else "disabled")
         self.download_button.state(["!disabled"] if "download" in live and self.download_keys else ["disabled"])
@@ -2459,14 +2507,18 @@ class Speech(Settings):
         self.engine_state.configure(text=self._engine_text())
 
     def _fill_voices(self) -> None:
+        """Every voice the engine has on this machine, on both pages."""
         engine = self._chosen(self.engine_box, self.engine_keys)
         names: list[str | None] = [None]
         if engine not in (None, "auto", "off"):
-            names += tts.voices(engine, self.language())
+            names += tts.voices(engine, self.language(), any_language=True)
         self.voice_keys = names
+        self.read_voice_keys = names
         self.voice_box.configure(values=[self._label_text(k) for k in names])
-        saved = self.app.options["voice"]
-        self.voice_box.set(self._label_text(saved if saved in names else None))
+        self.read_voice_box.configure(values=[self._label_text(k, SAME) for k in names])
+        for box, key, labels in ((self.voice_box, "voice", None), (self.read_voice_box, "read_voice", SAME)):
+            saved = self.app.options[key]
+            box.set(self._label_text(saved if saved in names else None, labels))
 
     def _fill_downloads(self) -> None:
         """The Piper voices this language has that are not on the machine yet."""
@@ -2483,6 +2535,12 @@ class Speech(Settings):
         if path:
             self.clip_box.delete(0, "end")
             self.clip_box.insert(0, path)
+
+    def _pick_read_clip(self) -> None:
+        path = self.app._browse("opt_clip", self.read_clip_box.get(), "file")
+        if path:
+            self.read_clip_box.delete(0, "end")
+            self.read_clip_box.insert(0, path)
 
     def _settings(self) -> dict:
         """The engine settings as they stand in the boxes. Only this thread reads a widget."""
@@ -2570,6 +2628,9 @@ class Speech(Settings):
                 "python": self.python_box.get().strip() or None,
                 "clip": self.clip_box.get().strip() or None,
                 "device": self._chosen(self.device_box, self.device_keys),
+                "read_voice": self._chosen(self.read_voice_box, self.read_voice_keys, SAME),
+                "read_speed": self._chosen(self.read_speed_box, self.read_speed_keys, READ_SPEED_KEYS),
+                "read_clip": self.read_clip_box.get().strip() or None,
             }
         )
         self.app._show_engines()

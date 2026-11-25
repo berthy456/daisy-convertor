@@ -691,16 +691,18 @@ def resolve(engine: str, lang: Language, python: str | None = None) -> str:
     return engine
 
 
-def piper_voices(lang: Language | str) -> list[str]:
-    """The Piper voices already downloaded for `lang`.
+def piper_voices(lang: Language | str, any_language: bool = False) -> list[str]:
+    """The Piper voices already downloaded: for `lang`, or for every language.
 
     The ones this app lists come first, in the order it lists them; a voice the user
     put in the folder themselves is still offered, at the end.
     """
     code = lang.code if isinstance(lang, Language) else str(lang)
-    found = {path.name[: -len(".onnx")] for path in settings.speech_voices().glob(f"{code}_*-*.onnx")}
-    listed = [name for name in PIPER_VOICES.get(code, []) if name in found]
-    return listed + sorted(found - set(PIPER_VOICES.get(code, [])))
+    pattern = "*_*-*.onnx" if any_language else f"{code}_*-*.onnx"
+    found = {path.name[: -len(".onnx")] for path in settings.speech_voices().glob(pattern)}
+    order = [code, *(other for other in PIPER_VOICES if other != code)] if any_language else [code]
+    listed = [name for other in order for name in PIPER_VOICES.get(other, []) if name in found]
+    return listed + sorted(found - set(listed))
 
 
 def piper_voice(lang: Language | str, voice: str | None = None) -> Path | None:
@@ -715,10 +717,15 @@ def piper_voice(lang: Language | str, voice: str | None = None) -> Path | None:
     return path if path.is_file() else None
 
 
-def voices(engine: str, lang: Language) -> list[str]:
-    """Voices the engine offers for `lang`, for the options page to list."""
+def voices(engine: str, lang: Language, any_language: bool = False) -> list[str]:
+    """Voices the engine offers for `lang`, for the options page to list.
+
+    `any_language` adds the voices already downloaded for the other languages. Only
+    Piper keeps its voices as files the app can list; the machine's own engines are
+    asked language by language.
+    """
     if engine == PIPER:
-        return piper_voices(lang)
+        return piper_voices(lang, any_language)
     if engine == COQUI:
         models = list(COQUI_MODELS.get(lang.code, []))
         if lang.code in COQUI_CLONE_LANGUAGES and COQUI_MULTILINGUAL not in models:

@@ -5,6 +5,7 @@ Windows builds from runs of the `build` workflow, before they are a release. Eac
 | Beta | Commit | Build run | Joined size |
 | :--- | :--- | :--- | :--- |
 | `beta1` | `cdf5add` | [45655770154](https://github.com/berthy456/daisy-convertor/actions/runs/45655770154) | 162535356 bytes |
+| `beta2` | `b46df2f` | [45693256180](https://github.com/berthy456/daisy-convertor/actions/runs/45693256180) | 162551078 bytes |
 
 The other builds of the same commit (macOS, .deb, AppImage) are the artifacts of the run named beside it.
 
@@ -14,7 +15,7 @@ Each folder holds `daisy-convertor-1.5-windows-x86_64.zip` stored in parts: the 
 copy /b daisy-convertor-1.5-windows-x86_64.zip.part* daisy-convertor-1.5-windows-x86_64.zip
 ```
 
-A joined file is 162535356 bytes; anything smaller is a part that was missing.
+A joined file is the size in its own row of the table above; anything smaller is a part that was missing.
 
 Unzip it and run `daisy-convertor.exe`. Double-clicked it opens the window with no log; started from a terminal it writes one:
 

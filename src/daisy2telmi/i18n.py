@@ -1562,15 +1562,16 @@ def guess(page: str) -> str | None:
 def story_language(declared: str | None, page: str, fallback: str) -> tuple[str, str]:
     """The language to write and speak a book's cards in, and where it came from.
 
-    The pack's own metadata first, then the text it carries, then the machine's own
-    language — which is all that is left when a pack is audio alone.
+    The words the pack carries first: `dc:language` is a producer's note, and a
+    French book has been found declaring English. Then the metadata, then the
+    machine's own language — which is all that is left when a pack is audio alone.
     """
-    code = code_of(declared)
-    if code:
-        return code, "the pack's metadata"
     code = guess(page)
     if code:
         return code, "the pack's own text"
+    code = code_of(declared)
+    if code:
+        return code, "the pack's metadata"
     if declared:
         return language(fallback).code, f"your machine: the pack says {declared.strip()}, which has no words here"
     return language(fallback).code, "your machine"

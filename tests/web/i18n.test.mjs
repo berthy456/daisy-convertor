@@ -156,8 +156,12 @@ test("a capitalised turkish letter still counts", () => {
   assert.equal(guess("İLK SÖZ: Tilki kıza baktı ve kız ona baktı ve ormanda yürüdüler."), "tr");
 });
 
-test("the language a pack declares comes first", () => {
-  assert.deepEqual(storyLanguage("de", PAGES.fr, "en"), { code: "de", source: "metadata" });
+test("the pack's own text outranks the language it declares", () => {
+  assert.deepEqual(storyLanguage("en", PAGES.fr, "de"), { code: "fr", source: "text" });
+});
+
+test("the language a pack declares is used when its text gives nothing", () => {
+  assert.deepEqual(storyLanguage("de", "", "en"), { code: "de", source: "metadata" });
 });
 
 test("the pack's own text is read when it declares nothing", () => {

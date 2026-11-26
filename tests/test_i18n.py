@@ -131,8 +131,13 @@ def test_a_capitalised_turkish_letter_still_counts() -> None:
     assert guess("İle başladı ve bir şey kaldı, çünkü o geldi.") == "tr"
 
 
-def test_the_language_a_pack_declares_comes_first() -> None:
-    assert story_language("FR", PAGES["de"], "en") == ("fr", "the pack's metadata")
+def test_the_pack_s_own_text_outranks_the_language_it_declares() -> None:
+    """`dc:language` is a producer's note: a French book has been found declaring English."""
+    assert story_language("EN", PAGES["fr"], "de") == ("fr", "the pack's own text")
+
+
+def test_the_language_a_pack_declares_is_used_when_its_text_gives_nothing() -> None:
+    assert story_language("FR", "", "en") == ("fr", "the pack's metadata")
 
 
 def test_the_pack_s_own_text_is_read_when_it_declares_nothing() -> None:

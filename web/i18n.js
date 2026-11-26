@@ -1454,14 +1454,17 @@ export function guess(page) {
 
 /**
  * The language to write and speak a book's cards in, and where it came from:
- * `metadata`, `text`, `machine`, or `declared` when the pack named a language this
+ * `text`, `metadata`, `machine`, or `declared` when the pack named a language this
  * page has no words for.
+ *
+ * The words the pack carries come first: `dc:language` is a producer's note, and a
+ * French book has been found declaring English.
  */
 export function storyLanguage(declared, page, fallback) {
-  const code = codeOf(declared);
-  if (code) return { code, source: "metadata" };
   const guessed = guess(page);
   if (guessed) return { code: guessed, source: "text" };
+  const code = codeOf(declared);
+  if (code) return { code, source: "metadata" };
   if (declared) return { code: fallback, source: "declared" };
   return { code: fallback, source: "machine" };
 }

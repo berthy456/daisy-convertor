@@ -1,4 +1,4 @@
-"""Redraw the icon files from assets/icon.svg.
+"""Redraw the icon files from the SVGs in assets/.
 
     python tools/make_icons.py
 
@@ -10,6 +10,9 @@ into
 because the build machines — and CI in particular — have no SVG rasteriser; run
 this once after changing the SVG. Tk draws a photo image at its own size and has
 no way to shrink one, so each size the window asks for is its own file.
+
+The four `pick-*.png` are the marks on the buttons that pick the book, a folder of
+packs, the export folder and the story-teller's story folder.
 
 Needs `rsvg-convert` on PATH, and `iconutil`, which only macOS ships. Without
 iconutil the .icns is skipped and the other two are still written.
@@ -32,6 +35,10 @@ SVG = ROOT / "assets" / "icon.svg"
 # are only ever read by PyInstaller, so they stay at the top.
 ASSETS = ROOT / "src" / "daisy2telmi" / "assets"
 PNGS = (("icon.png", 128), ("icon-112.png", 112), ("icon-64.png", 64), ("icon-16.png", 16))
+# The mark each pick button carries: the book, a folder of packs, the export folder,
+# the story-teller.
+PICKS = ("pick-book", "pick-folder", "pick-export", "pick-player")
+PICK_MARK = 18
 OUT = ROOT / "assets"
 
 # The .ico keeps small sizes as raw bitmaps, which every Windows shell reads, and
@@ -53,9 +60,9 @@ ICNS_PNGS = (
 )
 
 
-def rasterise(size: int) -> bytes:
+def rasterise(size: int, svg: Path = SVG) -> bytes:
     result = subprocess.run(
-        ["rsvg-convert", "-w", str(size), "-h", str(size), str(SVG), "-f", "png"],
+        ["rsvg-convert", "-w", str(size), "-h", str(size), str(svg), "-f", "png"],
         capture_output=True,
     )
     if result.returncode:
@@ -171,6 +178,10 @@ def main() -> int:
     for name, size in PNGS:
         (ASSETS / name).write_bytes(rasterise(size))
         print(f"wrote {ASSETS / name} ({size} px)")
+    for name in PICKS:
+        png = ASSETS / f"{name}-{PICK_MARK}.png"
+        png.write_bytes(rasterise(PICK_MARK, OUT / f"{name}.svg"))
+        print(f"wrote {png} ({PICK_MARK} px)")
     write_ico(OUT / "icon.ico")
     write_icns(OUT / "icon.icns")
     return 0

@@ -78,6 +78,16 @@ def _bar_items(app: gui.App, kind: str) -> list[int]:
     return [item for item in app.bar.find_all() if app.bar.type(item) == kind]
 
 
+def _walk(widget: tk.Widget) -> list[tk.Widget]:
+    """Every widget under `widget`, the window itself included."""
+    seen, pending = [], [widget]
+    while pending:
+        item = pending.pop()
+        seen.append(item)
+        pending += item.winfo_children()
+    return seen
+
+
 def _bar_boxes(app: gui.App) -> dict[str, float]:
     """The left edge of each control the bar drew, by its name."""
     boxes = {}
@@ -111,24 +121,31 @@ def test_the_window_draws_its_own_bar(app: gui.App) -> None:
     }
 
 
-def test_the_bar_is_a_card_in_the_top_right_corner(app: gui.App) -> None:
-    """The two paths stand to the bar's left, so the bar is a card in the corner and not
-    a band across the window: the height it does not take is the window's."""
-    app.root.geometry("1100x600")
+def test_the_title_block_stands_at_the_top_left(app: gui.App) -> None:
+    """The window's title is one block at the corner a title belongs to, and the pick
+    buttons are at the other end of the same line - not a band across the bottom."""
+    app.root.geometry("1300x700")
     app.root.update()
-    assert app.bar.winfo_width() <= gui.BAR_WIDTH < app.root.winfo_width() // 2
+    assert app.bar.winfo_width() <= gui.BAR_WIDTH
     assert app.bar.winfo_height() <= gui.BAR_HEIGHT
-    right = app.bar.winfo_rootx() + app.bar.winfo_width() - app.root.winfo_rootx()
-    assert right > app.root.winfo_width() - 40, "the card stands at the window's right edge"
+    assert app.bar.winfo_rootx() - app.root.winfo_rootx() < 40, "the block stands at the window's left edge"
+    picks = app._labels["browse_zip"].master
+    assert picks.winfo_rootx() >= app.bar.winfo_rootx() + app.bar.winfo_width(), "the buttons to its right"
+    assert picks.winfo_rootx() + picks.winfo_width() > app.root.winfo_width() - 40, "at the window's right edge"
 
 
-def test_the_headline_stands_beside_the_brand(app: gui.App) -> None:
-    """What the window is for is said under the work, not inside the corner card the
-    controls live in."""
+def test_the_headline_stands_under_the_name(app: gui.App) -> None:
+    """The window says what it is for once, on the line under its name."""
     app.root.update()
-    assert app._labels["app_headline"].master is app._labels["brand"].master
-    in_bar = {app.bar.itemcget(item, "text") for item in _bar_items(app, "text")}
-    assert app.t("app_headline") not in in_bar
+    bar = app.bar
+    assert app._labels["app_headline"] is bar.headline
+    title = bar.bbox(bar._words["title"])
+    assert bar.headline.winfo_y() > title[3], "the description is the line under the name"
+    card = next(item for item in _bar_items(app, "polygon") if not bar.gettags(item))
+    _, _, _, bottom = bar.bbox(card)
+    assert bar.headline.winfo_y() + bar.headline.winfo_height() <= bottom, "and inside the card"
+    said = [w for w in _walk(app.root) if isinstance(w, ttk.Label) and w.cget("text") == app.t("app_headline")]
+    assert len(said) == 1, "said once, not again at the bottom of the window"
 
 
 def test_the_bar_card_holds_its_mark(app: gui.App) -> None:
@@ -160,14 +177,19 @@ def test_the_bar_controls_stand_at_its_right_edge(app: gui.App) -> None:
     assert boxes["close"] + gui.BAR_BUTTON < app.bar.winfo_width()
 
 
-def test_the_bar_moves_its_controls_when_the_window_widens(app: gui.App) -> None:
-    app.root.geometry("700x600")
+def test_the_title_block_stays_the_same_card_when_the_window_widens(app: gui.App) -> None:
+    """The block is a card of its own, not a band stretched over the window: its controls
+    stay where the card ends and the pick buttons are what moves."""
+    app.root.geometry("1200x600")
     app.root.update()
-    narrow = app.bar.winfo_rootx() + _bar_boxes(app)["close"]
-    app.root.geometry("1100x600")
+    close = _bar_boxes(app)["close"]
+    width = app.bar.winfo_width()
+    app.root.geometry("1300x600")
     app.root.update()
-    wide = app.bar.winfo_rootx() + _bar_boxes(app)["close"]
-    assert wide > narrow, "the controls follow the edge they belong to"
+    assert _bar_boxes(app)["close"] == close, "the controls stay at the card's right edge"
+    assert app.bar.winfo_width() == width, "and the card keeps its own width"
+    picks = app._labels["browse_zip"].master
+    assert picks.winfo_rootx() > app.bar.winfo_rootx() + app.bar.winfo_width(), "the buttons move with the edge"
 
 
 def test_the_bar_enlarges_the_window_and_puts_it_back(app: gui.App) -> None:
@@ -290,15 +312,20 @@ def test_the_book_and_the_output_are_picked_with_buttons(app: gui.App) -> None:
     row = picked[0].master
     assert all(button.master is row for button in picked)
     assert len({button.winfo_y() for button in picked}) == 1, "one line, not a column"
-    assert row.winfo_rootx() < app.bar.winfo_rootx(), "the buttons stand left of the bar card"
+    assert row.winfo_rootx() > app.bar.winfo_rootx(), "the buttons stand right of the title block"
     assert row.winfo_rooty() < app.bar.winfo_rooty() + app.bar.winfo_height()
 
-    pending, drawn = [app.bar.master], []
-    while pending:
-        widget = pending.pop()
-        drawn.append(widget)
-        pending += widget.winfo_children()
-    assert not any(isinstance(widget, ttk.Entry) for widget in drawn), "no path is typed"
+    assert not any(isinstance(widget, ttk.Entry) for widget in _walk(app.bar.master)), "no path is typed"
+
+
+def test_each_pick_button_carries_the_mark_of_what_it_picks(app: gui.App) -> None:
+    """The book, a folder of them, the folder a story is written into, the machine that
+    plays it: four marks, so the four buttons are read without their words."""
+    asked = zip(("browse_zip", "browse_folder", "output_label", "browse_stories"), gui.PICK_MARKS)
+    for key, glyph in asked:
+        mark = app._pick_marks[glyph]
+        assert (mark.width(), mark.height()) == (gui.PICK_MARK, gui.PICK_MARK)
+        assert app._labels[key].cget("image") == (str(mark),), f"{key} carries the {glyph} mark"
 
 
 def test_the_output_folder_picked_is_the_default_afterwards(app: gui.App, tmp_path: Path, monkeypatch) -> None:
@@ -450,28 +477,63 @@ def test_a_search_the_user_asked_replaces_the_cover_the_app_had_found(app: gui.A
 
 
 def test_a_pasted_link_becomes_the_cover(app: gui.App, tmp_path: Path, monkeypatch) -> None:
-    """A picture found in a browser is only a link until the app fetches it."""
+    """The Image box takes a file or a link: a link is fetched and the box is left
+    holding the picture it gave."""
 
     def link(_url: str, dest: Path) -> Path:
         dest.write_bytes(b"\xff\xd8\xff")
         return dest
 
     monkeypatch.setattr(covers, "link", link)
-    app.cover_link_var.set("https://example.org/cover.jpg")
-    app._use_cover_link()
+    app.cover_var.set("https://example.org/cover.jpg")
+    app._cover_typed()
     for _ in range(100):
         app._drain()
-        if app.cover_var.get():
+        if app.cover_var.get() and not gui.is_link(app.cover_var.get()):
             break
         time.sleep(0.05)
 
     assert Path(app.cover_var.get()).read_bytes().startswith(b"\xff\xd8\xff")
 
 
+def test_a_link_in_the_image_box_is_fetched_before_the_book_is_converted(
+    app: gui.App, tmp_path: Path, monkeypatch
+) -> None:
+    """One press of the Save button does both jobs: the picture lands, then the run
+    that was asked for goes on over it."""
+
+    def link(_url: str, dest: Path) -> Path:
+        dest.write_bytes(b"\xff\xd8\xff")
+        return dest
+
+    monkeypatch.setattr(covers, "link", link)
+    runs: list[tuple] = []
+    monkeypatch.setattr(app, "_convert", lambda *args: runs.append(args))
+    pack = tmp_path / "pack.zip"
+    pack.write_bytes(b"pk")
+    app.pack_var.set(str(pack))
+    app.out_var.set(str(tmp_path))
+    app.cover_var.set("https://example.org/cover.jpg")
+
+    app._start()
+    assert runs == [], "the run waits for the picture"
+
+    for _ in range(100):
+        app.root.update()
+        app._drain()
+        if runs:
+            break
+        time.sleep(0.05)
+
+    assert runs, "the run went on once the link was a file"
+    _source, _out_dir, cover, _force = runs[0]
+    assert Path(cover).read_bytes().startswith(b"\xff\xd8\xff")
+
+
 def test_a_link_to_no_picture_says_so(app: gui.App, monkeypatch) -> None:
     monkeypatch.setattr(covers, "link", lambda _url, _dest: None)
-    app.cover_link_var.set("https://example.org/blank.gif")
-    app._use_cover_link()
+    app.cover_var.set("https://example.org/blank.gif")
+    app._cover_typed()
     for _ in range(100):
         app._drain()
         if app.t("cover_link_failed") in app.log_view.get("1.0", "end"):

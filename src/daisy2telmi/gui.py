@@ -237,23 +237,43 @@ def open_url(url: str) -> bool:
     return webbrowser.open(url)
 
 
-# The window's own bar: the mark, what the window is for, and the three controls that
-# stand in for a system bar's. Tk cannot round the corners of a window it does not
-# draw, so the bar draws a rounded card of its own and sets its controls in it. It is
-# a card in the top right corner, not a band across the window: the width it does not
-# use is where the two paths stand, and the height it does not use is the window's.
-BAR_WIDTH = 380
+def is_link(text: str) -> bool:
+    """Whether the Image box was given a web address rather than a file.
+
+    One box takes both, so every reader of it has to tell them apart before treating
+    the text as a path: Path("https://…") is a perfectly good path to nothing.
+    """
+    return text.startswith(("http://", "https://"))
+
+
+# The window's own title block: the mark, the app's name with its version, and what
+# the window is for, on the line under the name. Tk cannot round the corners of a
+# window it does not draw, so the block draws a rounded card of its own, and sets the
+# three controls that stand in for a system bar's at its right end - only when there
+# is no system bar to stand in for.
+BAR_WIDTH = 500
 BAR_INSET = 10
 BAR_RADIUS = 12
 BAR_MARK = 64
-# The card has to be taller than the mark it holds, or the mark spills past its
-# rounded edge: 84 - 2 * 10 = 64 against a 64 mark.
-BAR_HEIGHT = 84
+# The card has to hold both the mark it carries and the two lines of words beside it:
+# 96 - 2 * 10 = 76 against a 64 mark, a 25-pixel name and a description that wraps to
+# two 19-pixel lines in the longest of the ten languages.
+BAR_HEIGHT = 96
+BAR_NAME_FONT = 15
+BAR_VERSION_FONT = 12
+BAR_HEADLINE_FONT = 11
 BAR_BUTTON = 26
 BAR_BUTTON_RADIUS = 8
 BAR_GAP = 6
 BAR_HOVER = "#565274"
 BAR_CLOSE_HOVER = "#8f3b34"
+
+# The mark each of the four pick buttons carries, and the wheel beside the button
+# that starts the work: bigger than the one that says a cover is being looked up,
+# because it is the one that says the book is being converted.
+PICK_MARK = 18
+PICK_MARKS = ("book", "folder", "export", "player")
+WORK_WHEEL = 34
 
 # The window opens at a size of its own: Tk asks each widget how big it wants to be,
 # hands the total to the window manager and lets it decide, and a window the manager
@@ -274,12 +294,13 @@ PATH_READ = 76
 
 
 class TitleBar(tk.Canvas):
-    """The window's own bar: the mark, its name, and the controls it needs.
+    """The window's own title block: the mark, its name, what it is for, and the
+    controls it needs.
 
     The controls call Tk's own window commands, so they work whether or not the system
-    bar is there. They are only drawn when the bar has to stand in for that bar: with
+    bar is there. They are only drawn when the block has to stand in for that bar: with
     the system bar in place the window already has its buttons, and this one is the
-    mark and the name.
+    mark, the name and the description.
     """
 
     def __init__(self, app: App, parent: tk.Widget) -> None:
@@ -293,6 +314,14 @@ class TitleBar(tk.Canvas):
         )
         self.app = app
         self.mark = app._mark_photo(BAR_MARK)
+        self.headline = app._label(
+            self,
+            "app_headline",
+            background=SUNK,
+            foreground=MUTED,
+            font=("TkDefaultFont", BAR_HEADLINE_FONT),
+        )
+        self.headline.place_forget()
         self.frameless = app.frameless
         self._boxes: dict[str, int] = {}
         self._words: dict[str, int] = {}
@@ -317,27 +346,37 @@ class TitleBar(tk.Canvas):
         if self.mark:
             self.create_image(BAR_INSET + BAR_RADIUS, height // 2, image=self.mark, anchor="w")
         left = BAR_INSET + BAR_RADIUS + BAR_MARK + 14
-        self._title_y = height // 2
+        # The words stop where the controls start, so a description long in its own
+        # language wraps inside the card instead of running under its buttons.
+        room = width - left - BAR_INSET - BAR_RADIUS - len(self.app.bar_controls()) * (
+            BAR_BUTTON + BAR_GAP
+        )
+        self._title_y = BAR_INSET + 6
         self._words["title"] = self.create_text(
             left,
             self._title_y,
-            anchor="w",
+            anchor="nw",
             text=self.app.t("app_title"),
             fill=INK,
-            font=("TkDefaultFont", 13, "bold"),
+            font=("TkDefaultFont", BAR_NAME_FONT, "bold"),
         )
         title = self.bbox(self._words["title"])
         self._words["version"] = self.create_text(
-            (title[2] if title else left) + 10,
+            title[2] + 10,
             self._title_y,
-            anchor="w",
+            anchor="nw",
             text=__version__,
             fill=MUTED,
-            font=("TkDefaultFont", 11),
+            font=("TkDefaultFont", BAR_VERSION_FONT),
         )
+        # The description is the block's second line, and the only part of it that can
+        # need one: it wraps at the room the words have, so a language with long words
+        # takes a second line rather than running under the controls.
+        self.headline.configure(wraplength=room)
+        self.headline.place(x=left, y=title[3] + 2, anchor="nw")
         self._controls(width, height)
         if self.frameless:
-            # With no system bar to pull on, the bar's own card and words move the window.
+            # With no system bar to pull on, the block's own card and words move the window.
             for item in (card, *self._words.values()):
                 self.tag_bind(item, "<ButtonPress-1>", self._press_bar)
                 self.tag_bind(item, "<B1-Motion>", self._drag_bar)
@@ -437,22 +476,23 @@ class Wheel(tk.Canvas):
     SPOKES = 8
     STEP = 45
 
-    def __init__(self, parent: tk.Widget) -> None:
+    def __init__(self, parent: tk.Widget, size: int = SIZE) -> None:
         super().__init__(
             parent,
-            width=self.SIZE,
-            height=self.SIZE,
+            width=size,
+            height=size,
             background=PAPER,
             highlightthickness=0,
             borderwidth=0,
         )
+        self.size = size
         self._turn = 0
         self._job: str | None = None
         self.redraw()
 
     def redraw(self) -> None:
         self.delete("all")
-        middle = self.SIZE / 2
+        middle = self.size / 2
         reach = middle - 2
         self.create_arc(
             middle - reach,
@@ -463,7 +503,7 @@ class Wheel(tk.Canvas):
             extent=270,
             style="arc",
             outline=NAVY,
-            width=3,
+            width=max(3, self.size // 10),
         )
 
     def start(self, interval: int = 90) -> None:
@@ -727,6 +767,9 @@ class App:
         # Which ask the newest cover answer answers: the pack's own metadata, the
         # words the user typed, or a link they pasted.
         self._cover_asked = "pack"
+        # The run asked for while the Image box still held a link, kept until the
+        # picture lands: one press of the button does the fetch and the conversion.
+        self._cover_then = None
         self._spinning = False
         self._pack_title: str | None = None
         self.crop_var = tk.StringVar(value=self.options["cover_crop"])
@@ -753,7 +796,7 @@ class App:
         self._test_key: tuple | None = None
         self._on_done = None
         self._labels: dict[str, tk.Widget] = {}
-        self._pick_mark = self._mark_photo(16)
+        self._pick_marks = {name: self._mark_photo(PICK_MARK, f"pick-{name}") for name in PICK_MARKS}
         self._crop_width = self._crop_room()
         self._build()
         self._show_paths()
@@ -770,10 +813,10 @@ class App:
         self._labels[key] = widget
         return widget
 
-    def _mark_photo(self, side: int) -> tk.PhotoImage | None:
+    def _mark_photo(self, side: int, name: str = "icon") -> tk.PhotoImage | None:
         """The mark at the size a frame asks for. Tk cannot scale a photo image, so
-        tools/make_icons.py writes one PNG for each size the window draws."""
-        path = ICON.parent / f"icon-{side}.png"
+        tools/make_icons.py writes one PNG for each mark and size the window draws."""
+        path = ICON.parent / f"{name}-{side}.png"
         return tk.PhotoImage(master=self.root, file=str(path)) if path.is_file() else None
 
     def _button(self, parent: tk.Widget, key: str, command, **kwargs) -> ttk.Button:
@@ -781,35 +824,42 @@ class App:
         self._labels[key] = widget
         return widget
 
-    def _pick_button(self, parent: tk.Widget, key: str, command) -> ttk.Button:
-        """A button that opens something, drawn with the app's own mark beside its name."""
+    def _pick_button(self, parent: tk.Widget, key: str, command, glyph: str) -> ttk.Button:
+        """A button that opens something, drawn with the mark of the thing it picks:
+        the book, a folder of them, the folder a story is written into, the machine
+        that plays it."""
         widget = self._button(parent, key, command, compound="left")
-        if self._pick_mark:
-            widget.configure(image=self._pick_mark)
+        mark = self._pick_marks.get(glyph)
+        if mark:
+            widget.configure(image=mark)
         return widget
 
     def _build(self) -> None:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(1, weight=1)
 
-        # The buttons that name the book and where its story goes stand at the top,
-        # with room above them, and the line under them has the whole width of the
+        # The window's own title block stands at the top left - the mark, the name with
+        # its version, and what the window is for on the line under it. The buttons that
+        # pick the book and where its story goes stand at the top right, each carrying
+        # the mark of the thing it picks. The line under them has the whole width of the
         # window to be read in - a path is the one thing here that is never short.
         # Nothing is typed: a pack is dropped on the window or picked from a list.
-        head = ttk.Frame(self.root, padding=(12, 18, 12, 0))
+        head = ttk.Frame(self.root, padding=(12, 12, 12, 0))
         head.grid(row=0, column=0, sticky="ew")
-        head.columnconfigure(0, weight=1)
+        head.columnconfigure(1, weight=1)
+        self.bar = TitleBar(self, head)
+        self.bar.grid(row=0, column=0, sticky="w")
         picks = ttk.Frame(head)
-        picks.grid(row=0, column=0, sticky="w")
-        for key, command in (
-            ("browse_zip", self._pick_pack_file),
-            ("browse_folder", self._pick_pack_dir),
-            ("output_label", self._pick_out_dir),
-            ("browse_stories", self._pick_telmi_stories),
+        picks.grid(row=0, column=1, sticky="e")
+        for key, command, glyph in (
+            ("browse_zip", self._pick_pack_file, "book"),
+            ("browse_folder", self._pick_pack_dir, "folder"),
+            ("output_label", self._pick_out_dir, "export"),
+            ("browse_stories", self._pick_telmi_stories, "player"),
         ):
-            self._pick_button(picks, key, command).pack(side="left", padx=(0, 6))
+            self._pick_button(picks, key, command, glyph).pack(side="left", padx=(6, 0))
         self._paths_line = ttk.Label(head, text="", style="Brand.TLabel")
-        self._paths_line.grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self._paths_line.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         # Two columns: the fields down the left, the picture and its knobs down the
         # right. The log is not in here - it runs along the bottom of the window, as
@@ -842,13 +892,17 @@ class App:
         self._show_engines()
 
         self._label(fields, "cover_label").grid(row=4, column=0, sticky="w", pady=(6, 0))
-        ttk.Entry(fields, textvariable=self.cover_var, width=FIELD_WIDTH).grid(row=5, column=0, sticky="w")
+        cover_entry = ttk.Entry(fields, textvariable=self.cover_var, width=FIELD_WIDTH)
+        cover_entry.grid(row=5, column=0, sticky="w")
+        cover_entry.bind("<Return>", self._cover_typed)
+        cover_entry.bind("<FocusOut>", self._cover_typed)
         self._button(fields, "browse_cover", self._pick_cover).grid(row=5, column=1, sticky="w", padx=(6, 0))
         # A lookup takes a second or two on its own thread, and four services are
         # asked before the answer says there is nothing: the window has to say it is
-        # waiting, and let the user call it off.
+        # waiting, and let the user call it off. It gets the line under the box -
+        # the wheel, its sentence and the Stop button are wider than the box is.
         cover_wait = ttk.Frame(fields)
-        cover_wait.grid(row=5, column=2, sticky="w", padx=(6, 0))
+        cover_wait.grid(row=6, column=0, columnspan=2, sticky="w", pady=(4, 0))
         self.cover_spin = Wheel(cover_wait)
         self.cover_note = self._label(cover_wait, "cover_searching")
         self.cover_stop = self._button(cover_wait, "cover_stop", self._stop_cover)
@@ -856,32 +910,29 @@ class App:
         # When none of those services has the book, the two words the user types
         # are the search: the app's own catalogues first, then an image search on
         # either of the two engines that answer without an account - those two
-        # only open a browser, so their answer is a picture the user saves.
+        # only open a browser, so their answer is a picture the user saves. The
+        # app's own search stands on the line above the two boxes it reads, so the
+        # boxes and the button that uses them read as one thing.
+        self._button(fields, "cover_search_app", self._search_words).grid(
+            row=7, column=0, sticky="w", pady=(8, 0)
+        )
         search = ttk.Frame(fields)
-        search.grid(row=6, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        search.grid(row=8, column=0, columnspan=3, sticky="w", pady=(4, 0))
         words = ttk.Frame(search)
         words.pack(anchor="w")
         self._label(words, "cover_author").pack(side="left")
         ttk.Entry(words, textvariable=self.author_var, width=12).pack(side="left", padx=(6, 12))
         self._label(words, "cover_book_title").pack(side="left")
         ttk.Entry(words, textvariable=self.title_var, width=16).pack(side="left", padx=(6, 0))
-        # The three ways of asking are a second line rather than a wider one: a row
-        # this wide would push the log off the window.
+        # The two engines that only open a browser are a second line rather than a
+        # wider one: a row this wide would push the log off the window.
         engines = ttk.Frame(search)
         engines.pack(anchor="w", pady=(4, 0))
-        self._button(engines, "cover_search_app", self._search_words).pack(side="left")
-        self._label(engines, "cover_search_on").pack(side="left", padx=(12, 6))
-        self._button(engines, "cover_search_ddg", lambda: self._search_cover("ddg")).pack(side="left")
+        self._label(engines, "cover_search_on").pack(side="left")
+        self._button(engines, "cover_search_ddg", lambda: self._search_cover("ddg")).pack(side="left", padx=(6, 0))
         self._button(engines, "cover_search_google", lambda: self._search_cover("google")).pack(
             side="left", padx=(4, 0)
         )
-
-        # A picture found in a browser is only a link until it is fetched: pasting
-        # it here brings it into the Image box like a cover the services answered.
-        self._label(fields, "cover_link").grid(row=7, column=0, sticky="w", pady=(8, 0))
-        self.cover_link_var = tk.StringVar()
-        ttk.Entry(fields, textvariable=self.cover_link_var, width=FIELD_WIDTH).grid(row=8, column=0, sticky="w")
-        self._button(fields, "cover_use", self._use_cover_link).grid(row=8, column=1, sticky="w", padx=(6, 0))
 
         # The frame and its knobs are one card: what changes the picture stands next to
         # it, not in the next column over. It takes the column the log used to have,
@@ -990,6 +1041,11 @@ class App:
         controls.grid(row=2, column=0, sticky="ew", padx=12, pady=(8, 0))
         self.save_button = self._button(controls, "save", self._start, style="Work.TButton")
         self.save_button.pack(side="left")
+        # The wheel that says the work is running stands on the button's right, and
+        # bigger than the one that says a search is running: it is the answer to the
+        # button the user just pressed.
+        self.progress = Wheel(controls, WORK_WHEEL)
+        self.progress.pack(side="left", padx=(12, 0))
         self._button(controls, "options", self._open_options).pack(side="left", padx=12)
         self._button(controls, "chapters", self._open_chapters).pack(side="left")
         self.test_button = self._button(controls, "test_story", self._test_story)
@@ -999,8 +1055,6 @@ class App:
         )
         self._labels["overwrite"] = self.force_box
         self.force_box.pack(side="left", padx=12)
-        self.progress = Wheel(controls)
-        self.progress.pack(side="right")
 
         # Every control the format decides between now exists.
         self._show_cover()
@@ -1012,7 +1066,7 @@ class App:
         # conversion says one line per part, and a line broken into three reads as
         # three things that went wrong.
         log_frame = ttk.Frame(self.root)
-        log_frame.grid(row=3, column=0, sticky="nsew", padx=12, pady=(8, 0))
+        log_frame.grid(row=3, column=0, sticky="nsew", padx=12, pady=(8, 10))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
         self.log_view = tk.Text(
@@ -1049,16 +1103,6 @@ class App:
 
         # The name of the app along the bottom edge, where it is read last instead of
         # crowding the work above it; the window's own band sits at its right end.
-        bar = ttk.Frame(self.root)
-        bar.grid(row=4, column=0, sticky="ew", padx=12, pady=(2, 10))
-        self._stamp = self._mark_photo(16)
-        if self._stamp:
-            ttk.Label(bar, image=self._stamp).pack(side="left")
-        self._label(bar, "brand", style="Brand.TLabel").pack(side="left", padx=(6, 0))
-        self._label(bar, "app_headline", style="Brand.TLabel").pack(side="left", padx=(12, 0))
-        self.bar = TitleBar(self, bar)
-        self.bar.pack(side="right")
-
         hint = self.t("drop_hint") if DND_FILES else self.t("drop_unavailable")
         self._append(hint)
 
@@ -1244,6 +1288,8 @@ class App:
         Nothing of the user's is touched: the output folder stays as it is until the
         Save button is pressed.
         """
+        if self._cover_pending(self._test_story):
+            return
         picked = self._sources()
         if picked is None:
             return
@@ -1485,10 +1531,32 @@ class App:
             found = None
         self.events.put(("cover", job, "" if found is None else str(found), words.title, words.author))
 
+    def _cover_typed(self, _event: object = None) -> None:
+        """Fetch the link the Image box was just given.
+
+        The box takes a file or a web address, so a pasted link has to become a
+        picture before the frame, the cards or the story can use it.
+        """
+        if is_link(self.cover_var.get().strip()):
+            self._use_cover_link()
+
+    def _cover_pending(self, then) -> bool:
+        """True when the Image box holds a link rather than a file.
+
+        A link is fetched like any other cover - on a worker thread, with the wheel
+        turning - so the run asked for here waits for the answer instead of running
+        without a picture. One press of the button then does both.
+        """
+        if not is_link(self.cover_var.get().strip()):
+            return False
+        self._cover_then = then
+        self._use_cover_link()
+        return True
+
     def _use_cover_link(self) -> None:
         """Fetch the picture a pasted link points at, on the same thread a lookup runs on."""
-        url = self.cover_link_var.get().strip()
-        if not url:
+        url = self.cover_var.get().strip()
+        if not is_link(url):
             return
         self._cover_job += 1
         job = self._cover_job
@@ -1912,6 +1980,8 @@ class App:
         ).start()
 
     def _start(self) -> None:
+        if self._cover_pending(self._start):
+            return
         picked = self._sources()
         if picked is None:
             return
@@ -2090,11 +2160,18 @@ class App:
                 self.title_var.set(title)
         if self.cover_var.get().strip() and asked == "pack":
             return
+        then, self._cover_then = self._cover_then, None
         if path:
             self._auto_cover = path
             self.cover_var.set(path)
             self._append(self.t("cover_found"))
+            if asked == "link" and then is not None:
+                # The run that waited for this picture goes on now that it is a file.
+                self.root.after(0, then)
         elif asked == "link":
+            # A link that gave no picture is not a cover: the box is left empty rather
+            # than holding something every later reader of it would have to reject.
+            self.cover_var.set("")
             self._append(self.t("cover_link_failed"))
         else:
             self._append(self.t("cover_none"))

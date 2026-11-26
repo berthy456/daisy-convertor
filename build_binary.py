@@ -390,10 +390,11 @@ def main() -> int:
     if code != 0:
         return code
 
-    # On Windows the zip is the file a user downloads, so it names itself. On Linux
+    # On Windows the setup is the file a user downloads, so it names itself. On Linux
     # and macOS the binary is an input to the packaging steps, which name the download.
     if sys.platform == "win32":
-        print(f"built {_zip_windows_folder(ROOT / 'dist', _artifact_name())}")
+        setup = _build_installer(ROOT / "dist")
+        print(f"built {setup if setup else ROOT / 'dist' / 'daisy-convertor'}")
     return 0
 
 

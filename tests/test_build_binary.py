@@ -6,6 +6,7 @@ import importlib.util
 import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from daisy2telmi import __version__
@@ -62,6 +63,30 @@ def test_the_setup_offers_python_where_the_app_looks_for_it() -> None:
 def test_the_uninstall_leaves_the_users_own_speech_folder_alone() -> None:
     # The engines live in data_dir(), beside {app} rather than inside it.
     assert "[UninstallDelete]" not in ISS
+
+
+def test_the_windows_build_finishes_by_packaging_the_folder(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class Runner:
+        def run(self, *args, **kwargs):
+            return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(build_binary, "ROOT", tmp_path)
+    monkeypatch.setattr(build_binary, "subprocess", Runner())
+    monkeypatch.setattr(build_binary, "_locate_ffmpeg", lambda: "ffmpeg")
+    for name in ("_ffmpeg_options", "_speech_options", "_gui_options", "_asset_options"):
+        monkeypatch.setattr(build_binary, name, lambda *args: [])
+
+    built = []
+    monkeypatch.setattr(
+        build_binary,
+        "_build_installer",
+        lambda dist: built.append(dist) or dist / f"daisy-convertor-{__version__}-setup.exe",
+    )
+    assert build_binary.main() == 0
+    assert built == [tmp_path / "dist"]
 
 
 def test_no_setup_without_inno_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

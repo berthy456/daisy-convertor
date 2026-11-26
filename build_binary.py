@@ -9,26 +9,29 @@ a binary for the machine it runs on. On Windows:
     pip install -e .[dev]
     python build_binary.py
 
-The result is dist/daisy-convertor-<version>-windows-<arch>.zip, holding the
-folder the exe lives in, and dist/daisy-convertor on macOS and Linux, where the
-packaging steps name the file the user downloads.
+The result is dist/daisy-convertor-<version>-setup.exe on Windows — the folder
+the exe lives in, packaged by windows.iss, which needs Inno Setup — and
+dist/daisy-convertor on macOS and Linux, where the packaging steps name the file
+the user downloads.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import os
-import platform
 import shutil
 import subprocess
 import sys
 import tomllib
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
-_OS_NAMES = {"darwin": "macos", "linux": "linux", "win32": "windows"}
-_ARCH_NAMES = {"AMD64": "x86_64", "x86_64": "x86_64", "ARM64": "aarch64", "aarch64": "aarch64"}
+# The Python the Windows installer offers: the version the project itself builds
+# with, and the newest one the speech packages all install into.
+_PYTHON_VERSION = "3.11.9"
+_PYTHON_ARCH = "amd64"
 
 
 def _locate_ffmpeg() -> str | None:
@@ -260,24 +263,63 @@ def _asset_options() -> list[str]:
     ]
 
 
-def _artifact_name() -> str:
-    """The name a download should carry: the version the binary itself reports, the OS and the machine."""
-    version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
-    return f"daisy-convertor-{version}-{_OS_NAMES[sys.platform]}-{_ARCH_NAMES.get(platform.machine(), platform.machine())}"
+def _version() -> str:
+    """The version the binary reports, which is the version the download is named for."""
+    return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 
 
-def _zip_windows_folder(dist: Path, name: str) -> Path:
-    """Zip the folder the exe lives in, under the name the download should carry.
+def _iscc() -> str | None:
+    """Inno Setup's compiler, wherever it was installed."""
+    found = shutil.which("iscc")
+    if found:
+        return found
+    for key in ("ProgramFiles(x86)", "ProgramFiles"):
+        candidate = Path(os.environ.get(key, "")) / "Inno Setup 6" / "ISCC.exe"
+        if candidate.is_file():
+            return str(candidate)
+    return None
 
-    The folder is what makes the exe start at once: a one-file exe unpacks its
-    whole payload, ffmpeg included, into a temporary folder on every start.
+
+def _python_installer(dist: Path) -> Path:
+    """The python.org installer the setup carries, kept in dist between runs.
+
+    A speech engine is only buildable in a Python the user has, and a fresh
+    Windows machine has none. The setup installs one for the current user only,
+    in the folder the app searches when it looks for an interpreter of its own.
     """
-    for stale in dist.glob("daisy-convertor-*windows*.zip"):
+    target = dist / "python-installer.exe"
+    if not target.is_file():
+        url = f"https://www.python.org/ftp/python/{_PYTHON_VERSION}/python-{_PYTHON_VERSION}-{_PYTHON_ARCH}.exe"
+        print(f"downloading {url}")
+        dist.mkdir(parents=True, exist_ok=True)
+        urllib.request.urlretrieve(url, target)
+    return target
+
+
+def _build_installer(dist: Path) -> Path | None:
+    """Package the folder as the one exe a user downloads.
+
+    The folder is what makes the app start at once: a one-file exe unpacks its
+    whole payload, ffmpeg included, into a temporary folder on every start. The
+    setup unpacks it once instead, into the user's own folder, where no admin
+    rights are needed and nothing has to be unzipped by hand.
+    """
+    compiler = _iscc()
+    if compiler is None:
+        print("warning: Inno Setup was not found; dist/daisy-convertor was built, but not packaged", file=sys.stderr)
+        return None
+    version = _version()
+    for stale in dist.glob("daisy-convertor-*setup.exe"):
         stale.unlink()
-    folder = dist / "daisy-convertor"
-    archive = shutil.make_archive(str(dist / name), "zip", root_dir=dist, base_dir=folder.name)
-    shutil.rmtree(folder)
-    return Path(archive)
+    command = [
+        compiler,
+        f"/DAppVersion={version}",
+        f"/DPythonInstaller={_python_installer(dist)}",
+        str(ROOT / "windows.iss"),
+    ]
+    print(" ".join(command))
+    subprocess.run(command, check=True, cwd=ROOT)
+    return dist / f"daisy-convertor-{version}-setup.exe"
 
 
 def _mode_options() -> list[str]:

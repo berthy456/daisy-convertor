@@ -273,7 +273,7 @@ node --test tests/web/*.test.mjs
 
 ## Build a binary
 
-`build_binary.py` produces a `--onefile` executable on macOS and Linux and a `--onedir --windowed` folder on Windows. PyInstaller cannot cross-compile, so build on the target OS:
+`build_binary.py` produces a `--onefile` executable on macOS and Linux and a `--onedir --windowed` folder on Windows, which `windows.iss` packages as a setup exe. PyInstaller cannot cross-compile, so build on the target OS:
 
 ```bat
 py -3.11 -m venv .venv
@@ -282,9 +282,11 @@ pip install -e .[dev]
 python build_binary.py
 ```
 
-Produces `dist\daisy-convertor-<version>-windows-<arch>.zip`, holding the folder the exe lives in (`dist/daisy-convertor` on macOS and Linux, where the packaging steps name the file the user downloads). `lxml.etree` and `lxml._elementpath` are passed as hidden imports; PyInstaller's own lxml hook does the rest.
+Produces `dist\daisy-convertor-<version>-setup.exe`, that folder packaged by Inno Setup (`dist/daisy-convertor` on macOS and Linux, where the packaging steps name the file the user downloads). Inno Setup has to be installed for it: without it the script builds the folder and says it was not packaged. `lxml.etree` and `lxml._elementpath` are passed as hidden imports; PyInstaller's own lxml hook does the rest.
 
 Windows is `--onedir --windowed`: a one-file exe unpacks its whole payload, ffmpeg being most of it, into a temporary folder on every start, and a console build opens a terminal the GUI does not use. A windowed build has no terminal even when it is started from one, so `launcher.py` asks the parent's back (`AttachConsole`, then `CONOUT$`) and `-v` writes into it; with no terminal to attach — a double-click — the log goes to the window's log frame instead of a devnull. `ffmpeg` and `ffplay` are excluded from UPX.
+
+The setup unpacks that folder once, into `%LOCALAPPDATA%\daisy2telmi\app`, with no admin rights, a Start Menu entry and an optional desktop shortcut. It offers Python 3.11.9 — the version the project builds with — installed for the current user only, in the folder `tts._installs()` searches, because a package engine is only buildable in a Python the user has; the offer is skipped when one is already installed there. The engines live in `data_dir()`, beside the app folder rather than inside it, so an uninstall leaves the voices and the environments alone.
 
 `assets/icon.svg` is the one drawing; `tools/make_icons.py` redraws `assets/icon.ico`, `assets/icon.icns` and the three PNGs in `src/daisy2telmi/assets` from it, and those are committed because no build runner has an SVG rasteriser. `build_binary.py` passes the `.icns` on macOS and the `.ico` on Windows, and unpacks `icon.png` next to `gui.py`, which is where the window looks for it; `tools/make_appimage.py` uses it for the desktop file. Tk cannot scale a photo image, so the header's 64-pixel mark and the status bar's 16-pixel one are separate files.
 
@@ -298,7 +300,7 @@ The Linux and macOS builds also bundle espeak-ng, the libraries it links and its
 
 | Artifact | Built on | Notes |
 | :--- | :--- | :--- |
-| `daisy-convertor-<version>-windows-<arch>.zip` | `windows-latest` | named by `build_binary.py`; a static ffmpeg downloaded by the job and bundled, speech uses the Windows engine. The job unpacks the zip and converts `gon-ruby-mp3.zip` with it, so a bundled ffmpeg that cannot run fails the build |
+| `daisy-convertor-<version>-setup.exe` | `windows-latest` | the folder packaged by `windows.iss` with Inno Setup, which the job installs; a static ffmpeg downloaded by the job and bundled, speech uses the Windows engine. The installed app converts `gon-ruby-mp3.zip`, so a bundled ffmpeg that cannot run fails the build |
 | `daisy-convertor_<version>_<arch>.deb` | `ubuntu-latest` | installs to `/usr/local/bin/daisy-convertor`, declares `ffmpeg` as a dependency rather than duplicating it. Written by `tools/make_deb.py` using only the standard library, so it can be produced and checked on any OS without `dpkg` or `fakeroot`. The job removes the `espeak-ng` package before its smoke test so the run has to use the bundled copy |
 | `daisy-convertor-<version>-x86_64.AppImage` | `ubuntu-latest` | the same binary, packaged by `tools/make_appimage.py`; `appimagetool` is unpacked with `--appimage-extract` because runners have no FUSE |
 | `daisy-convertor-<version>-macos-<arch>.dmg` | `macos-latest` (arm64) and `macos-15-intel` (x86_64) | **unsigned and un-notarised**: Gatekeeper blocks the first run, so open it with right-click → Open or `xattr -d com.apple.quarantine daisy-convertor` |
@@ -389,7 +391,7 @@ The browser converter (`web/`), run under Node against both packs:
 Builds:
 
 - A `--onefile` PyInstaller build runs the whole conversion end to end with lxml bundled, and again with `PATH=/usr/bin:/bin` using the ffmpeg embedded in the bundle. That stripped-`PATH` run also spoke 6 French chapter cards through the bundled espeak-ng, whose load commands point at `@loader_path` and whose data comes from the copied `espeak-ng-data`.
-- GitHub Actions builds and smoke-tests the Windows `.zip` on a Windows runner, the `.deb` on Ubuntu and the `.dmg` on macOS.
+- GitHub Actions builds and smoke-tests the Windows `.exe` on a Windows runner — the job runs the setup silently and converts the pack with the app it installed — the `.deb` on Ubuntu and the `.dmg` on macOS.
 - The Ubuntu job also converts `gon-ruby-mp3.zip` at sentence level with `--captions` and checks a sentence picture came out, which is how a build that dropped the bundled font gets caught.
 
 ## Known limitations

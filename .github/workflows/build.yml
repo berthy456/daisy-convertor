@@ -49,19 +49,30 @@ jobs:
           if (-not $ff) { Write-Error "the ffmpeg archive held no ffmpeg.exe"; exit 1 }
           "DAISY2TELMI_FFMPEG=$ff" | Out-File -Append -FilePath $env:GITHUB_ENV
           Write-Host "bundling $ff"
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
       - name: Build daisy-convertor
         run: |
           python build_binary.py
           exit $LASTEXITCODE
-      # The zip is what the user unpacks, so the test unpacks it and asks it to
-      # convert a book. `--version` alone never ran ffmpeg, which is how a build
-      # whose bundled ffmpeg could not start got shipped.
-      # cmd /c waits for a windowed exe; PowerShell's own call operator does not.
-      - name: Smoke test the zip
+      # The setup.exe is what the user runs, so the test runs it and asks the app
+      # it installed to convert a book.
+      - name: Install it the way a user would
         run: |
-          $zip = (Get-ChildItem dist\daisy-convertor-*-windows-*.zip).FullName
-          Expand-Archive -Path $zip -DestinationPath C:\smoke -Force
-          $exe = "C:\smoke\daisy-convertor\daisy-convertor.exe"
+          $setup = (Get-ChildItem dist\daisy-convertor-*-setup.exe).FullName
+          $exe = "$env:LOCALAPPDATA\daisy2telmi\app\daisy-convertor.exe"
+          cmd /c "`"$setup`" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART"
+          if ($LASTEXITCODE) { Write-Error "the setup failed"; exit 1 }
+          if (-not (Test-Path $exe)) { Write-Error "the app did not land in the user's own folder"; exit 1 }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Daisy Convertor.lnk")) { Write-Error "no Start Menu entry"; exit 1 }
+          # The Python the setup offers, in the folder the app searches for one.
+          if (-not (Get-ChildItem "$env:LOCALAPPDATA\Programs\Python\Python3*\python.exe" -ErrorAction SilentlyContinue)) { Write-Error "no Python to build a speech engine in"; exit 1 }
+      # `--version` alone never ran ffmpeg, which is how a build whose bundled
+      # ffmpeg could not start got shipped.
+      # cmd /c waits for a windowed exe; PowerShell's own call operator does not.
+      - name: Smoke test the installed app
+        run: |
+          $exe = "$env:LOCALAPPDATA\daisy2telmi\app\daisy-convertor.exe"
           # A windowed build carries no console of its own: launcher.py asks the
           # terminal it was started from back. Nothing written back means the log
           # went nowhere and a `-v` run is unreadable on that machine.
@@ -78,7 +89,7 @@ jobs:
       # writes the story.
       - name: Smoke test the cover lookup
         run: |
-          $exe = "C:\smoke\daisy-convertor\daisy-convertor.exe"
+          $exe = "$env:LOCALAPPDATA\daisy2telmi\app\daisy-convertor.exe"
           cmd /c "`"$exe`" gon-ruby-mp3.zip C:\smoke\lookup --find-cover --announce off"
           if ($LASTEXITCODE) { Write-Error "the exe crashed while looking the cover up"; exit 1 }
           $count = (Get-ChildItem C:\smoke\lookup\*\audios\s*.mp3).Count
@@ -86,7 +97,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: daisy-convertor-windows
-          path: dist/*.zip
+          path: dist/*.exe
 
   # Pinned: the bundled libraries inherit the runner's glibc, and 22.04 is the
   # oldest Ubuntu image still published (glibc 2.35).

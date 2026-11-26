@@ -10,12 +10,12 @@ Nothing is uploaded anywhere. The web page converts the book inside your browser
 
 | Your machine | File to download |
 | :--- | :--- |
-| Windows | `daisy-convertor-<version>-windows-x86_64.zip` — unpack it, run `daisy-convertor.exe` inside |
+| Windows | `daisy-convertor-<version>-setup.exe` — run it once: the app goes into your own folder with a Start Menu entry, and it offers Python, which only a speech engine needs |
 | Linux | `daisy-convertor-<version>-x86_64.AppImage`, or the `.deb` |
 | Mac, Apple silicon | `daisy-convertor-<version>-macos-arm64.dmg` |
 | Mac, Intel | `daisy-convertor-<version>-macos-x86_64.dmg` |
 
-from the [releases page](https://github.com/berthy456/daisy-convertor/releases/latest). Everything the converter needs is inside the file: no ffmpeg, no Python to install.
+from the [releases page](https://github.com/berthy456/daisy-convertor/releases/latest). Everything the converter needs is inside the file: no ffmpeg, no Python to install. The three better voices are the one thing that does want a Python — the Windows setup offers it, and **Options** installs the engine.
 
 The Mac archive is not signed by Apple, so the first run needs right-click → **Open** instead of a double-click.
 

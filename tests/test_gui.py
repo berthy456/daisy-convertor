@@ -98,16 +98,21 @@ def _bar_boxes(app: gui.App) -> dict[str, float]:
     return boxes
 
 
+def _frameless(app: gui.App, monkeypatch) -> None:
+    """Ask for the one window that has no system bar, the way macOS gets it."""
+    monkeypatch.setattr(gui, "system_bar_kept", lambda: False)
+    app.set_frameless(True)
+
+
 def _controls(app: gui.App) -> list[str]:
-    """The controls the bar draws here, left to right. Nothing when the system bar is
-    there, and no hide button when there is no window manager left to iconify it."""
+    """The controls the bar draws here, left to right. Nothing where the window has its
+    own system bar."""
     return app.bar_controls()
 
 
 def test_the_window_draws_its_own_bar(app: gui.App) -> None:
-    """The bar is the app's own, so its controls are there on every platform and in a
-    frameless window too: a rounded card, the mark, the name with the version beside
-    it, the controls."""
+    """A rounded card, the mark, the name with the version beside it, and the controls
+    only where the window has no system bar of its own."""
     app.root.update()
     bar = app.bar
     kinds = [bar.type(item) for item in bar.find_all()]
@@ -170,26 +175,34 @@ def test_the_version_sits_beside_the_name_it_versions(app: gui.App) -> None:
     assert version[1] == name[1], "on the name's own line"
 
 
-def test_the_bar_controls_stand_at_its_right_edge(app: gui.App) -> None:
-    app.root.update()
-    boxes = _bar_boxes(app)
-    assert sorted(boxes, key=lambda key: boxes[key]) == _controls(app), "the controls, left to right"
-    assert boxes["close"] + gui.BAR_BUTTON < app.bar.winfo_width()
+def test_the_bar_controls_stand_at_its_right_edge(app: gui.App, monkeypatch) -> None:
+    _frameless(app, monkeypatch)
+    try:
+        app.root.update()
+        boxes = _bar_boxes(app)
+        assert sorted(boxes, key=lambda key: boxes[key]) == _controls(app), "the controls, left to right"
+        assert boxes["close"] + gui.BAR_BUTTON < app.bar.winfo_width()
+    finally:
+        app.set_frameless(False)
 
 
-def test_the_title_block_stays_the_same_card_when_the_window_widens(app: gui.App) -> None:
+def test_the_title_block_stays_the_same_card_when_the_window_widens(app: gui.App, monkeypatch) -> None:
     """The block is a card of its own, not a band stretched over the window: its controls
     stay where the card ends and the pick buttons are what moves."""
-    app.root.geometry("1200x600")
-    app.root.update()
-    close = _bar_boxes(app)["close"]
-    width = app.bar.winfo_width()
-    app.root.geometry("1300x600")
-    app.root.update()
-    assert _bar_boxes(app)["close"] == close, "the controls stay at the card's right edge"
-    assert app.bar.winfo_width() == width, "and the card keeps its own width"
-    picks = app._labels["browse_zip"].master
-    assert picks.winfo_rootx() > app.bar.winfo_rootx() + app.bar.winfo_width(), "the buttons move with the edge"
+    _frameless(app, monkeypatch)
+    try:
+        app.root.geometry("1200x600")
+        app.root.update()
+        close = _bar_boxes(app)["close"]
+        width = app.bar.winfo_width()
+        app.root.geometry("1300x600")
+        app.root.update()
+        assert _bar_boxes(app)["close"] == close, "the controls stay at the card's right edge"
+        assert app.bar.winfo_width() == width, "and the card keeps its own width"
+        picks = app._labels["browse_zip"].master
+        assert picks.winfo_rootx() > app.bar.winfo_rootx() + app.bar.winfo_width(), "the buttons move with the edge"
+    finally:
+        app.set_frameless(False)
 
 
 def test_the_bar_enlarges_the_window_and_puts_it_back(app: gui.App) -> None:
@@ -229,41 +242,40 @@ def test_the_bar_follows_the_language(app: gui.App) -> None:
     assert app._labels["app_headline"].cget("text") != english
 
 
-def test_a_frameless_window_drops_the_control_it_cannot_honour(app: gui.App) -> None:
-    """`overrideredirect` unmanages the window, and the window manager that would have
-    minimised it goes with it; the bar draws only what it can still do."""
-    assert app.frameless is True, "the window opens without the system bar"
-    if app.windowingsystem != "aqua":
-        assert app.root.overrideredirect(), "the system bar is gone"
-    boxes = set(_bar_boxes(app))
-    assert {"zoom", "close"} <= boxes
-    assert ("hide" in boxes) == (app.windowingsystem != "x11")
-
-
-def test_the_band_draws_no_buttons_under_the_system_bar(app: gui.App) -> None:
-    """The system bar has the window's buttons. Drawing them again in the band gives
-    the window two sets of them, so the band keeps only its mark and its name."""
-    app.set_frameless(False)
-    try:
-        app.root.update()
-        assert app.bar_controls() == []
-        assert _bar_boxes(app) == {}
-        assert len(_bar_items(app, "polygon")) == 1, "the card, and nothing else"
-    finally:
-        app.set_frameless(True)
-
-
-def test_the_windows_window_keeps_the_bar_it_is_given(app: gui.App, monkeypatch) -> None:
-    """Tk's only way to lose the title bar on Windows is `overrideredirect`, which
-    takes the taskbar entry, the resize edges and the minimise with it. A window the
-    user cannot get back from the taskbar is not a bar worth drawing, so Windows keeps
-    its own and the band there draws no buttons."""
-    monkeypatch.setattr(gui, "system_bar_kept", lambda: True)
-    app.set_frameless(True)
+def test_the_window_keeps_the_system_bar_it_is_given(app: gui.App) -> None:
+    """Tk's only way to lose the title bar is `overrideredirect`, which hands the window
+    back to the app: the taskbar entry, the resize edges and the minimise go with it,
+    and so does the window manager that places, sizes and repaints the window. The bar
+    the app draws is not worth that, so the window keeps its own."""
+    app.root.update()
     assert app.frameless is False
     assert not app.root.overrideredirect()
-    assert app.bar_controls() == []
 
+
+def test_the_band_draws_no_buttons_over_the_system_bar(app: gui.App) -> None:
+    """The system bar has the window's buttons. Drawing them again in the band gives the
+    window two sets of them, so the band keeps its mark, its name and its description."""
+    app.root.update()
+    assert app.bar_controls() == []
+    assert _bar_boxes(app) == {}
+    assert len(_bar_items(app, "polygon")) == 1, "the card, and nothing else"
+
+
+def test_a_frameless_window_draws_the_controls_it_replaced(app: gui.App, monkeypatch) -> None:
+    """macOS is the one system where Tk hides the bar and leaves the window managed, so
+    it is the one system with a frameless window - and a frameless window needs the
+    buttons the bar it replaced was drawing."""
+    monkeypatch.setattr(gui, "system_bar_kept", lambda: False)
+    app.set_frameless(True)
+    try:
+        assert app.frameless is True
+        boxes = set(_bar_boxes(app))
+        assert {"hide", "zoom", "close"} <= boxes
+    finally:
+        app.set_frameless(False)
+
+
+def test_the_bar_choice_is_only_offered_where_it_can_be_honoured(app: gui.App, monkeypatch) -> None:
     page = gui.Options(app)
     try:
         boxes = {item.cget("text") for item in page.grid.grid_slaves() if isinstance(item, ttk.Checkbutton)}
@@ -271,21 +283,40 @@ def test_the_windows_window_keeps_the_bar_it_is_given(app: gui.App, monkeypatch)
     finally:
         page.top.destroy()
 
+    _frameless(app, monkeypatch)
+    page = gui.Options(app)
+    try:
+        boxes = {item.cget("text") for item in page.grid.grid_slaves() if isinstance(item, ttk.Checkbutton)}
+        assert app.t("opt_frameless") in boxes
+        page.frameless_var.set(True)
+        page._close()
+    finally:
+        with contextlib.suppress(tk.TclError):
+            page.top.destroy()
+    assert app.options["frameless"] is True
+    assert app.frameless is True
+    app.set_frameless(False)
+
 
 def test_the_window_opens_at_a_size_of_its_own(app: gui.App) -> None:
-    """Tk leaves the size to the window manager, and a window the manager does not
-    manage is only as big as it is told: untold, the AppImage's came up a small square."""
+    """Tk leaves the size to the window manager, and a window left untold came up a
+    small square."""
     app.root.update()
     assert app.root.winfo_width() >= min(gui.MIN_WIDTH, app.root.winfo_screenwidth())
     assert app.root.winfo_height() >= min(gui.MIN_HEIGHT, app.root.winfo_screenheight())
 
 
-def test_the_options_page_carries_the_bar_choice(app: gui.App) -> None:
-    page = gui.Options(app)
-    page.frameless_var.set(True)
-    page._close()
-    assert app.options["frameless"] is True
-    assert app.frameless is True
+def test_the_window_is_as_big_as_its_widgets_ask_for(app: gui.App) -> None:
+    """The manager answers a size request with a window of its own - its bar, a panel
+    along the edge - and Tk lays the widgets out in the room the window was given, which
+    cuts the column on the right. The window asks again until it has the room."""
+    app.root.update()
+    room = (
+        app.root.winfo_screenwidth() - 2 * gui.WINDOW_MARGIN,
+        app.root.winfo_screenheight() - 2 * gui.WINDOW_MARGIN,
+    )
+    assert app.root.winfo_width() >= min(app.root.winfo_reqwidth(), room[0])
+    assert app.root.winfo_height() >= min(app.root.winfo_reqheight(), room[1])
 
 
 def test_a_pack_does_not_choose_where_its_story_goes(app: gui.App, monkeypatch) -> None:

@@ -213,12 +213,13 @@ def set_icon(root: tk.Misc) -> None:
 def system_bar_kept() -> bool:
     """Whether the window has to keep the system's own bar.
 
-    Tk's only way to lose the title bar on Windows is `overrideredirect`, and on
-    Windows that takes the taskbar entry, the resize edges and the minimise with it -
-    a window the user cannot get back from the taskbar. The bar the app draws is worth
-    its cost on the other systems, not there.
+    Tk's only way to lose the title bar is `overrideredirect`, and that hands the window
+    back to the app: the taskbar entry, the resize edges and the minimise go with it,
+    and so does the window manager that places the window, sizes it and repaints what
+    it uncovers. macOS is the one system where Tk can hide the bar and leave the window
+    managed, so it is the one system that gets a frameless window.
     """
-    return sys.platform == "win32"
+    return sys.platform != "darwin"
 
 
 def open_url(url: str) -> bool:
@@ -276,12 +277,14 @@ PICK_MARKS = ("book", "folder", "export", "player")
 WORK_WHEEL = 34
 
 # The window opens at a size of its own: Tk asks each widget how big it wants to be,
-# hands the total to the window manager and lets it decide, and a window the manager
-# does not manage is only as big as it is told. The floor is the size the window needs
-# to show its bar and the two columns of work under it.
+# hands the total to the window manager and lets it decide. The manager's answer is
+# asked for again while the window settles, and not after. The floor is the size the
+# window needs to show its bar and the two columns of work under it.
 MIN_WIDTH = 900
 MIN_HEIGHT = 560
 WINDOW_MARGIN = 40
+REFIT_WAIT = 50
+REFIT_SETTLE = 600
 
 # Every box the window asks the user to fill in is the same width, so the fields read
 # as one column instead of a pile of rows of their own.
@@ -1125,15 +1128,12 @@ class App:
         """The buttons the window's own band has to draw.
 
         With the system bar there the window has its buttons already, so the band is
-        the mark and the name. Without it the band is all the window has, and
-        `overrideredirect` hands the window back to the app: the window manager that
-        would have minimised it goes with it, so a frameless window on X11 has no hide
-        button to draw.
+        the mark, the name and what the window is for. Only a frameless window needs
+        buttons of its own, and only macOS gets a frameless window: the bar can be
+        hidden there without handing the window back to the app.
         """
         if not self.frameless:
             return []
-        if self.windowingsystem == "x11":
-            return ["zoom", "close"]
         return ["hide", "zoom", "close"]
 
     def bar_action(self, key: str) -> None:
@@ -1209,25 +1209,43 @@ class App:
         """Open the window at a size of its own, in the middle of the screen.
 
         Tk hands the window manager the size its widgets asked for and lets it decide
-        what to do with it. A window the manager does not manage — the frameless one on
-        Linux and Windows — is only as big as it is told, and left untold the AppImage's
-        window came up a small square.
+        what to do with it. Left untold the AppImage's window came up a small square;
+        told once, before the window is on screen, the manager still answers with a size
+        of its own — its bar, a panel along the edge of the screen — and Tk lays the
+        widgets out in the room the window was given, which is where the column on the
+        right gets cut. So the size is asked for again after every resize the window is
+        given while it settles, and never after: from then on the user's own size stands.
         """
+        self.root.update_idletasks()
+        self._fit_window()
+        self._settling = True
+        self.root.bind("<Configure>", self._refit, add="+")
+        self.root.after(REFIT_SETTLE, lambda: setattr(self, "_settling", False))
+
+    def _refit(self, _event: tk.Event) -> None:
+        """Ask again for the room the widgets want, while the window is still settling."""
+        if not self._settling or self._maximised:
+            return
+        self.root.after(REFIT_WAIT, self._fit_window)
+
+    def _fit_window(self) -> None:
         self.root.update_idletasks()
         screen = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         width = min(self.root.winfo_reqwidth(), screen[0] - 2 * WINDOW_MARGIN)
         height = min(self.root.winfo_reqheight(), screen[1] - 2 * WINDOW_MARGIN)
+        if (width, height) == (self.root.winfo_width(), self.root.winfo_height()):
+            return
         x = max(0, (screen[0] - width) // 2)
         y = max(0, (screen[1] - height) // 2)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
         self.root.minsize(min(MIN_WIDTH, width), min(MIN_HEIGHT, height))
 
     def _take_system_bar(self) -> None:
-        """Take the system bar away.
+        """Take the system bar away, where Tk can do it and leave the window managed.
 
-        On macOS Tk can hide the title bar and leave the window managed. On Windows
-        and X11 the only way Tk has is `overrideredirect`, which unmanages the window:
-        no iconify, no resize borders, and on X11 no place in the taskbar either.
+        `system_bar_kept` keeps the bar everywhere else: Tk's other way is
+        `overrideredirect`, which unmanages the window — no iconify, no resize borders,
+        and on X11 no place in the taskbar either.
         """
         if sys.platform == "darwin":
             try:

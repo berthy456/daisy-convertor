@@ -1435,6 +1435,44 @@ def test_a_saved_level_the_pack_cannot_cut_falls_back(
     assert page.cut_var.get() == "chapter"
 
 
+def test_a_level_the_pack_skips_falls_back_to_the_coarser_side(
+    app: gui.App, three_chapters, monkeypatch, tmp_path
+) -> None:
+    """A book with no paragraph layer, saved at paragraphs: opening it at the
+    sentence level is a cut nobody asked for and a thousand rows nobody wants."""
+    app.cut = "paragraph"
+
+    def by_level(pack, level: str = "chapter"):
+        if level != "sentence":
+            return three_chapters
+        return Book(
+            "Wesh la fee",
+            tuple(Chapter(f"s{n}", (AudioSegment(tmp_path / f"s{n}.mp3"),)) for n in range(20)),
+        )
+
+    monkeypatch.setattr(gui, "extract", by_level)
+    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
+    page._measure()
+    page._drain()
+
+    assert page.cut == "chapter"
+    assert page.cut_var.get() == "chapter"
+
+
+def test_a_pack_that_will_not_be_read_says_so(app: gui.App, three_chapters, monkeypatch) -> None:
+    """The cut levels stay shut until the pack has been read, so a read that failed
+    with nothing to say looked like a book with no chapters in it."""
+    def unreadable(pack, level: str = "chapter") -> Book:
+        raise DaisyPackError("no outline")
+
+    monkeypatch.setattr(gui, "extract", unreadable)
+    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
+    page._drain()
+
+    assert "no outline" in page.status.cget("text")
+    assert not any(box.instate(["!disabled"]) for box in page.cut_boxes.values())
+
+
 def test_the_chapter_window_lists_the_chapters(app: gui.App, three_chapters) -> None:
     page = gui.ChapterList(app, Path("/tmp/pack.zip"))
     page._measure()

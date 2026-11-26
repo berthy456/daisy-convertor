@@ -20,6 +20,7 @@ import tempfile
 import threading
 import time
 import tkinter as tk
+import weakref
 import webbrowser
 from dataclasses import replace
 from pathlib import Path
@@ -2124,6 +2125,10 @@ class ChapterList:
         self.top.configure(background=PAPER)
         self.events: queue.Queue = queue.Queue()
         self.packs = contextlib.ExitStack()
+        # The pack is given up when the last thread reading it is done, not when
+        # the window closes: a parse that outlived the window was reading a folder
+        # that had already been deleted, and reported the pack's own files missing.
+        weakref.finalize(self, self.packs.close)
         try:
             self.pack = self.packs.enter_context(open_pack(source))
         except (DaisyPackError, OSError) as exc:
@@ -2213,12 +2218,16 @@ class ChapterList:
     def _build(self) -> None:
         """(Re)draw the part list for the level now chosen."""
         self.rows.delete(*self.rows.get_children())
-        self.book = extract(self.pack, self.cut)
+        self.info, self.keep = [], []
+        try:
+            self.book = extract(self.pack, self.cut)
+        except Exception as exc:  # a pack that will not be read has to say so here
+            self._unread(exc)
+            return
         self.info = chapters.describe(self.book, with_durations=False)
         self.cache = (
             Path(tempfile.gettempdir()) / "daisy2telmi-preview" / (slugify(self.book.title) or "pack")
         )
-        self.keep: list[tk.BooleanVar] = []
 
         for offset, info in enumerate(self.info):
             box = tk.BooleanVar(value=info.number not in self.app.dropped)
@@ -2230,6 +2239,13 @@ class ChapterList:
                 values=(self._mark(box), info.number, info.title, ""),
             )
         self.status.configure(text="")
+
+    def _unread(self, error: object) -> None:
+        """Say what the pack could not be read as. The main window's log is behind
+        this one, and cut levels that never opened look like a book with no chapters."""
+        message = self.app.t("chapters_unread").format(error=error)
+        self.status.configure(text=message)
+        self.app._append(f"ERROR: {message}")
 
     @staticmethod
     def _mark(box: tk.BooleanVar) -> str:
@@ -2285,7 +2301,15 @@ class ChapterList:
         for level, box in self.cut_boxes.items():
             box.state(["!disabled"] if level in available else ["disabled"])
         if self.cut not in available:
-            self._choose(available[min(CUT_LEVELS.index(self.cut), len(available) - 1)])
+            # A level the pack cannot cut at falls back to the coarser one beside
+            # it. A book whose outline has no paragraph layer should open at
+            # chapters, not at the sentence level nobody asked for.
+            coarser = [
+                level
+                for level in available
+                if CUT_LEVELS.index(level) < CUT_LEVELS.index(self.cut)
+            ]
+            self._choose(coarser[-1] if coarser else available[0])
 
     def _choose(self, level: str) -> None:
         """A different level is a different book: the old part numbers mean nothing."""
@@ -2299,12 +2323,21 @@ class ChapterList:
         threading.Thread(target=self._measure, daemon=True).start()
 
     def _measure(self) -> None:
+        """Read the parts and their counts.
+
+        The cut levels stay shut until the counts come back, so a worker that dies
+        quietly leaves the window looking like the pack has no chapters at all.
+        """
         cut = self.cut
-        self.events.put(("sizes", (cut, chapters.describe(extract(self.pack, cut)))))
-        if not self.reported:
-            self.reported = True
-            books = {level: extract(self.pack, level) for level in CUT_LEVELS}
-            self.events.put(("counts", chapters.describe_levels(books)))
+        try:
+            rows = chapters.describe(extract(self.pack, cut))
+            self.events.put(("sizes", (cut, rows)))
+            if not self.reported:
+                self.reported = True
+                books = {level: extract(self.pack, level) for level in CUT_LEVELS}
+                self.events.put(("counts", chapters.describe_levels(books)))
+        except Exception as exc:  # the pack's own problems belong in this window
+            self.events.put(("unread", str(exc)))
 
     def _play(self, index: int) -> None:
         chapters.stop_preview(self._playing)
@@ -2359,6 +2392,8 @@ class ChapterList:
                     )
                 )
                 self._offer_levels(payload)
+            elif kind == "unread":
+                self._unread(payload)
             elif kind == "play":
                 number, path = payload
                 self.status.configure(
@@ -2397,7 +2432,6 @@ class ChapterList:
         self.app.options["cut"] = self.cut
         settings.save(self.app.options)
         chapters.stop_preview(self._playing)
-        self.packs.close()
         self.top.destroy()
 
 

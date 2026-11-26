@@ -134,6 +134,17 @@ def _parse_xml(path: Path) -> etree._Element | None:
         return None
 
 
+# What a producer writes into a metadata field instead of an answer. Read as a
+# name it becomes a cover search for a book by "Unknown".
+PLACEHOLDERS = frozenset({"", "-", "n/a", "na", "none", "inconnu", "unknown", "sans objet"})
+
+
+def _credited(value: str | None) -> str | None:
+    """The pack's author, unless all the pack says is that it does not know one."""
+    words = (value or "").strip()
+    return None if words.casefold() in PLACEHOLDERS else words
+
+
 def _ncc_meta(root: etree._Element) -> dict[str, str]:
     """Collect `<meta name= content=>` values from an NCC, lowercased by name."""
     out: dict[str, str] = {}
@@ -221,6 +232,7 @@ class _Marks:
     segments: dict[Path, tuple[AudioSegment, ...]] = field(default_factory=dict)
     parts: dict[Path, tuple[Chapter, ...]] = field(default_factory=dict)
     text: dict[Path, etree._Element | None] = field(default_factory=dict)
+    anchors: dict[Path, dict[str, str]] = field(default_factory=dict)
     # The document a SMIL's bare `#anchor` points at. A DAISY 2.02 producer that
     # synced only its headings writes `<text src="#h51"/>` with no file named: the
     # words live in the pack's own text document, which is the NCC.
@@ -252,24 +264,44 @@ def _smil_segments(smil: Path, marks: _Marks) -> tuple[AudioSegment, ...]:
     return result
 
 
+def _text_document(path: Path, marks: _Marks) -> etree._Element | None:
+    if path not in marks.text:
+        marks.text[path] = _parse_xml(path)
+    return marks.text[path]
+
+
+def _anchor_words(path: Path, marks: _Marks) -> dict[str, str]:
+    """Every id in a text document and the words inside it, read in one walk.
+
+    A synced pack marks every sentence of the book, so a search per mark walks the
+    whole document once per sentence: 6 000 marks on a 800 KB document took as many
+    seconds. The index is built the first time the document is read and every mark
+    after that is a lookup.
+    """
+    if path not in marks.anchors:
+        root = _text_document(path, marks)
+        words: dict[str, str] = {}
+        if root is not None:
+            for element in root.iter():
+                anchor = element.get("id")
+                if anchor and anchor not in words:
+                    words[anchor] = " ".join("".join(element.itertext()).split())
+        marks.anchors[path] = words
+    return marks.anchors[path]
+
+
 def _text_at(src: str, base: Path, marks: _Marks) -> str:
     """The pack's own words at a `gonxhtml.html#id` anchor, for a card to show."""
     file_part, _, anchor = unquote(src).partition("#")
+    if not anchor:
+        return ""
     if not file_part:
-        if marks.document is None or not anchor:
+        if marks.document is None:
             return ""
         path = marks.document
     else:
         path = (base / file_part).resolve()
-    if path not in marks.text:
-        marks.text[path] = _parse_xml(path)
-    root = marks.text[path]
-    if root is None or not anchor:
-        return ""
-    found = root.xpath(f'//*[@id="{anchor}"]')
-    if not found:
-        return ""
-    return " ".join("".join(found[0].itertext()).split())
+    return _anchor_words(path, marks).get(anchor, "")
 
 
 def _smil_parts(smil: Path, marks: _Marks) -> tuple[Chapter, ...]:
@@ -372,9 +404,7 @@ def _document_texts(path: Path, anchors: set[str], marks: _Marks) -> dict[str, s
     is walked in document order and handed to the last anchor passed, which keeps a
     section's nested markup with the section that opened it.
     """
-    if path not in marks.text:
-        marks.text[path] = _parse_xml(path)
-    root = marks.text[path]
+    root = _text_document(path, marks)
     if root is None:
         return {}
     words: dict[str, list[str]] = {}
@@ -658,7 +688,7 @@ def extract(pack: DaisyPack, level: str = "chapter") -> Book:
         title=metadata.get("dc:title") or pack.root.name,
         chapters=chapters,
         front_matter=tuple(front_matter),
-        author=metadata.get("dc:creator") or None,
+        author=_credited(metadata.get("dc:creator")),
         language=metadata.get("dc:language") or None,
         publisher=metadata.get("dc:publisher") or None,
         narrator=metadata.get("ncc:narrator") or None,

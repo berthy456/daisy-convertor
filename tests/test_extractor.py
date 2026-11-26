@@ -63,6 +63,18 @@ def test_metadata_comes_from_the_ncc(book) -> None:
     assert (book.title, book.author, book.language, book.narrator) == ("Sample", "Author", "fr", "Reader")
 
 
+def test_a_producer_s_filler_is_not_an_author(tmp_path: Path) -> None:
+    """`dc:creator=Unknown` is Dolphin EasyProducer's own filler. Read as a name it
+    fills the window's Author box with a word the user then has to delete."""
+    root = tmp_path / "pack"
+    root.mkdir()
+    (root / "ncc.html").write_text(NCC.replace('content="Author"', 'content="Unknown"'), encoding="utf-8")
+    for name in ("a", "b", "c", "d", "e"):
+        (root / f"{name}.smil").write_text(smil('src="one.mp3"'), encoding="utf-8")
+    (root / "one.mp3").write_bytes(b"\xff\xfb")
+    assert extract(detect(tmp_path)).author is None
+
+
 def test_top_level_headings_open_chapters(book) -> None:
     assert [c.title for c in book.chapters] == ["Un", "Deux"]
 

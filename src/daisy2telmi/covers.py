@@ -25,6 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Union
 
+from .extractor import PLACEHOLDERS
+
 if TYPE_CHECKING:
     from .extractor import Book
 
@@ -45,9 +47,6 @@ APPLE_ART_SIZE = "600x600bb"
 # is 480 across.
 GOOGLE_ZOOM = "zoom=3"
 
-# What a producer writes when it has nothing to write. `dc:creator=Unknown` is
-# Dolphin EasyProducer's own filler, and searching for it finds nothing.
-PLACEHOLDERS = frozenset({"", "-", "n/a", "na", "none", "inconnu", "unknown", "sans objet"})
 # Several words run together with no space is a folder name copied into the title
 # field - `MaupassantUneVie` - rather than a title anyone catalogues.
 _RUNNED_TOGETHER = re.compile(r"[a-zà-ÿ][A-ZÀ-Ü]")

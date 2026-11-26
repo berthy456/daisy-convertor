@@ -24,7 +24,7 @@ const GOOGLE_ZOOM = "zoom=3";
 const PLACEHOLDERS = new Set(["", "-", "n/a", "na", "none", "inconnu", "unknown", "sans objet"]);
 // Several words run together with no space is a folder name copied into the title
 // field - `MaupassantUneVie` - rather than a title anyone catalogues.
-const RUNNED_TOGETHER = /[a-zà-ÿ][A-ZÀ-Ü]/;
+const RUNNED_TOGETHER = /([a-zà-ÿ])([A-ZÀ-Ü])/g;
 
 /**
  * The print book's ISBN. `dc:identifier` is the DAISY edition's own number, and
@@ -52,8 +52,9 @@ export function isbnOf(book) {
 export function term(value) {
   const text = (value ?? "").trim();
   if (PLACEHOLDERS.has(text.toLowerCase())) return "";
-  if (!text.includes(" ") && RUNNED_TOGETHER.test(text)) return "";
-  return text;
+  // The folder name is still made of the book's words: catalogues answer
+  // `Maupassant Une Vie` and answer nothing to `MaupassantUneVie`.
+  return text.includes(" ") ? text : text.replace(RUNNED_TOGETHER, "$1 $2");
 }
 
 /**

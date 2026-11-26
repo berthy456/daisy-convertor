@@ -49,7 +49,7 @@ GOOGLE_ZOOM = "zoom=3"
 
 # Several words run together with no space is a folder name copied into the title
 # field - `MaupassantUneVie` - rather than a title anyone catalogues.
-_RUNNED_TOGETHER = re.compile(r"[a-zà-ÿ][A-ZÀ-Ü]")
+_RUNNED_TOGETHER = re.compile(r"([a-zà-ÿ])([A-ZÀ-Ü])")
 
 
 class CoverError(Exception):
@@ -92,8 +92,10 @@ def term(value: str | None) -> str:
     text = (value or "").strip()
     if text.casefold() in PLACEHOLDERS:
         return ""
-    if " " not in text and _RUNNED_TOGETHER.search(text):
-        return ""
+    # The folder name is still made of the book's words: catalogues answer
+    # `Maupassant Une Vie` and answer nothing to `MaupassantUneVie`.
+    if " " not in text:
+        text = _RUNNED_TOGETHER.sub(r"\1 \2", text)
     return text
 
 

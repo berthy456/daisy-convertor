@@ -177,11 +177,25 @@ def test_a_producer_s_filler_is_not_searched_for(offline: Answers, tmp_path: Pat
     assert "author" not in query
 
 
-def test_a_title_running_words_together_is_the_folder_not_the_book(offline: Answers, tmp_path: Path) -> None:
+def test_a_title_running_words_together_is_asked_with_its_spaces(offline: Answers, tmp_path: Path) -> None:
     """`MaupassantUneVie` is the name the producer gave the folder it made the pack
-    from. No catalogue has a book by that name, so nothing is asked."""
-    assert covers.find(book(source=None, title="MaupassantUneVie"), tmp_path / "cover.jpg") is None
-    assert offline.asked == []
+    from. The words inside it are the book's own, so they are asked with the spaces
+    put back - which is what Open Library answers a cover for."""
+    offline.replies = {
+        "search.json": json.dumps({"docs": [{"cover_i": 3140357}]}).encode(),
+        "b/id/3140357-L.jpg": COVER,
+    }
+    dest = tmp_path / "cover.jpg"
+    assert covers.find(book(source=None, title="MaupassantUneVie"), dest) == dest
+    assert offline.query("search.json")["title"] == ["Maupassant Une Vie"]
+
+
+def test_what_is_worth_asking_a_catalogue_for() -> None:
+    assert covers.term("Unknown") == ""
+    assert covers.term("inconnu") == ""
+    assert covers.term("  Une vie  ") == "Une vie"
+    assert covers.term("Maupassant Une Vie") == "Maupassant Une Vie"
+    assert covers.term("MaupassantUneVie") == "Maupassant Une Vie"
 
 
 def test_the_words_the_user_types_are_asked_like_a_pack_s(offline: Answers, tmp_path: Path) -> None:

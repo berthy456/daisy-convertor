@@ -160,13 +160,13 @@ test("a producer's filler is not searched for", async () => {
   assert.equal(query(urls, "search.json").has("author"), false);
 });
 
-test("a title running words together is the folder, not the book", async () => {
+test("a title running words together is asked with its spaces back", async () => {
   // `MaupassantUneVie` is the name the producer gave the folder it made the pack
-  // from. No catalogue has a book by that name, so nothing is asked.
-  const urls = asked({});
+  // from. The words inside it are the book's own, and they are what answers.
+  const urls = asked({ "search.json": { docs: [{ cover_i: 3140357 }] }, "b/id/3140357-L.jpg": COVER });
   const found = await findCover(book({ source: null, title: "MaupassantUneVie" }), "https://x/y/");
-  assert.equal(found.bitmap, null);
-  assert.deepEqual(urls, []);
+  assert.ok(found.bitmap, "the folder's own words found the book");
+  assert.deepEqual(query(urls, "search.json").getAll("title"), ["Maupassant Une Vie"]);
 });
 
 test("the words the user types are asked like a pack's", async () => {
@@ -180,12 +180,12 @@ test("the words the user types are asked like a pack's", async () => {
   assert.equal(urls.some((url) => url.includes("b/isbn")), false, "typed words carry no ISBN");
 });
 
-test("a filler or a folder name is no search term", () => {
+test("what is worth asking a catalogue for", () => {
   assert.equal(term("Unknown"), "");
   assert.equal(term("inconnu"), "");
-  assert.equal(term("MaupassantUneVie"), "");
   assert.equal(term("  Une vie  "), "Une vie");
   assert.equal(term("Maupassant Une Vie"), "Maupassant Une Vie");
+  assert.equal(term("MaupassantUneVie"), "Maupassant Une Vie");
 });
 
 test("an exact title beats Apple's first hit", async () => {

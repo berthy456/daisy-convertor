@@ -425,7 +425,7 @@ def test_a_cover_lookup_says_it_is_searching_and_can_be_called_off(app: gui.App,
 
 
 def test_the_words_typed_are_asked_of_the_catalogues(app: gui.App, tmp_path: Path, monkeypatch) -> None:
-    """`MaupassantUneVie` carries no title any catalogue has. Typing the real one and
+    """The pack is named after its folder. Typing the book's real title and author and
     asking here asks the same services the pack's own metadata is asked of, and takes
     their answer into the Image box."""
     asked: list[tuple[str, str]] = []

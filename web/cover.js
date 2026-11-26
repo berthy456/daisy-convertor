@@ -256,6 +256,9 @@ export function cardWords(ctx, text, width) {
  * `negative` only means anything for the grey card: the card is drawn as usual and
  * light and dark are swapped once, when it is flattened, so the number reads as the
  * other way round too.
+ *
+ * `title` is written beside the number. A card with no room for it keeps its number,
+ * as the app keeps it from a card whose typeface cannot write the title.
  */
 export async function cardPng(
   label,
@@ -266,6 +269,7 @@ export async function cardPng(
   height = IMAGE_SIZE[1],
   style = "colour",
   negative = false,
+  title = "",
 ) {
   const canvas = surface(width, height);
   const ctx = canvas.getContext("2d");
@@ -308,18 +312,28 @@ export async function cardPng(
   const numberSize = Math.round(height / 11);
   const size = Math.round(height / 17);
   const pitch = Math.round(size * 1.3);
+  const room = width - 2 * margin;
   // The words are measured in the font they will be drawn in, so it goes on first.
   ctx.font = `${size}px system-ui, sans-serif`;
-  const lines = cardWords(ctx, text, width - 2 * margin);
+  const lines = cardWords(ctx, text, room);
   const wordsTop = margin + coverTop + margin;
 
+  // A title is kept when the card has room for it at the size of its own words.
+  const named = title ? `${label}, ${title}` : label;
+  const lettering = ctx.measureText(named).width <= room ? named : label;
+  // A titled line is drawn smaller than a bare number, never smaller than the
+  // card's own opening words: below that the number stops being the thing a
+  // listener reads on a card.
   ctx.font = `bold ${numberSize}px system-ui, sans-serif`;
+  const wide = ctx.measureText(lettering).width;
+  const drawn = wide <= room ? numberSize : Math.max(size, Math.round((numberSize * room) / wide));
+  ctx.font = `bold ${drawn}px system-ui, sans-serif`;
   ctx.lineWidth = 6;
   ctx.strokeStyle = PALETTE[style].border;
   ctx.fillStyle = PALETTE[style].ink;
   ctx.textAlign = "right";
-  ctx.strokeText(label, width - margin, margin);
-  ctx.fillText(label, width - margin, margin);
+  ctx.strokeText(lettering, width - margin, margin);
+  ctx.fillText(lettering, width - margin, margin);
 
   ctx.font = `${size}px system-ui, sans-serif`;
   ctx.textAlign = "left";

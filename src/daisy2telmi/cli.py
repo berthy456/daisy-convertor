@@ -14,7 +14,7 @@ from . import __version__, audio, chapters, covers, images, merlin, playlist, se
 from .chapters import ChapterError
 from .detector import DaisyPackError, open_pack
 from .extractor import CUT_LEVELS, extract
-from .i18n import LANGUAGES
+from .i18n import LANGUAGES, language
 from .lunii import LuniiError, write_studio_zip
 from .lunii_pk import write_pack
 from .merlin import MerlinError
@@ -23,6 +23,7 @@ from .telmi_builder import (
     Announce,
     StoryError,
     build_story,
+    card_language,
     story_dir_name,
     story_uuid,
     write_story_zip,
@@ -135,14 +136,27 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--announce",
         choices=ANNOUNCE_MODES,
         help="what each chapter card says: nothing, the number, the number and the total, "
-        "the part's title (alone or with the number), 'chapter N', or the number and a "
-        "prompt to continue",
+        "the part's title (alone or with the number), 'chapter N', the number and a "
+        "prompt to continue, or 'snippet' to play the part's own opening instead",
+    )
+    speech.add_argument(
+        "--card-seconds",
+        type=float,
+        default=None,
+        help="how many seconds of the part a card plays: with --announce snippet, and with any --cut below chapter",
     )
     speech.add_argument(
         "--card-total",
         action=argparse.BooleanOptionalAction,
         default=None,
         help="draw how many parts there are on each chapter card, as in '4/12' (--no-card-total for the number alone)",
+    )
+    speech.add_argument(
+        "--card-title",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="draw the part's own name beside its number on each chapter card, as in 'CHAPTER 4/12, THE WOLF' "
+        "(--no-card-title for the number alone)",
     )
     speech.add_argument(
         "--card-negative",
@@ -154,7 +168,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     speech.add_argument(
         "--language",
         choices=sorted(LANGUAGES),
-        help="language of the spoken chapter cards",
+        help="language of the chapter cards and the voice that reads them; by default the book's own, "
+        "read from the pack's metadata or from the words it carries",
     )
     speech.add_argument(
         "--autoplay",
@@ -243,11 +258,15 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 def announce_options(args: argparse.Namespace) -> Announce:
     """Saved settings, overridden by whatever was passed on the command line."""
     saved = settings.load()
+    chosen = args.language or saved["speech_language"]
     return Announce(
         mode=args.announce or saved["announce"],
-        language=args.language or saved["language"],
+        seconds=saved["card_seconds"] if args.card_seconds is None else args.card_seconds,
+        language=chosen or saved["language"],
+        auto_language=chosen is None,
         autoplay=bool(args.autoplay or saved["autoplay"]),
         show_total=saved["card_total"] if args.card_total is None else args.card_total,
+        show_title=saved["card_title"] if args.card_title is None else args.card_title,
         engine=args.tts or saved["tts"],
         voice=args.tts_voice or saved["voice"],
         command=args.tts_command or saved["command"],
@@ -417,6 +436,10 @@ def convert(
                 cut,
                 ", ".join(c.title for c in book.chapters),
             )
+            code, source = card_language(announce, book)
+            if announce is not None:
+                announce = replace(announce, language=code)
+            log.info("the cards will be written and spoken in %s: %s", language(code).name, source)
             if cover is None and find_cover:
                 cover = covers.find(book, Path(scratch) / "cover.jpg")
             if drop:

@@ -9,10 +9,11 @@ import pytest
 
 from daisy2telmi import tts
 from daisy2telmi.images import card_png, placeholder_png
-from daisy2telmi.extractor import Book
+from daisy2telmi.extractor import Book, Chapter
 from daisy2telmi.telmi_builder import (
     Announce,
     StoryError,
+    card_language,
     build_card_audio,
     build_metadata,
     build_nodes,
@@ -40,6 +41,34 @@ def make_book(**overrides) -> Book:
     )
     defaults.update(overrides)
     return Book(**defaults)
+
+
+def test_the_cards_take_the_language_the_pack_declares() -> None:
+    assert card_language(Announce(language="en"), make_book(language="fr")) == ("fr", "the pack's metadata")
+
+
+def test_a_language_the_user_pinned_stands_over_the_book() -> None:
+    announce = Announce(language="de", auto_language=False)
+    assert card_language(announce, make_book(language="fr")) == ("de", "the language you chose")
+
+
+def test_a_pack_that_says_nothing_is_read_off_the_words_it_carries() -> None:
+    book = make_book(
+        language=None,
+        title="Le loup et l'agneau",
+        chapters=(
+            Chapter("Un", (), body="Le loup sortit de la foret. Il cherchait de quoi manger un agneau."),
+            Chapter("Deux", (), body="Un agneau buvait a la riviere quand le loup vint vers lui."),
+        ),
+    )
+    assert card_language(Announce(language="en"), book) == ("fr", "the pack's own text")
+
+
+def test_a_pack_that_declares_a_language_with_no_words_here_says_so() -> None:
+    assert card_language(Announce(language="en"), make_book()) == (
+        "en",
+        "your machine: the pack says ja, which has no words here",
+    )
 
 
 def test_nodes_have_no_structural_problems() -> None:
@@ -238,6 +267,21 @@ def test_a_part_shorter_than_the_clip_gives_its_card_the_part_itself(tmp_path, m
     ]
     assert build_snippets(parts, tmp_path) == ["s0.mp3", "c1.mp3"]
     assert asked == ["c1.mp3"]
+
+
+def test_the_card_audio_length_is_the_one_asked_for(tmp_path, monkeypatch) -> None:
+    from daisy2telmi import audio
+    from daisy2telmi.extractor import AudioSegment, Chapter
+    from daisy2telmi.telmi_builder import build_snippets
+
+    asked: list = []
+    monkeypatch.setattr(audio, "render", lambda segments, dest, limit=None: asked.append(limit) or "cut")
+    parts = [
+        Chapter("", (AudioSegment(tmp_path / "p.mp3", 0.0, 4.0),)),
+        Chapter("", (AudioSegment(tmp_path / "p.mp3", 0.0, 40.0),)),
+    ]
+    assert build_snippets(parts, tmp_path, seconds=6.0) == ["s0.mp3", "c1.mp3"]
+    assert asked == [6.0]
 
 
 def test_one_failing_snippet_leaves_every_card_silent(tmp_path, monkeypatch) -> None:

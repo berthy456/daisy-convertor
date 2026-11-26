@@ -4,10 +4,15 @@
 written for listening, not reading. `espeak` and `locale` are the tags the
 engines need: espeak-ng names its voices differently from the Windows and macOS
 ones, and Mandarin is `zh` there but `zh-CN` for the others.
+
+`code_of` and `guess` read which of these a pack is written in, so a book's cards
+can use its own words without being asked for them.
 """
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass
 
 
@@ -81,6 +86,7 @@ UI: dict[str, dict[str, str]] = {
         "browse_zip": "Add a book",
         "browse_folder": "Book folder",
         "output_label": "Output folder",
+        "browse_stories": "Telmi folder",
         "browse_output": "Choose...",
         "cover_label": "Cover image (optional)",
         "browse_cover": "Choose image...",
@@ -109,12 +115,11 @@ UI: dict[str, dict[str, str]] = {
         "cover_use": "Use this link",
         "cover_link_failed": "That link gave no image.",
         "cover_crop_label": 'Image crop to fit:',
-        "crop_top": "Top",
-        "crop_center": "Center",
-        "crop_bottom": "Bottom",
         "crop_zoom": "Zoom",
         "crop_reset": "Reset",
-        "crop_hint": "Drag the picture to move it; the slider or the wheel zooms it, from the whole picture to past the frame.",
+        "crop_hint": "Drag the picture, or use the arrows, to move it. The wheel or the two buttons zoom it, or type a percentage: 0% shows the whole picture, 100% fills the frame.",
+        "card_text_label": "Chapter card text:",
+        "card_text_title": "Title",
         "chapters": "Chapters",
         "chapters_play": "Listen",
         "chapters_stop": "Stop",
@@ -143,9 +148,11 @@ UI: dict[str, dict[str, str]] = {
         "drop_hint": "Drop a .zip pack here, or use the buttons.",
         "drop_unavailable": "Drag and drop needs the optional tkinterdnd2 package; the buttons work.",
         "opt_title": "Options",
-        "opt_language": "Interface and announcement language",
+        "opt_language": "Change language",
+        "opt_speech_language": "Card and voice language",
+        "speech_auto": "Auto (the book's own)",
         "opt_announce": "Chapter card audio",
-        "opt_card_total": "Show how many parts there are on the card",
+        "opt_card_seconds": "Card audio length (s)",
         "opt_autoplay": "Advance to the next chapter on its own",
         "opt_frameless": "Draw the window's own bar instead of the system one",
         "format_label": "Story format:",
@@ -154,7 +161,8 @@ UI: dict[str, dict[str, str]] = {
         "fmt_lunii": "Lunii (B/W)",
         "fmt_lunii_pk": "Commercial PK (.pk)",
         "card_negative": "B&W inversion (negative)",
-        "captions": "Show the words on screen",
+        "captions": "Display the text on screen",
+        "captions_warning": "Warning: beta support. Very slow, and it may not be usable - one picture per sentence means many more files, a battery that empties faster, and words that stay hard to read on a small screen.",
         "fmt_flam": "Flam",
         "fmt_merlin": "Merlin (beta)",
         "fmt_mp3": "MP3 playlist",
@@ -166,6 +174,7 @@ UI: dict[str, dict[str, str]] = {
         "opt_device": "Device",
         "opt_clip": "Reference clip",
         "opt_close": "Close",
+        "announce_snippet": "Play the first seconds of the part",
         "announce_off": "Silent card",
         "announce_chapter": "Say 'chapter' and its number",
         "announce_prompt": "Say the number and ask to continue",
@@ -179,6 +188,8 @@ UI: dict[str, dict[str, str]] = {
         "speech_title": "Speech",
         "speech_section": "Install",
         "speech_hint": "Leave the Python empty: the app makes its own for the engine it installs.",
+        "speech_no_python": "No Python on this computer: install Python 3.10 or newer, then install the engine.",
+        "speech_get_python": "Get Python",
         "speech_install": "Install this engine",
         "speech_installing": "Installing...",
         "speech_download": "Install voice",
@@ -189,11 +200,11 @@ UI: dict[str, dict[str, str]] = {
         "speech_found": "{engine} is installed in this Python.",
         "speech_missing": "{engine} is not installed in this Python.",
         "engine_needed": "{engine} is not installed in your Python. Install it now, or use the machine's own voice for this story?",
+        "engine_installing": "Installing {engine} for the chapter cards...",
         "opt_section_folders": "Folders",
         "opt_input_dir": "Where the packs are",
         "opt_input_hint": "The file lists open in this folder.",
         "opt_input_unset": "Not set yet: type the folder your packs live in, or leave it empty and the file lists open in your home folder.",
-        "log_folders_missing": "No output folder chosen yet: use the Output folder button before saving a story.",
         "speed_slow": "Slow",
         "speed_normal": "Normal",
         "speed_fast": "Fast",
@@ -214,6 +225,7 @@ UI: dict[str, dict[str, str]] = {
         "browse_zip": "Ajouter un livre",
         "browse_folder": "Dossier du livre",
         "output_label": "Dossier de sortie",
+        "browse_stories": "Dossier Telmi",
         "browse_output": "Choisir...",
         "cover_label": "Image de couverture (facultative)",
         "browse_cover": "Choisir une image...",
@@ -242,12 +254,11 @@ UI: dict[str, dict[str, str]] = {
         "cover_use": "Utiliser ce lien",
         "cover_link_failed": "Ce lien n'a pas donné d'image.",
         "cover_crop_label": "Recadrer l'image pour ajuster :",
-        "crop_top": "Haut",
-        "crop_center": "Centre",
-        "crop_bottom": "Bas",
         "crop_zoom": "Zoom",
         "crop_reset": "Réinitialiser",
-        "crop_hint": "Faites glisser l'image pour la déplacer ; le curseur ou la molette zoome de l'image entière au-delà du cadre.",
+        "crop_hint": "Faites glisser l'image, ou utilisez les flèches, pour la déplacer. La molette ou les deux boutons zooment, ou tapez un pourcentage : 0 % montre l'image entière, 100 % remplit le cadre.",
+        "card_text_label": "Texte de la carte de chapitre :",
+        "card_text_title": "Titre",
         "chapters": "Chapitres",
         "chapters_play": 'Écouter',
         "chapters_stop": "Stop",
@@ -276,9 +287,11 @@ UI: dict[str, dict[str, str]] = {
         "drop_hint": 'Déposez un pack .zip ici, ou utilisez les boutons.',
         "drop_unavailable": 'Le glisser-dépose demande le module tkinterdnd2 ; les boutons fonctionnent.',
         "opt_title": "Options",
-        "opt_language": "Langue de l'interface et des annonces",
+        "opt_language": "Changer la langue",
+        "opt_speech_language": "Langue des cartes et de la voix",
+        "speech_auto": "Auto (la langue du livre)",
         "opt_announce": "Audio des cartes de chapitre",
-        "opt_card_total": "Afficher le nombre de parties sur la carte",
+        "opt_card_seconds": "Durée audio de la carte (s)",
         "opt_autoplay": "Passer seul au chapitre suivant",
         "opt_frameless": 'Dessiner la barre de la fenêtre à la place de celle du système',
         "format_label": "Format de l'histoire :",
@@ -287,7 +300,8 @@ UI: dict[str, dict[str, str]] = {
         "fmt_lunii": "Lunii (N&B)",
         "fmt_lunii_pk": "Pack du commerce (.pk)",
         "card_negative": "Inversion N&B (négatif)",
-        "captions": "Afficher les mots à l'écran",
+        "captions": "Afficher le texte à l'écran",
+        "captions_warning": "Attention : prise en charge bêta. Très lent, et peut-être inutilisable - une image par phrase veut dire beaucoup plus de fichiers, une batterie qui se vide plus vite et des mots difficiles à lire sur un petit écran.",
         "fmt_flam": "Flam",
         "fmt_merlin": "Merlin (bêta)",
         "fmt_mp3": "Liste MP3",
@@ -299,6 +313,7 @@ UI: dict[str, dict[str, str]] = {
         "opt_device": "Processeur",
         "opt_clip": "Extrait de référence",
         "opt_close": "Fermer",
+        "announce_snippet": "Jouer les premières secondes de la partie",
         "announce_off": "Carte silencieuse",
         "announce_chapter": "Annoncer « chapitre » et son numéro",
         "announce_prompt": "Annoncer le numéro et demander de continuer",
@@ -312,6 +327,8 @@ UI: dict[str, dict[str, str]] = {
         "speech_title": "Voix",
         "speech_section": "Installation",
         "speech_hint": "Laissez le Python vide : l'application en crée un pour le moteur installé.",
+        "speech_no_python": "Aucun Python sur cet ordinateur : installez Python 3.10 ou plus récent, puis installez le moteur.",
+        "speech_get_python": "Obtenir Python",
         "speech_install": "Installer ce moteur",
         "speech_installing": "Installation...",
         "speech_download": "Installer la voix",
@@ -322,11 +339,11 @@ UI: dict[str, dict[str, str]] = {
         "speech_found": "{engine} est installé dans ce Python.",
         "speech_missing": "{engine} n'est pas installé dans ce Python.",
         "engine_needed": "{engine} n'est pas installé dans votre Python. L'installer maintenant, ou utiliser la voix du système pour cette histoire ?",
+        "engine_installing": "Installation de {engine} pour les cartes de chapitre...",
         "opt_section_folders": "Dossiers",
         "opt_input_dir": "Dossier des packs",
         "opt_input_hint": "Les listes de fichiers s'ouvrent dans ce dossier.",
         "opt_input_unset": "Pas encore défini : indiquez le dossier où sont vos packs, ou laissez la case vide et les listes s'ouvrent dans votre dossier personnel.",
-        "log_folders_missing": "Aucun dossier de sortie choisi : utilisez le bouton « Dossier de sortie » avant d'enregistrer une histoire.",
         "speed_slow": "Lent",
         "speed_normal": "Normal",
         "speed_fast": "Rapide",
@@ -347,6 +364,7 @@ UI: dict[str, dict[str, str]] = {
         "browse_zip": "添加一本书",
         "browse_folder": "书籍文件夹",
         "output_label": "输出文件夹",
+        "browse_stories": "Telmi 文件夹",
         "browse_output": "选择...",
         "cover_label": "封面图片（可选）",
         "browse_cover": "选择图片...",
@@ -375,12 +393,11 @@ UI: dict[str, dict[str, str]] = {
         "cover_use": "使用此链接",
         "cover_link_failed": "该链接没有给出图片。",
         "cover_crop_label": '图像裁剪以适应：',
-        "crop_top": "上",
-        "crop_center": "中",
-        "crop_bottom": "下",
         "crop_zoom": "缩放",
         "crop_reset": "重置",
-        "crop_hint": "拖动图片以移动；滑块或滚轮从完整图片缩放至超出画框。",
+        "crop_hint": "拖动图片或使用箭头来移动它。滚轮或两个按钮缩放，也可以输入百分比：0% 显示完整图片，100% 填满画框。",
+        "card_text_label": "卡片文字：",
+        "card_text_title": "标题",
         "chapters": "章节",
         "chapters_play": "试听",
         "chapters_stop": "停止",
@@ -409,9 +426,11 @@ UI: dict[str, dict[str, str]] = {
         "drop_hint": "把 .zip 音频包拖到这里，或使用按钮。",
         "drop_unavailable": "拖放需要可选的 tkinterdnd2 模块；按钮仍然可用。",
         "opt_title": "选项",
-        "opt_language": "界面与语音提示语言",
+        "opt_language": "更换语言",
+        "opt_speech_language": "卡片与语音语言",
+        "speech_auto": "自动（书籍的语言）",
         "opt_announce": "章节卡片音频",
-        "opt_card_total": "在卡片上显示总段数",
+        "opt_card_seconds": "卡片音频时长（秒）",
         "opt_autoplay": "自动播放下一章",
         "opt_frameless": '自绘窗口标题栏,替代系统标题栏',
         "format_label": "故事格式：",
@@ -420,7 +439,8 @@ UI: dict[str, dict[str, str]] = {
         "fmt_lunii": "Lunii（黑白）",
         "fmt_lunii_pk": "商业 PK (.pk)",
         "card_negative": "黑白反相（负片）",
-        "captions": "在屏幕上显示文字",
+        "captions": "在屏幕上显示文本",
+        "captions_warning": "警告：测试阶段支持。非常慢，可能无法使用——每个句子一张图片意味着文件多得多，耗电更快，小屏幕上的文字也难以阅读。",
         "fmt_flam": "Flam",
         "fmt_merlin": "Merlin (测试版)",
         "fmt_mp3": "MP3 播放列表",
@@ -432,6 +452,7 @@ UI: dict[str, dict[str, str]] = {
         "opt_device": "运行设备",
         "opt_clip": "参考音频",
         "opt_close": "关闭",
+        "announce_snippet": "播放该部分的前几秒",
         "announce_off": "静音卡片",
         "announce_chapter": "朗读“章节”与编号",
         "announce_prompt": "朗读编号并询问是否继续",
@@ -445,6 +466,8 @@ UI: dict[str, dict[str, str]] = {
         "speech_title": "语音",
         "speech_section": "安装",
         "speech_hint": "将 Python 留空：应用会为所安装的引擎自建一个。",
+        "speech_no_python": "此电脑上没有 Python：请安装 Python 3.10 或更新版本，然后安装引擎。",
+        "speech_get_python": "获取 Python",
         "speech_install": "安装此引擎",
         "speech_installing": "安装中...",
         "speech_download": "安装声音",
@@ -455,11 +478,11 @@ UI: dict[str, dict[str, str]] = {
         "speech_found": "{engine} 已安装在此 Python 中。",
         "speech_missing": "{engine} 未安装在此 Python 中。",
         "engine_needed": "{engine} 未安装在你的 Python 中。现在安装，还是为本故事使用系统自带的声音？",
+        "engine_installing": "正在为章节卡片安装 {engine}…",
         "opt_section_folders": "文件夹",
         "opt_input_dir": "输入文件夹",
         "opt_input_hint": "文件列表在该文件夹中打开。",
         "opt_input_unset": "尚未设置：填入你的音频包所在文件夹，或留空，文件列表在你的主文件夹打开。",
-        "log_folders_missing": "尚未选择输出文件夹：保存故事前请按“输出文件夹”。",
         "speed_slow": "慢",
         "speed_normal": "正常",
         "speed_fast": "快",
@@ -480,6 +503,7 @@ UI: dict[str, dict[str, str]] = {
         "browse_zip": "إضافة كتاب",
         "browse_folder": "مجلد الكتاب",
         "output_label": "مجلد الإخراج",
+        "browse_stories": "مجلد Telmi",
         "browse_output": "اختيار...",
         "cover_label": "صورة الغلاف (اختيارية)",
         "browse_cover": "اختيار صورة...",
@@ -508,12 +532,11 @@ UI: dict[str, dict[str, str]] = {
         "cover_use": "استخدم هذا الرابط",
         "cover_link_failed": "لم يعطِ هذا الرابط صورة.",
         "cover_crop_label": 'اقتصاص الصورة للملاءمة:',
-        "crop_top": "أعلى",
-        "crop_center": "وسط",
-        "crop_bottom": "أسفل",
         "crop_zoom": "تكبير",
         "crop_reset": "إعادة ضبط",
-        "crop_hint": "اسحب الصورة لتحريكها؛ المؤشر أو العجلة تكبّر من الصورة كاملة إلى ما وراء الإطار.",
+        "crop_hint": "اسحب الصورة أو استخدم الأسهم لتحريكها. العجلة أو الزرّان يكبّران، أو اكتب نسبة مئوية: 0٪ تُظهر الصورة كاملة، و100٪ تملأ الإطار.",
+        "card_text_label": "نص بطاقة الفصل:",
+        "card_text_title": "العنوان",
         "chapters": "الفصول",
         "chapters_play": "استماع",
         "chapters_stop": "إيقاف",
@@ -542,9 +565,11 @@ UI: dict[str, dict[str, str]] = {
         "drop_hint": "أفلِت حزمة zip هنا، أو استخدم الأزرار.",
         "drop_unavailable": "السحب والإفلات يحتاج إلى tkinterdnd2؛ الأزرار تعمل.",
         "opt_title": "خيارات",
-        "opt_language": "لغة الواجهة والإعلانات الصوتية",
+        "opt_language": "تغيير اللغة",
+        "opt_speech_language": "لغة البطاقات والصوت",
+        "speech_auto": "تلقائي (لغة الكتاب)",
         "opt_announce": "صوت بطاقة الفصل",
-        "opt_card_total": "إظهار عدد الأجزاء على البطاقة",
+        "opt_card_seconds": "طول صوت البطاقة (ثانية)",
         "opt_autoplay": "الانتقال تلقائياً إلى الفصل التالي",
         "opt_frameless": 'ارسم شريط النافذة بدل شريط النظام',
         "format_label": "صيغة القصة:",
@@ -553,7 +578,8 @@ UI: dict[str, dict[str, str]] = {
         "fmt_lunii": "Lunii (أبيض وأسود)",
         "fmt_lunii_pk": "PK تجارية (.pk)",
         "card_negative": "عكس الأبيض والأسود (سالبي)",
-        "captions": "اعرض الكلمات على الشاشة",
+        "captions": "اعرض النص على الشاشة",
+        "captions_warning": "تحذير: دعم تجريبي. بطيء جدًا وقد لا يكون قابلًا للاستخدام — صورة لكل جملة تعني ملفات أكثر بكثير، وبطارية تفرغ أسرع، وكلمات تصعب قراءتها على شاشة صغيرة.",
         "fmt_flam": "Flam",
         "fmt_merlin": "Merlin (تجريبي)",
         "fmt_mp3": "قائمة MP3",
@@ -565,6 +591,7 @@ UI: dict[str, dict[str, str]] = {
         "opt_device": "الجهاز",
         "opt_clip": "مقطع صوتي مرجعي",
         "opt_close": "إغلاق",
+        "announce_snippet": "تشغيل الثواني الأولى من الجزء",
         "announce_off": "بطاقة صامتة",
         "announce_chapter": "نطق «الفصل» ورقمه",
         "announce_prompt": "نطق الرقم والسؤال عن المتابعة",
@@ -578,6 +605,8 @@ UI: dict[str, dict[str, str]] = {
         "speech_title": "الصوت",
         "speech_section": "التثبيت",
         "speech_hint": "اترك حقل Python فارغًا: ينشئ التطبيق واحدًا خاصًا بالمحرك المثبَّت.",
+        "speech_no_python": "لا يوجد Python على هذا الحاسوب: ثبّت Python 3.10 أو أحدث، ثم ثبّت المحرك.",
+        "speech_get_python": "احصل على Python",
         "speech_install": "ثبّت هذا المحرك",
         "speech_installing": "جارٍ التثبيت...",
         "speech_download": "تثبيت الصوت",
@@ -588,11 +617,11 @@ UI: dict[str, dict[str, str]] = {
         "speech_found": "{engine} مثبَّت في Python هذا.",
         "speech_missing": "{engine} غير مثبَّت في Python هذا.",
         "engine_needed": "{engine} غير مثبَّت في Python لديك. أتثبّته الآن، أم تستخدم صوت النظام لهذه القصة؟",
+        "engine_installing": "جارٍ تثبيت {engine} لبطاقات الفصول...",
         "opt_section_folders": "المجلدات",
         "opt_input_dir": "مجلد الحزم",
         "opt_input_hint": "تفتح قوائم الملفات في هذا المجلد.",
         "opt_input_unset": "لم يُحدَّد بعد: اكتب المجلد الذي تحوي حزمك، أو اتركه فارغًا وتفتح القوائم في مجلدك الشخصي.",
-        "log_folders_missing": "لم يُختَر مجلد للإخراج بعد: استعمل زر «مجلد الإخراج» قبل حفظ أي قصة.",
         "speed_slow": "بطيء",
         "speed_normal": "عادي",
         "speed_fast": "سريع",
@@ -613,6 +642,7 @@ UI: dict[str, dict[str, str]] = {
         "browse_zip": "Kitap ekle",
         "browse_folder": "Kitap klasörü",
         "output_label": 'Çıktı klasörü',
+        "browse_stories": "Telmi klasörü",
         "browse_output": 'Seç...',
         "cover_label": 'Kapak resmi (isteğe bağlı)',
         "browse_cover": 'Resim seç...',
@@ -641,12 +671,11 @@ UI: dict[str, dict[str, str]] = {
         "cover_use": "Bu bağlantıyı kullan",
         "cover_link_failed": "Bu bağlantı resim vermedi.",
         "cover_crop_label": 'Sığdırmak için görüntü kırpma:',
-        "crop_top": 'Üst',
-        "crop_center": "Orta",
-        "crop_bottom": "Alt",
         "crop_zoom": "Yakınlaştır",
         "crop_reset": "Sıfırla",
-        "crop_hint": "Taşımak için resmi sürükleyin; kaydırıcı ya da tekerlek tüm görüntüden çerçeve dışına yakınlaştırır.",
+        "crop_hint": "Taşımak için resmi sürükleyin ya da okları kullanın. Tekerlek veya iki düğme yakınlaştırır; yüzde de yazabilirsiniz: %0 tüm görüntüyü, %100 çerçeveyi doldurur.",
+        "card_text_label": "Bölüm kartı metni:",
+        "card_text_title": "Başlık",
         "chapters": "Bölümler",
         "chapters_play": "Dinle",
         "chapters_stop": "Durdur",
@@ -675,9 +704,11 @@ UI: dict[str, dict[str, str]] = {
         "drop_hint": 'Bir .zip paketi buraya bırakın ya da düğmeleri kullanın.',
         "drop_unavailable": 'Sürükle-bırak için tkinterdnd2 gerekir; düğmeler çalışır.',
         "opt_title": 'Seçenekler',
-        "opt_language": 'Arayüz ve anons dili',
+        "opt_language": "Dili değiştir",
+        "opt_speech_language": "Kart ve ses dili",
+        "speech_auto": "Otomatik (kitabın dili)",
         "opt_announce": 'Bölüm kartı sesi',
-        "opt_card_total": "Kaç parça olduğunu kartta göster",
+        "opt_card_seconds": "Kart sesi süresi (s)",
         "opt_autoplay": 'Sonraki bölüme kendiliğinden geç',
         "opt_frameless": 'Sistem çubuğu yerine pencerenin kendi çubuğunu çiz',
         "format_label": 'Hikâye biçimi:',
@@ -686,7 +717,8 @@ UI: dict[str, dict[str, str]] = {
         "fmt_lunii": "Lunii (S-B)",
         "fmt_lunii_pk": "Ticari PK (.pk)",
         "card_negative": "Siyah-beyaz tersleme (negatif)",
-        "captions": "Kelimeleri ekranda göster",
+        "captions": "Metni ekranda göster",
+        "captions_warning": "Uyarı: beta destek. Çok yavaş ve kullanılamaz olabilir - cümle başına bir resim çok daha fazla dosya, daha çabuk biten pil ve küçük ekranda okuması güç kelimeler demek.",
         "fmt_flam": "Flam",
         "fmt_merlin": "Merlin (beta)",
         "fmt_mp3": "MP3 çalma listesi",
@@ -698,6 +730,7 @@ UI: dict[str, dict[str, str]] = {
         "opt_device": "Aygıt",
         "opt_clip": "Referans ses",
         "opt_close": "Kapat",
+        "announce_snippet": "Parçanın ilk saniyelerini çal",
         "announce_off": "Sessiz kart",
         "announce_chapter": "«Bölüm» ve numarasını söyle",
         "announce_prompt": "Numarayı söyle ve devam etmeyi sor",
@@ -711,6 +744,8 @@ UI: dict[str, dict[str, str]] = {
         "speech_title": "Ses",
         "speech_section": "Kurulum",
         "speech_hint": "Python alanını boş bırakın: uygulama kurduğu motor için kendi Python'ını oluşturur.",
+        "speech_no_python": "Bu bilgisayarda Python yok: Python 3.10 veya daha yenisini kurun, sonra motoru kurun.",
+        "speech_get_python": "Python edinin",
         "speech_install": "Bu motoru kur",
         "speech_installing": "Kuruluyor...",
         "speech_download": "Sesi kur",
@@ -721,11 +756,11 @@ UI: dict[str, dict[str, str]] = {
         "speech_found": "{engine} bu Python'a kurulu.",
         "speech_missing": "{engine} bu Python'a kurulu değil.",
         "engine_needed": "{engine} sizin Python'ınıza kurulu değil. Şimdi kurulsun mu, yoksa bu hikâye için sistemin kendi sesi mi kullanılsın?",
+        "engine_installing": "Bölüm kartları için {engine} kuruluyor...",
         "opt_section_folders": "Klasörler",
         "opt_input_dir": "Paketlerin klasörü",
         "opt_input_hint": "Dosya listeleri bu klasörde açılır.",
         "opt_input_unset": "Henüz ayarlanmadı: paketlerinizin bulunduğu klasörü yazın ya da boş bırakın; listeler kişisel klasörünüzde açılır.",
-        "log_folders_missing": "Henüz çıktı klasörü seçilmedi: bir hikâyeyi kaydetmeden önce Çıktı klasörü düğmesini kullanın.",
         "speed_slow": "Yavaş",
         "speed_normal": "Normal",
         "speed_fast": "Hızlı",
@@ -746,6 +781,7 @@ UI: dict[str, dict[str, str]] = {
         "browse_zip": "Buch hinzufügen",
         "browse_folder": "Buchordner",
         "output_label": "Ausgabeordner",
+        "browse_stories": "Telmi-Ordner",
         "browse_output": 'Wählen...',
         "cover_label": "Coverbild (optional)",
         "browse_cover": 'Bild auswählen...',
@@ -774,12 +810,11 @@ UI: dict[str, dict[str, str]] = {
         "cover_use": "Diesen Link verwenden",
         "cover_link_failed": "Dieser Link hat kein Bild gegeben.",
         "cover_crop_label": 'Bild zuschneiden:',
-        "crop_top": "Oben",
-        "crop_center": "Mitte",
-        "crop_bottom": "Unten",
         "crop_zoom": "Zoom",
         "crop_reset": "Zurücksetzen",
-        "crop_hint": "Bild ziehen zum Verschieben; Regler oder Mausrad zoomen vom ganzen Bild über den Rahmen hinaus.",
+        "crop_hint": "Bild ziehen oder die Pfeile benutzen zum Verschieben. Mausrad oder die beiden Buttons zoomen, oder ein Prozent eingeben: 0 % zeigt das ganze Bild, 100 % füllt den Rahmen.",
+        "card_text_label": "Text der Kapitelkarte:",
+        "card_text_title": "Titel",
         "chapters": "Kapitel",
         "chapters_play": 'Anhören',
         "chapters_stop": "Stopp",
@@ -808,9 +843,11 @@ UI: dict[str, dict[str, str]] = {
         "drop_hint": 'Ein .zip-Paket hierher ziehen, oder die Schaltflächen benutzen.',
         "drop_unavailable": 'Ziehen und Ablegen braucht das optionale tkinterdnd2; die Schaltflächen gehen.',
         "opt_title": "Optionen",
-        "opt_language": 'Sprache von Oberfläche und Ansagen',
+        "opt_language": "Sprache ändern",
+        "opt_speech_language": "Sprache der Karten und der Stimme",
+        "speech_auto": "Auto (die Sprache des Buchs)",
         "opt_announce": "Audio der Kapitelkarte",
-        "opt_card_total": "Anzahl der Teile auf der Karte anzeigen",
+        "opt_card_seconds": "Dauer der Kartenaudio (s)",
         "opt_autoplay": 'Allein zum nächsten Kapitel springen',
         "opt_frameless": 'Eigene Fensterleiste statt der Systemleiste zeichnen',
         "format_label": 'Format der Geschichte:',
@@ -819,7 +856,8 @@ UI: dict[str, dict[str, str]] = {
         "fmt_lunii": "Lunii (S/W)",
         "fmt_lunii_pk": "Kommerzielles PK (.pk)",
         "card_negative": "S/W-Umkehr (Negativ)",
-        "captions": "Wörter auf dem Bildschirm anzeigen",
+        "captions": "Text auf dem Bildschirm anzeigen",
+        "captions_warning": "Warnung: Beta-Unterstützung. Sehr langsam und möglicherweise unbrauchbar - ein Bild pro Satz bedeutet deutlich mehr Dateien, höherer Stromverbrauch und Wörter, die auf dem kleinen Bildschirm schwer zu lesen sind.",
         "fmt_flam": "Flam",
         "fmt_merlin": "Merlin (Beta)",
         "fmt_mp3": "MP3-Playlist",
@@ -831,6 +869,7 @@ UI: dict[str, dict[str, str]] = {
         "opt_device": "Gerät",
         "opt_clip": "Referenzclip",
         "opt_close": 'Schließen',
+        "announce_snippet": "Die ersten Sekunden des Abschnitts abspielen",
         "announce_off": "Stille Karte",
         "announce_chapter": "„Kapitel“ und Nummer ansagen",
         "announce_prompt": "Nummer ansagen und nach Weitermachen fragen",
@@ -844,6 +883,8 @@ UI: dict[str, dict[str, str]] = {
         "speech_title": "Sprache",
         "speech_section": "Installation",
         "speech_hint": "Lassen Sie Python leer: die App legt für den installierten Motor selbst eine an.",
+        "speech_no_python": "Kein Python auf diesem Computer: Installieren Sie Python 3.10 oder neuer, dann die Engine.",
+        "speech_get_python": "Python holen",
         "speech_install": "Diesen Motor installieren",
         "speech_installing": "Installiere...",
         "speech_download": "Stimme installieren",
@@ -854,11 +895,11 @@ UI: dict[str, dict[str, str]] = {
         "speech_found": "{engine} ist in diesem Python installiert.",
         "speech_missing": "{engine} ist in diesem Python nicht installiert.",
         "engine_needed": "{engine} ist in Ihrem Python nicht installiert. Jetzt installieren, oder für diese Geschichte die Stimme des Systems verwenden?",
+        "engine_installing": "{engine} wird für die Kapitelkarten installiert...",
         "opt_section_folders": "Ordner",
         "opt_input_dir": "Ordner der Packs",
         "opt_input_hint": "Dateilisten öffnen in diesem Ordner.",
         "opt_input_unset": "Noch nicht gesetzt: Geben Sie den Ordner Ihrer Packs an, oder lassen Sie das Feld leer – die Listen öffnen dann in Ihrem persönlichen Ordner.",
-        "log_folders_missing": "Noch kein Ausgabeordner gewählt: Benutzen Sie die Schaltfläche Ausgabeordner, bevor eine Geschichte gespeichert wird.",
         "speed_slow": "Langsam",
         "speed_normal": "Normal",
         "speed_fast": "Schnell",
@@ -879,6 +920,7 @@ UI: dict[str, dict[str, str]] = {
         "browse_zip": "Aggiungi un libro",
         "browse_folder": "Cartella del libro",
         "output_label": "Cartella di output",
+        "browse_stories": "Cartella Telmi",
         "browse_output": "Scegli...",
         "cover_label": "Immagine di copertina (facoltativa)",
         "browse_cover": "Scegli immagine...",
@@ -907,12 +949,11 @@ UI: dict[str, dict[str, str]] = {
         "cover_use": "Usa questo link",
         "cover_link_failed": "Questo link non ha dato un'immagine.",
         "cover_crop_label": 'Ritaglio immagine per adattare:',
-        "crop_top": "Alto",
-        "crop_center": "Centro",
-        "crop_bottom": "Basso",
         "crop_zoom": "Zoom",
         "crop_reset": "Reimposta",
-        "crop_hint": "Trascina l'immagine per spostarla; manopola o rotellina zoomano dall'immagine intera oltre la cornice.",
+        "crop_hint": "Trascina l'immagine o usa le frecce per spostarla. La rotellina o i due pulsanti zoomano, oppure scrivi una percentuale: lo 0% mostra l'immagine intera, il 100% riempie la cornice.",
+        "card_text_label": "Testo della carta capitolo:",
+        "card_text_title": "Titolo",
         "chapters": "Capitoli",
         "chapters_play": "Ascolta",
         "chapters_stop": "Ferma",
@@ -941,9 +982,11 @@ UI: dict[str, dict[str, str]] = {
         "drop_hint": "Trascina qui un pacchetto .zip, oppure usa i pulsanti.",
         "drop_unavailable": "Il trascinamento richiede tkinterdnd2; i pulsanti funzionano.",
         "opt_title": "Opzioni",
-        "opt_language": "Lingua dell'interfaccia e degli annunci",
+        "opt_language": "Cambia lingua",
+        "opt_speech_language": "Lingua delle schede e della voce",
+        "speech_auto": "Auto (la lingua del libro)",
         "opt_announce": "Audio della scheda capitolo",
-        "opt_card_total": "Mostrare quante parti ci sono sulla carta",
+        "opt_card_seconds": "Durata audio della scheda (s)",
         "opt_autoplay": "Passa da solo al capitolo successivo",
         "opt_frameless": 'Disegna la barra della finestra al posto di quella di sistema',
         "format_label": "Formato della storia:",
@@ -952,7 +995,8 @@ UI: dict[str, dict[str, str]] = {
         "fmt_lunii": "Lunii (B/N)",
         "fmt_lunii_pk": "PK commerciale (.pk)",
         "card_negative": "Inversione B/N (negativo)",
-        "captions": "Mostra le parole sullo schermo",
+        "captions": "Testo sullo schermo",
+        "captions_warning": "Attenzione: supporto beta. Molto lento e forse inutilizzabile - un'immagine per frase significa molti più file, una batteria che si esaurisce prima e parole difficili da leggere su uno schermo piccolo.",
         "fmt_flam": "Flam",
         "fmt_merlin": "Merlin (beta)",
         "fmt_mp3": "Playlist MP3",
@@ -964,6 +1008,7 @@ UI: dict[str, dict[str, str]] = {
         "opt_device": "Dispositivo",
         "opt_clip": "Clip di riferimento",
         "opt_close": "Chiudi",
+        "announce_snippet": "Riprodurre i primi secondi della parte",
         "announce_off": "Scheda silenziosa",
         "announce_chapter": "Dichiara «capitolo» e numero",
         "announce_prompt": "Dichiara il numero e chiedi di continuare",
@@ -977,6 +1022,8 @@ UI: dict[str, dict[str, str]] = {
         "speech_title": "Voce",
         "speech_section": "Installazione",
         "speech_hint": "Lascia Python vuoto: l'app ne crea uno per il motore installato.",
+        "speech_no_python": "Nessun Python su questo computer: installa Python 3.10 o più recente, poi installa il motore.",
+        "speech_get_python": "Ottieni Python",
         "speech_install": "Installa questo motore",
         "speech_installing": "Installazione...",
         "speech_download": "Installa la voce",
@@ -987,11 +1034,11 @@ UI: dict[str, dict[str, str]] = {
         "speech_found": "{engine} è installato in questo Python.",
         "speech_missing": "{engine} non è installato in questo Python.",
         "engine_needed": "{engine} non è installato nel tuo Python. Installalo ora, oppure usare la voce del sistema per questa storia?",
+        "engine_installing": "Installazione di {engine} per le schede dei capitoli...",
         "opt_section_folders": "Cartelle",
         "opt_input_dir": "Cartella dei pack",
         "opt_input_hint": "Le liste di file si aprono in questa cartella.",
         "opt_input_unset": "Non impostata: indica la cartella dei tuoi pacchetti, oppure lasciala vuota e le liste si aprono nella cartella personale.",
-        "log_folders_missing": "Nessuna cartella di output scelta: usa il pulsante Cartella di output prima di salvare una storia.",
         "speed_slow": "Lento",
         "speed_normal": "Normale",
         "speed_fast": "Veloce",
@@ -1012,6 +1059,7 @@ UI: dict[str, dict[str, str]] = {
         "browse_zip": "Añadir un libro",
         "browse_folder": "Carpeta del libro",
         "output_label": "Carpeta de salida",
+        "browse_stories": "Carpeta Telmi",
         "browse_output": "Elegir...",
         "cover_label": "Imagen de portada (opcional)",
         "browse_cover": "Elegir imagen...",
@@ -1040,12 +1088,11 @@ UI: dict[str, dict[str, str]] = {
         "cover_use": "Usar este enlace",
         "cover_link_failed": "Ese enlace no dio ninguna imagen.",
         "cover_crop_label": 'Recorte de imagen para ajustar:',
-        "crop_top": "Arriba",
-        "crop_center": "Centro",
-        "crop_bottom": "Abajo",
         "crop_zoom": "Zoom",
         "crop_reset": "Restablecer",
-        "crop_hint": "Arrastra la imagen para moverla; el deslizador o la rueda zooman de la imagen completa a más allá del marco.",
+        "crop_hint": "Arrastra la imagen o usa las flechas para moverla. La rueda o los dos botones zooman, o escribe un porcentaje: el 0 % muestra la imagen completa, el 100 % llena el marco.",
+        "card_text_label": "Texto de la tarjeta de capítulo:",
+        "card_text_title": "Título",
         "chapters": "Capítulos",
         "chapters_play": "Escuchar",
         "chapters_stop": "Detener",
@@ -1074,9 +1121,11 @@ UI: dict[str, dict[str, str]] = {
         "drop_hint": 'Suelta aquí un paquete .zip, o usa los botones.',
         "drop_unavailable": "Arrastrar y soltar necesita tkinterdnd2; los botones funcionan.",
         "opt_title": "Opciones",
-        "opt_language": "Idioma de la interfaz y de los avisos",
+        "opt_language": "Cambiar idioma",
+        "opt_speech_language": "Idioma de las tarjetas y de la voz",
+        "speech_auto": "Auto (el idioma del libro)",
         "opt_announce": 'Audio de la ficha de capítulo',
-        "opt_card_total": "Mostrar cuántas partes hay en la tarjeta",
+        "opt_card_seconds": "Duración del audio de la ficha (s)",
         "opt_autoplay": 'Pasar solo al capítulo siguiente',
         "opt_frameless": 'Dibujar la barra de la ventana en lugar de la del sistema',
         "format_label": "Formato del cuento:",
@@ -1085,7 +1134,8 @@ UI: dict[str, dict[str, str]] = {
         "fmt_lunii": "Lunii (B/N)",
         "fmt_lunii_pk": "PK comercial (.pk)",
         "card_negative": "Inversión B/N (negativo)",
-        "captions": "Mostrar las palabras en pantalla",
+        "captions": "Mostrar el texto en pantalla",
+        "captions_warning": "Aviso: soporte beta. Muy lento y puede que no sea utilizable - una imagen por frase significa muchos más archivos, más consumo de batería y palabras difíciles de leer en una pantalla pequeña.",
         "fmt_flam": "Flam",
         "fmt_merlin": "Merlin (beta)",
         "fmt_mp3": "Lista MP3",
@@ -1097,6 +1147,7 @@ UI: dict[str, dict[str, str]] = {
         "opt_device": "Dispositivo",
         "opt_clip": "Clip de referencia",
         "opt_close": "Cerrar",
+        "announce_snippet": "Reproducir los primeros segundos de la parte",
         "announce_off": "Ficha silenciosa",
         "announce_chapter": "Decir «capítulo» y número",
         "announce_prompt": "Decir el número y preguntar si continúa",
@@ -1110,6 +1161,8 @@ UI: dict[str, dict[str, str]] = {
         "speech_title": "Voz",
         "speech_section": "Instalación",
         "speech_hint": "Deja Python vacío: la app crea uno para el motor que instale.",
+        "speech_no_python": "No hay Python en este equipo: instala Python 3.10 o más nuevo y después instala el motor.",
+        "speech_get_python": "Conseguir Python",
         "speech_install": "Instalar este motor",
         "speech_installing": "Instalando...",
         "speech_download": "Instalar voz",
@@ -1120,11 +1173,11 @@ UI: dict[str, dict[str, str]] = {
         "speech_found": "{engine} está instalado en este Python.",
         "speech_missing": "{engine} no está instalado en este Python.",
         "engine_needed": "{engine} no está instalado en tu Python. ¿Instalarlo ahora, o usar la voz del sistema para esta historia?",
+        "engine_installing": "Instalando {engine} para las tarjetas de capítulo...",
         "opt_section_folders": "Carpetas",
         "opt_input_dir": "Carpeta de los packs",
         "opt_input_hint": "Las listas de archivos se abren en esta carpeta.",
         "opt_input_unset": "Sin definir: indica la carpeta de tus paquetes, o déjala vacía y las listas se abren en tu carpeta personal.",
-        "log_folders_missing": "Ninguna carpeta de salida elegida todavía: usa el botón Carpeta de salida antes de guardar una historia.",
         "speed_slow": "Lento",
         "speed_normal": "Normal",
         "speed_fast": "Rápido",
@@ -1145,6 +1198,7 @@ UI: dict[str, dict[str, str]] = {
         "browse_zip": "Adicionar um livro",
         "browse_folder": "Pasta do livro",
         "output_label": 'Pasta de saída',
+        "browse_stories": "Pasta Telmi",
         "browse_output": "Escolher...",
         "cover_label": "Imagem da capa (opcional)",
         "browse_cover": "Escolher imagem...",
@@ -1173,12 +1227,11 @@ UI: dict[str, dict[str, str]] = {
         "cover_use": "Usar este link",
         "cover_link_failed": "Esse link não deu nenhuma imagem.",
         "cover_crop_label": 'Corte da imagem para ajustar:',
-        "crop_top": "Superior",
-        "crop_center": "Central",
-        "crop_bottom": "Inferior",
         "crop_zoom": "Zoom",
         "crop_reset": "Redefinir",
-        "crop_hint": "Arraste a imagem para movê-la; o cursor ou a roda zoomam da imagem inteira até além do quadro.",
+        "crop_hint": "Arraste a imagem ou use as setas para movê-la. A roda ou os dois botões zoomam, ou digite uma porcentagem: 0 % mostra a imagem inteira, 100 % preenche o quadro.",
+        "card_text_label": "Texto do cartão de capítulo:",
+        "card_text_title": "Título",
         "chapters": "Capítulos",
         "chapters_play": "Ouvir",
         "chapters_stop": "Parar",
@@ -1207,9 +1260,11 @@ UI: dict[str, dict[str, str]] = {
         "drop_hint": 'Solte um pacote .zip aqui, ou use os botões.',
         "drop_unavailable": 'Arrastar e soltar precisa do tkinterdnd2; os botões funcionam.',
         "opt_title": 'Opções',
-        "opt_language": "Idioma da interface e dos avisos",
+        "opt_language": "Alterar idioma",
+        "opt_speech_language": "Idioma dos cartões e da voz",
+        "speech_auto": "Auto (o idioma do livro)",
         "opt_announce": 'Áudio do cartão de capítulo',
-        "opt_card_total": "Mostrar quantas partes há no cartão",
+        "opt_card_seconds": "Duração do áudio do cartão (s)",
         "opt_autoplay": 'Ir sozinho para o próximo capítulo',
         "opt_frameless": 'Desenhar a barra da janela em vez da barra do sistema',
         "format_label": 'Formato da história:',
@@ -1218,7 +1273,8 @@ UI: dict[str, dict[str, str]] = {
         "fmt_lunii": "Lunii (P&B)",
         "fmt_lunii_pk": "PK comercial (.pk)",
         "card_negative": "Inversão P&B (negativo)",
-        "captions": "Mostrar as palavras na tela",
+        "captions": "Exibir o texto na tela",
+        "captions_warning": "Aviso: suporte beta. Muito lento e talvez inutilizável - uma imagem por frase significa muitos mais arquivos, bateria que acaba mais rápido e palavras difíceis de ler numa tela pequena.",
         "fmt_flam": "Flam",
         "fmt_merlin": "Merlin (beta)",
         "fmt_mp3": "Lista MP3",
@@ -1230,6 +1286,7 @@ UI: dict[str, dict[str, str]] = {
         "opt_device": "Dispositivo",
         "opt_clip": "Clipe de referência",
         "opt_close": "Fechar",
+        "announce_snippet": "Tocar os primeiros segundos da parte",
         "announce_off": 'Cartão silencioso',
         "announce_chapter": "Dizer «capítulo» e número",
         "announce_prompt": "Dizer o número e perguntar se continua",
@@ -1243,6 +1300,8 @@ UI: dict[str, dict[str, str]] = {
         "speech_title": "Voz",
         "speech_section": "Instalação",
         "speech_hint": "Deixe o Python vazio: o app cria um para o motor instalado.",
+        "speech_no_python": "Não há Python neste computador: instale o Python 3.10 ou mais novo e depois instale o motor.",
+        "speech_get_python": "Obter Python",
         "speech_install": "Instalar este motor",
         "speech_installing": "Instalando...",
         "speech_download": "Instalar voz",
@@ -1253,11 +1312,11 @@ UI: dict[str, dict[str, str]] = {
         "speech_found": "{engine} está instalado neste Python.",
         "speech_missing": "{engine} não está instalado neste Python.",
         "engine_needed": "{engine} não está instalado no seu Python. Instalar agora, ou usar a voz do sistema para esta história?",
+        "engine_installing": "Instalando {engine} para os cartões de capítulo...",
         "opt_section_folders": "Pastas",
         "opt_input_dir": "Pasta dos pacotes",
         "opt_input_hint": "As listas de arquivos abrem nesta pasta.",
         "opt_input_unset": "Não definida: indique a pasta dos seus pacotes, ou deixe vazia e as listas abrem na sua pasta pessoal.",
-        "log_folders_missing": "Nenhuma pasta de saída escolhida: use o botão Pasta de saída antes de salvar uma história.",
         "speed_slow": "Lento",
         "speed_normal": "Normal",
         "speed_fast": "Rápido",
@@ -1278,6 +1337,7 @@ UI: dict[str, dict[str, str]] = {
         "browse_zip": "Boek toevoegen",
         "browse_folder": "Boekmap",
         "output_label": "Uitvoermap",
+        "browse_stories": "Telmi-map",
         "browse_output": "Kies...",
         "cover_label": "Omslagafbeelding (optioneel)",
         "browse_cover": "Kies afbeelding...",
@@ -1306,12 +1366,11 @@ UI: dict[str, dict[str, str]] = {
         "cover_use": "Deze link gebruiken",
         "cover_link_failed": "Die link gaf geen afbeelding.",
         "cover_crop_label": 'Afbeelding bijsnijden om te passen:',
-        "crop_top": "Boven",
-        "crop_center": "Midden",
-        "crop_bottom": "Onder",
         "crop_zoom": "Zoom",
         "crop_reset": "Herstellen",
-        "crop_hint": "Sleep de afbeelding om te verschuiven; de schuif of muiswiel zoomt van de hele afbeelding tot voorbij het kader.",
+        "crop_hint": "Sleep de afbeelding of gebruik de pijlen om te verschuiven. Het muiswiel of de twee knoppen zoomen, of typ een percentage: 0 % toont de hele afbeelding, 100 % vult het kader.",
+        "card_text_label": "Tekst van de hoofdstukkaart:",
+        "card_text_title": "Titel",
         "chapters": "Hoofdstukken",
         "chapters_play": "Luister",
         "chapters_stop": "Stop",
@@ -1340,9 +1399,11 @@ UI: dict[str, dict[str, str]] = {
         "drop_hint": "Sleep een .zip-pakket hierheen, of gebruik de knoppen.",
         "drop_unavailable": "Sleepen en neerzetten heeft tkinterdnd2 nodig; de knoppen werken.",
         "opt_title": "Opties",
-        "opt_language": "Taal van interface en meldingen",
+        "opt_language": "Taal wijzigen",
+        "opt_speech_language": "Taal van de kaarten en de stem",
+        "speech_auto": "Auto (de taal van het boek)",
         "opt_announce": "Audio van de hoofdstukkaart",
-        "opt_card_total": "Toon hoeveel delen er op de kaart staan",
+        "opt_card_seconds": "Lengte van de kaartaudio (s)",
         "opt_autoplay": "Vanzelf naar het volgende hoofdstuk",
         "opt_frameless": 'Teken de eigen balk van het venster in plaats van die van het systeem',
         "format_label": "Verhaalformaat:",
@@ -1351,7 +1412,8 @@ UI: dict[str, dict[str, str]] = {
         "fmt_lunii": "Lunii (Z/W)",
         "fmt_lunii_pk": "Commercieel PK (.pk)",
         "card_negative": "Z/W-omkering (negatief)",
-        "captions": "Woorden op het scherm tonen",
+        "captions": "Tekst op het scherm tonen",
+        "captions_warning": "Waarschuwing: bèta-ondersteuning. Heel langzaam en mogelijk onbruikbaar - één afbeelding per zin betekent veel meer bestanden, sneller batterijgebruik en woorden die op een klein scherm moeilijk leesbaar blijven.",
         "fmt_flam": "Flam",
         "fmt_merlin": "Merlin (bèta)",
         "fmt_mp3": "MP3-afspeellijst",
@@ -1363,6 +1425,7 @@ UI: dict[str, dict[str, str]] = {
         "opt_device": "Apparaat",
         "opt_clip": "Referentieclip",
         "opt_close": "Sluiten",
+        "announce_snippet": "De eerste seconden van het deel afspelen",
         "announce_off": "Stille kaart",
         "announce_chapter": "'hoofdstuk' en nummer noemen",
         "announce_prompt": "Nummer noemen en vragen om verder te gaan",
@@ -1376,6 +1439,8 @@ UI: dict[str, dict[str, str]] = {
         "speech_title": "Stem",
         "speech_section": "Installatie",
         "speech_hint": "Laat Python leeg: de app maakt er zelf een voor de geïnstalleerde engine.",
+        "speech_no_python": "Geen Python op deze computer: installeer Python 3.10 of nieuwer en installeer daarna de engine.",
+        "speech_get_python": "Python halen",
         "speech_install": "Deze engine installeren",
         "speech_installing": "Bezig met installeren...",
         "speech_download": "Stem installeren",
@@ -1386,11 +1451,11 @@ UI: dict[str, dict[str, str]] = {
         "speech_found": "{engine} is in deze Python geïnstalleerd.",
         "speech_missing": "{engine} is niet in deze Python geïnstalleerd.",
         "engine_needed": "{engine} is niet in jouw Python geïnstalleerd. Nu installeren, of de stem van het systeem voor dit verhaal gebruiken?",
+        "engine_installing": "{engine} wordt geïnstalleerd voor de hoofdstukkaarten...",
         "opt_section_folders": "Mappen",
         "opt_input_dir": "Map van de packs",
         "opt_input_hint": "De bestandslijsten openen in deze map.",
         "opt_input_unset": "Nog niet ingesteld: vul de map van uw packs in, of laat hem leeg; de lijsten openen dan in uw persoonlijke map.",
-        "log_folders_missing": "Nog geen uitvoermap gekozen: gebruik de knop Uitvoermap voordat een verhaal wordt opgeslagen.",
         "speed_slow": "Langzaam",
         "speed_normal": "Normaal",
         "speed_fast": "Snel",
@@ -1416,3 +1481,116 @@ def language(code: str | None) -> Language:
 
 def text(code: str | None, key: str) -> str:
     return UI.get(language(code).code, {}).get(key) or UI["en"][key]
+
+
+# A pack names its language under "ISO 639", which spells the same language one,
+# two or three letters long depending on which ISO 639 you mean, and a pack written
+# in English sometimes names it in English.
+_TAGS = {
+    "eng": "en", "english": "en",
+    "fre": "fr", "fra": "fr", "french": "fr",
+    "ger": "de", "deu": "de", "german": "de",
+    "dut": "nl", "nld": "nl", "dutch": "nl",
+    "spa": "es", "spanish": "es",
+    "por": "pt", "portuguese": "pt",
+    "ita": "it", "italian": "it",
+    "ara": "ar", "arabic": "ar",
+    "tur": "tr", "turkish": "tr",
+    "chi": "zh", "zho": "zh", "chinese": "zh",
+}
+
+# The words each language repeats constantly. A pack that declares no language still
+# carries its text, and a page of any of these is full of its own handful.
+_MARKERS = {
+    code: frozenset(words.split())
+    for code, words in {
+        "en": "the and of to in a that is it for was with you he she they their from this are had "
+              "have not but his her were as at be been would could",
+        "fr": "de la le les des un une que qui dans pas est avec vous ne ce au aux du sur pour par "
+              "plus était avait son sa elle ils nous cette quand sans",
+        "de": "der die das und ist nicht mit ein eine einen von zu den dem des sie er wir ich auch "
+              "noch schon aber oder wenn als wie so sehr mehr nach aus bei am im vom zum zur ohne",
+        "es": "de la que el y en los las del se para con una por su es está son fue era ha muy más "
+              "pero como cuando sin sobre entre",
+        "it": "di che non la il e un una per con del della si sono era ha molto più ma come quando "
+              "senza sopra tra questo quella",
+        "pt": "de a o que e do da em um para com não os as uma por é são foi era tem muito mais mas "
+              "como quando sem sobre entre esta essa",
+        "nl": "de het een van en is in op te dat met ik hij zij niet voor ook nog maar als zijn "
+              "was heeft geen deze",
+        "tr": "ve bir bu için ile ki ne o ben gibi daha çok kadar diye her hiç şey ama değil "
+              "çünkü yine artık beri onu bunu ona onun sen biz siz",
+        "ar": "من في على أن إلى مع هذا التي الذي ما لا هو هي كان كانت هذه ذلك بين",
+    }.items()
+}
+
+# Two of the ten are written in letters nothing else uses. Japanese is not one of
+# them, and its kana sit among the same Han characters Chinese is written in, so a
+# page carrying any of them is nobody's.
+_HAN = re.compile(r"[㐀-䶿一-鿿]")
+_KANA = re.compile(r"[぀-ヿ]")
+_ARABIC = re.compile(r"[؀-ۿ]")
+
+
+def code_of(tag: str | None) -> str | None:
+    """The app's own code for a language a pack declares: `FR`, `fre`, `fr-FR`, `Français`."""
+    if not tag:
+        return None
+    head = re.split(r"[-_]", tag.strip().lower(), maxsplit=1)[0]
+    if head in LANGUAGES:
+        return head
+    if head in _TAGS:
+        return _TAGS[head]
+    for code, entry in LANGUAGES.items():
+        if head == entry.name.lower():
+            return code
+    return None
+
+
+def _words(page: str) -> list[str]:
+    # Turkish capitalises its dotted İ, and lowercasing it leaves a second dot
+    # sitting on the i that no Turkish word is actually spelled with.
+    return [
+        "".join(character for character in word if not unicodedata.combining(character))
+        for word in re.findall(r"\w+", page.lower())
+    ]
+
+
+def guess(page: str) -> str | None:
+    """The language a page of the pack's own text reads as, among the ten the app has words for.
+
+    Two of them give themselves away by their letters; the rest are counted by their
+    handful of constant words, and a page that no language clearly wins is not a page
+    this app has words for.
+    """
+    letters = [character for character in page if not character.isspace()]
+    if not letters:
+        return None
+    if any(_KANA.match(character) for character in letters):
+        return None
+    for script, code in ((_HAN, "zh"), (_ARABIC, "ar")):
+        if sum(bool(script.match(character)) for character in letters) * 2 > len(letters):
+            return code
+    words = _words(page)
+    if not words:
+        return None
+    scored = sorted((sum(word in markers for word in words), code) for code, markers in _MARKERS.items())
+    best, runner_up = scored[-1], scored[-2]
+    return best[1] if best[0] >= 3 and best[0] > runner_up[0] else None
+
+
+def story_language(declared: str | None, page: str, fallback: str) -> tuple[str, str]:
+    """The language to write and speak a book's cards in, and where it came from.
+
+    The pack's own metadata first, then the text it carries, then the machine's own
+    language — which is all that is left when a pack is audio alone.
+    """
+    code = code_of(declared)
+    if code:
+        return code, "the pack's metadata"
+    code = guess(page)
+    if code:
+        return code, "the pack's own text"
+    if declared:
+        return language(fallback).code, f"your machine: the pack says {declared.strip()}, which has no words here"
+    return language(fallback).code, "your machine"

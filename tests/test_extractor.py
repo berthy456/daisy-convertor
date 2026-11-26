@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from daisy2telmi.detector import DaisyPackError, detect
-from daisy2telmi.extractor import _npt, extract
+from daisy2telmi.extractor import Book, Chapter, _npt, extract, language_sample
 
 NCC = """<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -475,6 +475,24 @@ def test_an_audio_chapter_keeps_its_text_too(marked) -> None:
     assert book.chapters[0].body == (
         "Le loup sortit de la foret. Il cherchait de quoi manger. Un agneau buvait a la riviere."
     ), "a folded sub-heading folds its words in as well as its audio"
+
+
+def test_the_language_sample_of_an_audio_pack_is_its_titles(book) -> None:
+    assert language_sample(book) == "Sample Un Deux"
+
+
+def test_the_language_sample_of_a_text_pack_is_its_prose(text_only) -> None:
+    sample = language_sample(extract(text_only))
+    assert sample.startswith("Treaty Article 1 Le loup sortit de la foret.")
+    assert "Un agneau buvait a la riviere." in sample
+
+
+def test_the_language_sample_stops_at_its_own_length() -> None:
+    """Reading a language off a page needs a page, not the whole book."""
+    book = Book(title="Long", chapters=(Chapter("Un", (), body="un mot " * 2000), Chapter("Deux", (), body="later")))
+    sample = language_sample(book, limit=100)
+    assert len(sample) == 100
+    assert "later" not in sample
 
 
 # An EPUB is the same OEB package and NCX outline as a DAISY 3 pack, minus the

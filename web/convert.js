@@ -11,7 +11,7 @@ const json = (value) => new TextEncoder().encode(`${JSON.stringify(value, null, 
 
 // A part cut below chapter level has no title that says which part it is, so its
 // card plays the sound it opens with instead of a spoken number.
-const CARD_SNIPPET_SECONDS = 3;
+export const CARD_SNIPPET_SECONDS = 3;
 
 // The formats whose screen is big enough to read a sentence on. A Lunii's is not,
 // and a Merlin card has no screen at all.
@@ -45,7 +45,12 @@ function firstSeconds(segments, bytesOf, seconds) {
  * options.player: "telmi", "lunii", "lunii-pk", "merlin" or "flam" — whose screen
  *   sizes every picture is drawn at.
  * options.cardLabel(number, total, worded): the words drawn on a card.
+ * options.cardTitle: write each chapter's own title beside its number, when the card
+ *   has room for it.
  * options.cardAudio(number, count): bytes for the card to say, or null to leave it silent.
+ * options.cardAudioSource: "voice" (a recorded clip), "snippet" (the part's own opening)
+ *   or "off" (a silent card). A part cut below chapter level always plays its opening.
+ * options.cardSeconds: how many seconds of the part a card that plays its opening plays it for.
  * options.captions: give each part a picture of its own words, shown while its
  *   audio plays instead of the card's.
  * options.drop: 1-based part numbers to leave out of the story.
@@ -83,9 +88,14 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
   const cardLabel = options.cardLabel ?? ((number, count) => `Chapter ${number}/${count}`);
   const say = options.t ?? ((key) => key);
   const spoken = options.cardAudio ?? (async () => null);
+  const source = options.cardAudioSource ?? "voice";
+  const seconds = options.cardSeconds ?? CARD_SNIPPET_SECONDS;
   // A part's own words are only worth drawing when each part is one sentence, on a
   // screen big enough to read one on.
   const captioned = Boolean(options.captions) && cut === "sentence" && CAPTION_FORMATS.includes(options.player ?? "telmi");
+  // A part cut below chapter level has no name of its own: the outline names the
+  // chapter, and the part is a piece of it.
+  const titled = Boolean(options.cardTitle) && cut === "chapter";
   const cards = [];
   const scenes = [];
   let done = 0;
@@ -109,6 +119,7 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
         ...scene,
         style,
         negative,
+        titled ? chapter.title : "",
       ),
     });
 
@@ -120,17 +131,20 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
     }
 
     let card = null;
-    if (cut === "chapter") {
+    // A part cut below chapter level has no name of its own to speak, so its card
+    // plays its opening whatever the card audio was set to.
+    const plays = source !== "off" && (source === "snippet" || cut !== "chapter");
+    if (plays) {
+      const snippet = firstSeconds(chapter.segments, bytesOf, seconds);
+      // A part shorter than the snippet needs no second copy: its card plays the part.
+      card = snippet.length === 0 ? null : snippet.length === audio.length ? `s${k}.mp3` : `c${k}.mp3`;
+      if (card === `c${k}.mp3`) files.push({ name: `${dirName}/audios/c${k}.mp3`, data: snippet });
+    } else if (source !== "off") {
       const voice = await spoken(k + 1, partCount);
       if (voice !== null) {
         files.push({ name: `${dirName}/audios/c${k}.mp3`, data: voice });
         card = `c${k}.mp3`;
       }
-    } else {
-      const snippet = firstSeconds(chapter.segments, bytesOf, CARD_SNIPPET_SECONDS);
-      // A part shorter than the snippet needs no second copy: its card plays the part.
-      card = snippet.length === 0 ? null : snippet.length === audio.length ? `s${k}.mp3` : `c${k}.mp3`;
-      if (card === `c${k}.mp3`) files.push({ name: `${dirName}/audios/c${k}.mp3`, data: snippet });
     }
     cards[k] = card;
 

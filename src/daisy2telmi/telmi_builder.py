@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Sequence
 
 from . import audio, images, tts
-from .extractor import AudioSegment, Book, Chapter
-from .i18n import language
+from .extractor import AudioSegment, Book, Chapter, language_sample
+from .i18n import language, story_language
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +57,8 @@ CAPTION_PLAYERS = ("telmi", "flam")
 
 # What a card can say about the part it introduces. The title patterns need a
 # pack whose parts carry synced text; where they do not, they fall back to
-# `chapter`, which every pack can say.
+# `chapter`, which every pack can say. `snippet` says nothing: the card plays the
+# part's own opening instead.
 ANNOUNCE_MODES = (
     "prompt",
     "chapter",
@@ -66,6 +67,7 @@ ANNOUNCE_MODES = (
     "title",
     "number_title",
     "title_number",
+    "snippet",
     "off",
 )
 
@@ -79,10 +81,17 @@ class Announce:
     """
 
     mode: str = "prompt"
+    # How long a card that plays the part's own opening plays it for.
+    seconds: float = CARD_SNIPPET_SECONDS
+    # `auto_language` says whether `language` was chosen for this book or is only what
+    # to fall back on when the book itself says nothing.
     language: str = "en"
+    auto_language: bool = True
     autoplay: bool = False
     # Whether the drawn card counts the parts as well as numbering them.
     show_total: bool = True
+    # Whether the drawn card letters the part's own name beside its number.
+    show_title: bool = False
     engine: str = tts.AUTO
     voice: str | None = None
     command: str | None = None
@@ -128,6 +137,19 @@ class Announce:
         if self.mode == "title_number":
             return lang.title_number.format(n=number, title=title)
         return chapter
+
+
+def card_language(announce: Announce | None, book: Book) -> tuple[str, str]:
+    """Which of the ten languages this book's cards are written and spoken in, and where it came from.
+
+    A pack names its own language in its metadata; a pack that does not is read off
+    the words it carries beside its audio. Only a pack that is audio alone has
+    nothing to read, and there the language the app was already using stands.
+    """
+    fallback = announce.language if announce is not None else "en"
+    if announce is not None and not announce.auto_language:
+        return fallback, "the language you chose"
+    return story_language(book.language, language_sample(book), fallback)
 
 
 def story_uuid(book: Book) -> str:
@@ -331,7 +353,9 @@ def _span(segments: Sequence[AudioSegment]) -> float | None:
     return total
 
 
-def build_snippets(chapters: Sequence[Chapter], audios: Path) -> list[str | None]:
+def build_snippets(
+    chapters: Sequence[Chapter], audios: Path, seconds: float = CARD_SNIPPET_SECONDS
+) -> list[str | None]:
     """The first seconds of each part, so a card can be told apart by ear.
 
     A book cut to the sentence level has hundreds of parts, and no word in any
@@ -341,12 +365,12 @@ def build_snippets(chapters: Sequence[Chapter], audios: Path) -> list[str | None
     cards: list[str | None] = []
     for k, chapter in enumerate(chapters):
         span = _span(chapter.segments)
-        if span is not None and span <= CARD_SNIPPET_SECONDS:
+        if span is not None and span <= seconds:
             cards.append(f"s{k}.mp3")
             continue
         name = f"c{k}.mp3"
         try:
-            audio.render(chapter.segments, audios / name, limit=CARD_SNIPPET_SECONDS)
+            audio.render(chapter.segments, audios / name, limit=seconds)
         except audio.AudioError as exc:
             log.warning("cards stay silent: %s", exc)
             return [None] * len(chapters)
@@ -422,7 +446,7 @@ def build_story(
     cards = [None] * count
     spoken = 0
     if announce is not None and announce.mode != "off":
-        if cut == "chapter":
+        if cut == "chapter" and announce.mode != "snippet":
             # The card is heard over the narration, so it is levelled against it:
             # one pack's audio sits at -18 LUFS, another's at -25.
             story = audio.loudness(audios / f"{chapter_names[0]}.mp3")
@@ -432,8 +456,8 @@ def build_story(
                 count, announce, audios, tts.card_loudness(story), [c.title for c in book.chapters]
             )
         else:
-            log.info("playing the first %.0f s of each of the %d part(s) on its card", CARD_SNIPPET_SECONDS, count)
-            cards = build_snippets(book.chapters, audios)
+            log.info("playing the first %.1f s of each of the %d part(s) on its card", announce.seconds, count)
+            cards = build_snippets(book.chapters, audios, announce.seconds)
             spoken = len(cards)
 
     # The player plays title.mp3 when the story is selected, so the pack's own
@@ -454,11 +478,18 @@ def build_story(
 
     code = announce.language if announce is not None else "en"
     show_total = announce.show_total if announce is not None else True
+    # A part cut below chapter level has no name of its own: the outline names the
+    # chapter, and the part is a piece of it.
+    titles = [c.title for c in book.chapters] if cut == "chapter" else [""] * count
+    show_title = bool(announce.show_title) if announce is not None else False
+    scene_size = images.screen(player)[0]
     labels = [
-        images.card_label(code, k + 1, count, cut == "chapter", show_total) for k in range(count)
+        images.card_label(
+            code, k + 1, count, cut == "chapter", show_total, titles[k] if show_title else "", scene_size
+        )
+        for k in range(count)
     ]
     texts = [chapter.text for chapter in book.chapters]
-    scene_size = images.screen(player)[0]
     # A part whose words the font cannot write gets no picture: its audio plays on
     # the card's own picture, as it does when no caption was asked for.
     captioned = (

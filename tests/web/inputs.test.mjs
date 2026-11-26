@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { extractBook } from "../../web/daisy.js";
+import { extractBook, languageSample } from "../../web/daisy.js";
 
 const bytes = (text) => new TextEncoder().encode(text);
 const entry = (name, text) => ({ name, data: bytes(text) });
@@ -161,6 +161,27 @@ test("a pack with no audio still gives chapters, and keeps their words", () => {
   assert.deepEqual(book.chapters.map((c) => c.title), ["Article 1", "Article 2"]);
   assert.deepEqual(book.chapters.map((c) => c.segments.length), [0, 0]);
   assert.equal(book.chapters[0].body, "Le loup sortit de la foret. Il cherchait de quoi manger.");
+});
+
+test("the language sample of a text pack is its prose", () => {
+  const sample = languageSample(extractBook(textOnly()));
+  assert.equal(
+    sample,
+    "Treaty Article 1 Le loup sortit de la foret. Il cherchait de quoi manger. Article 2 Un agneau buvait a la riviere.",
+  );
+});
+
+test("the language sample stops at its own length", () => {
+  const book = {
+    title: "Long",
+    chapters: [
+      { title: "Un", body: "un mot ".repeat(2000), text: "" },
+      { title: "Deux", body: "later", text: "" },
+    ],
+  };
+  const sample = languageSample(book, 100);
+  assert.equal(sample.length, 100);
+  assert.ok(!sample.includes("later"));
 });
 
 const { buildStoryFiles } = await import("../../web/convert.js");

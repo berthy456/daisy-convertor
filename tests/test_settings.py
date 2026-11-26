@@ -42,6 +42,19 @@ def test_a_saved_language_beats_the_machine(tmp_path, monkeypatch) -> None:
     assert settings.load()["language"] == "tr"
 
 
+def test_nothing_pinned_for_the_cards_leaves_the_book_s_own_language(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    _machine_language(monkeypatch, "de_DE.UTF-8")
+    assert settings.load()["speech_language"] is None
+
+
+def test_a_pinned_card_language_survives_the_next_run(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    _machine_language(monkeypatch, "de_DE.UTF-8")
+    settings.save(dict(settings.DEFAULTS, speech_language="tr"))
+    assert settings.load()["speech_language"] == "tr"
+
+
 def test_round_trip(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     options = dict(settings.DEFAULTS, language="tr", announce="chapter", autoplay=True, voice="Cem")
@@ -71,13 +84,13 @@ def test_a_file_written_before_the_own_bar_default_loses_that_default(tmp_path, 
     stored["frameless"] = False
     stored["written_by"] = "1.3"
     settings.config_path().write_text(json.dumps(stored), encoding="utf-8")
-    assert settings.load()["frameless"] is True
+    assert settings.load()["frameless"] is settings.DEFAULTS["frameless"]
 
 
 def test_a_system_bar_put_back_after_that_version_stays_back(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    settings.save(dict(settings.DEFAULTS, frameless=False))
-    assert settings.load()["frameless"] is False
+    settings.save(dict(settings.DEFAULTS, frameless=True, frameless_chosen=True))
+    assert settings.load()["frameless"] is True
 
 
 def test_a_broken_file_does_not_stop_a_conversion(tmp_path, monkeypatch) -> None:

@@ -318,6 +318,11 @@ def _python(python: str | None = None) -> str | None:
     return None
 
 
+def has_python(python: str | None = None) -> bool:
+    """Whether this machine has a Python an engine could be built with."""
+    return bool(_python(python))
+
+
 def _pythons(python: str | None = None) -> list[str]:
     """Every interpreter the app could speak with: the one named, then the ones it built.
 

@@ -562,6 +562,17 @@ def test_a_machine_with_only_the_store_alias_has_no_python(monkeypatch) -> None:
     assert tts._python() is None
 
 
+def test_has_python_says_what_an_engine_install_needs(monkeypatch) -> None:
+    _windows_python(monkeypatch, {ALIAS: None})
+    monkeypatch.setattr(tts, "_which", lambda name: ALIAS if name in ("python", "python3") else None)
+    monkeypatch.setattr(tts, "_installs", lambda: [])
+    assert tts.has_python() is False
+
+    _windows_python(monkeypatch, {INSTALLED: (3, 12)})
+    monkeypatch.setattr(tts, "_installs", lambda: [INSTALLED])
+    assert tts.has_python() is True
+
+
 def test_a_python_older_than_the_engines_install_into_is_refused(monkeypatch) -> None:
     _windows_python(monkeypatch, {INSTALLED: (3, 8)})
     monkeypatch.setattr(tts, "_which", lambda name: None)
@@ -930,6 +941,16 @@ def test_the_expression_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -
     forced = cli.announce_options(cli._parse_args(["pack.zip", "out", "--tts-expression", "natural"]))
     assert saved.expression == "expressive", "the saved choice is used when no flag is given"
     assert forced.expression == "natural"
+
+
+def test_the_card_seconds_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    settings.save({**settings.DEFAULTS, "card_seconds": 5.0, "announce": "snippet"})
+
+    saved = cli.announce_options(cli._parse_args(["pack.zip", "out"]))
+    forced = cli.announce_options(cli._parse_args(["pack.zip", "out", "--card-seconds", "1.5"]))
+    assert (saved.mode, saved.seconds) == ("snippet", 5.0), "the saved choice is used when no flag is given"
+    assert forced.seconds == 1.5
 
 
 def test_auto_takes_the_apple_gpu_when_there_is_one() -> None:

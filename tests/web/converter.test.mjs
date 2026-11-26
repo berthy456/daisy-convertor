@@ -129,6 +129,53 @@ test("a part shorter than the card clip is not stored twice", async () => {
   assert.ok(story.files.filter((file) => file.name.includes("/audios/c")).length < story.book.chapters.length);
 });
 
+test("a chapter card can play its part's opening instead of a recorded clip", async () => {
+  const silent = new Uint8Array(await readFile(join(ROOT, "web/silence.mp3")));
+  let asked = 0;
+  const story = await buildStoryFiles(await pack("gon-ruby-mp3.zip"), silent, () => {}, {
+    cut: "chapter",
+    cardAudioSource: "snippet",
+    cardAudio: async () => {
+      asked += 1;
+      return silent;
+    },
+  });
+  const bytes = new Map(story.files.map((file) => [file.name.replace(`${story.dirName}/`, ""), file.data.length]));
+
+  assert.equal(asked, 0, "no recorded clip is asked for");
+  assert.ok(bytes.get("audios/c0.mp3") > 0);
+  assert.equal(bytes.get("audios/c0.mp3") < bytes.get("audios/s0.mp3"), true);
+});
+
+test("the card audio length is the one typed in", async () => {
+  const silent = new Uint8Array(await readFile(join(ROOT, "web/silence.mp3")));
+  const entries = await pack("gon-ruby-mp3.zip");
+  const clip = async (seconds) => {
+    const story = await buildStoryFiles(entries, silent, () => {}, {
+      cut: "paragraph",
+      cardAudioSource: "snippet",
+      cardSeconds: seconds,
+    });
+    return story.files.find((file) => file.name.endsWith("/audios/c0.mp3")).data.length;
+  };
+  const short = await clip(1);
+  const long = await clip(6);
+  assert.ok(short < long, `${short} bytes for 1 s, ${long} for 6 s`);
+});
+
+test("a silent card is given no audio at all", async () => {
+  const silent = new Uint8Array(await readFile(join(ROOT, "web/silence.mp3")));
+  const story = await buildStoryFiles(await pack("gon-ruby-mp3.zip"), silent, () => {}, {
+    cut: "chapter",
+    cardAudioSource: "off",
+    cardAudio: async () => silent,
+  });
+  const nodes = JSON.parse(new TextDecoder().decode(story.files.find((file) => file.name.endsWith("nodes.json")).data));
+
+  assert.equal(story.files.some((file) => file.name.includes("/audios/c")), false);
+  assert.ok(story.book.chapters.every((_, k) => nodes.stages[`m${k}`].audio === null));
+});
+
 test("a story cut at sentences carries a picture of each part's own words", async () => {
   const silent = new Uint8Array(await readFile(join(ROOT, "web/silence.mp3")));
   const story = await buildStoryFiles(await pack("gon-ruby-mp3.zip"), silent, () => {}, {

@@ -74,6 +74,20 @@ class Book:
     source: str | None = None
 
 
+def language_sample(book: Book, limit: int = 4000) -> str:
+    """A page of the words the pack carries beside its audio: the title, the part titles, the parts.
+
+    Enough of a book to read a language off, and no more: a whole novel is a
+    megabyte of text a handful of common words does not need.
+    """
+    parts = [book.title]
+    for chapter in book.chapters:
+        parts.extend((chapter.title, chapter.body or chapter.text))
+        if sum(len(part) for part in parts) >= limit:
+            break
+    return " ".join(part for part in parts if part)[:limit]
+
+
 @dataclass
 class _TocEntry:
     level: int

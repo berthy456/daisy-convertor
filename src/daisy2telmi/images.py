@@ -204,6 +204,13 @@ def _lettering(label: str, text: str, width: int, height: int, style: str, negat
         return canvas
 
     number_size = max(1, round(height / CARD_NUMBER_SIZE))
+    room = width - 2 * margin
+    wide = _typeface(number_size).getlength(label)
+    if wide > room:
+        # A titled line is drawn smaller than a bare number, never smaller than the
+        # card's own opening words: below that the number stops being the thing a
+        # listener reads on a card.
+        number_size = max(max(1, round(height / CARD_WORD_SIZE)), int(number_size * room / wide))
     drawn.text(
         (width - margin, margin),
         label,
@@ -436,18 +443,34 @@ def caption_png(
 
 
 def card_label(
-    language_code: str, number: int, total: int, word: bool = True, show_total: bool = True
+    language_code: str,
+    number: int,
+    total: int,
+    word: bool = True,
+    show_total: bool = True,
+    title: str = "",
+    screen: tuple[int, int] = IMAGE_SIZE,
 ) -> str:
     """The words drawn on a card, in the story's language.
 
     The typeface is Latin, so Chinese and Arabic cards carry the number alone: it
     is the part that has to be read, and the spoken card already says the word.
     A part cut below chapter level gets the number alone as well, because none
-    of the words we have would be the right one for it.
+    of the words we have would be the right one for it. A title is added after the
+    number, and a card keeps its number alone when its typeface has no letters for
+    the title, or no room for it at the size of the card's own opening words.
     """
+    width, height = screen
     shown = f"{number}/{total}" if show_total else str(number)
     label = f"{language(language_code).card.upper()} {shown}" if word else shown
-    return label if _letterable(_card_typeface(IMAGE_SIZE[1]), label) == label else shown
+    font = _card_typeface(height)
+    if title:
+        named = f"{label}, {title.upper()}"
+        room = width - 2 * _layout(width)[0]
+        small = _typeface(max(1, round(height / CARD_WORD_SIZE)))
+        if _letterable(font, named) == named and small.getlength(named) <= room:
+            return named
+    return label if _letterable(font, label) == label else shown
 
 
 def _run(args: list[str], description: str) -> None:

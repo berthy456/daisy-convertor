@@ -29,13 +29,23 @@ DEFAULTS: dict = {
     # The folder the last file list was left in, so the next one opens there.
     "last_dir": None,
     "language": "en",
+    # The language of the cards and the voice. Nothing saved means the book's own,
+    # read off the pack; what is saved is what the user pinned over it.
+    "speech_language": None,
     "announce": "prompt",
     "autoplay": False,
+    # How long a card that plays the part's own opening plays it for.
+    "card_seconds": 3.0,
     "card_total": True,
+    "card_title": False,
     "card_negative": False,
+    # Whether anyone ever ticked the bar box. A settings file written by a version
+    # that had its own default for it carries that default, not a choice, so an
+    # unchosen box follows whatever the current default is.
+    "frameless_chosen": False,
     "frameless": True,
     "format": "telmi",
-    "tts": "auto",
+    "tts": "piper",
     "voice": None,
     "speed": "normal",
     "expression": "natural",
@@ -77,6 +87,25 @@ def _apple_languages() -> str:
         return ""
 
 
+def _windows_language() -> str:
+    """The language Windows shows its own interface in right now.
+
+    `GetUserDefaultUILanguage` is the language the system was installed with, and a
+    display language chosen afterwards leaves it where it was - a French Windows
+    installed from an English disc still answers English. The preferred-language calls
+    are the ones that follow what the user actually sees.
+    """
+    kernel32 = ctypes.windll.kernel32
+    for name in ("GetUserPreferredUILanguage", "GetSystemPreferredUILanguage", "GetUserDefaultUILanguage"):
+        call = getattr(kernel32, name, None)
+        if call is None:
+            continue
+        primary = call() & 0x3F
+        if primary:
+            return _WINDOWS_LANGUAGES.get(primary, "en")
+    return "en"
+
+
 def system_language() -> str:
     """The language the machine itself is set to, when the app has words for it.
 
@@ -88,7 +117,7 @@ def system_language() -> str:
         if found and found.group(1) in LANGUAGES:
             return found.group(1)
     if sys.platform == "win32":
-        return _WINDOWS_LANGUAGES.get(ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3F, "en")
+        return _windows_language()
     if sys.platform == "darwin":
         # Finder starts an app from launchd, which knows the user's language but
         # leaves it out of the environment.
@@ -135,17 +164,6 @@ def speech_voices() -> Path:
     return data_dir() / "voices"
 
 
-# The window drew its own bar by default from 1.4 on. A settings file written
-# before that carries the old default for it, which no one chose.
-_OWN_BAR_FROM = (1, 4)
-
-
-def _written_before(stamp: object) -> bool:
-    if not isinstance(stamp, str):
-        return True
-    return tuple(int(part) for part in re.split(r"[^0-9]+", stamp) if part) < _OWN_BAR_FROM
-
-
 def load() -> dict:
     """The saved options, with the machine's own language where nothing was saved."""
     options = dict(DEFAULTS, language=system_language())
@@ -158,7 +176,7 @@ def load() -> dict:
         return options
     if isinstance(stored, dict):
         options.update({key: value for key, value in stored.items() if key in DEFAULTS})
-        if _written_before(stored.get("written_by")):
+        if not options.get("frameless_chosen"):
             options["frameless"] = DEFAULTS["frameless"]
     return options
 

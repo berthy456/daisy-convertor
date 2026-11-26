@@ -142,7 +142,7 @@
                 <input id="captions" type="checkbox" disabled />
                 <span data-i18n="captions"></span>
               </label>
-              <p id="captions-note" class="muted captions-note" data-i18n="captions_note" hidden></p>
+              <p id="captions-note" class="captions-note" data-i18n="captions_note" hidden></p>
             </div>
           </div>
         </div>
@@ -168,8 +168,8 @@
         </div>
 
         <!-- What the card between two parts shows and says. The words are the
-             page's own; the sound is one of the clips under voices/, so the two
-             are asked for separately. -->
+             page's own; the sound is one of the clips under voices/ or the part's
+             own opening, so the two are asked for separately. -->
         <div class="cards">
           <h2 data-i18n="cards_title"></h2>
           <div class="cards-row">
@@ -182,8 +182,28 @@
               <span data-i18n="cards_say_word"></span>
             </label>
             <label>
+              <input id="card-title" type="checkbox" />
+              <span data-i18n="cards_show_title"></span>
+            </label>
+            <label>
               <input id="card-count" type="checkbox" />
               <span data-i18n="cards_say_total"></span>
+            </label>
+            <label class="cards-language">
+              <span data-i18n="card_language"></span>
+              <select id="card-language"></select>
+            </label>
+            <label class="cards-audio">
+              <span data-i18n="card_audio"></span>
+              <select id="card-audio">
+                <option value="voice" data-i18n="card_audio_voice"></option>
+                <option value="snippet" data-i18n="card_audio_snippet"></option>
+                <option value="off" data-i18n="card_audio_off"></option>
+              </select>
+            </label>
+            <label class="cards-seconds">
+              <span data-i18n="card_seconds"></span>
+              <input id="card-seconds" type="number" min="0.5" max="30" step="0.5" value="3" />
             </label>
           </div>
         </div>

@@ -186,6 +186,28 @@ input[type="file"] {
   border-top: 1px solid var(--line);
 }
 
+.cards-language,
+.cards-audio,
+.cards-seconds {
+  gap: 0.5rem;
+  color: var(--muted);
+}
+
+.cards-language select,
+.cards-audio select,
+.cards-seconds input {
+  font: inherit;
+  padding: 0.25rem 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+}
+
+.cards-seconds input {
+  width: 5rem;
+}
+
 .cover-head {
   display: flex;
   gap: 0.75rem;
@@ -356,12 +378,13 @@ input[type="file"] {
   }
 }
 
-/* What the words on screen cost is said under the box that asks for them: its own
-   line when the knobs run along the page, part of the column when they stand beside
-   the frame. */
+/* What the words on screen cost is said under the box that asks for them, as a
+   warning: its own line when the knobs run along the page, part of the column when
+   they stand beside the frame. */
 .crop-tools .captions-note {
   flex: 0 0 100%;
   margin: 0;
+  color: var(--danger);
 }
 
 .crop,

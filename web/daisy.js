@@ -550,6 +550,20 @@ export function extractBook(entries, level = "chapter") {
   };
 }
 
+/**
+ * A page of the words the pack carries beside its audio: the title, the part
+ * titles, the parts. Enough of a book to read a language off, and no more: a whole
+ * novel is a megabyte of text a handful of common words does not need.
+ */
+export function languageSample(book, limit = 4000) {
+  const parts = [book.title];
+  for (const chapter of book.chapters) {
+    parts.push(chapter.title, chapter.body || chapter.text);
+    if (parts.reduce((total, part) => total + part.length, 0) >= limit) break;
+  }
+  return parts.filter(Boolean).join(" ").slice(0, limit);
+}
+
 function nccEntries(root) {
   const body = root.find("body")[0];
   if (!body) return [];

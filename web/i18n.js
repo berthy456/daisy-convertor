@@ -37,8 +37,8 @@ export const UI = {
     fmt_lunii: "Lunii (B/W)",
     fmt_lunii_pk: "Commercial PK (.pk)",
     card_negative: "B&W inversion (negative)",
-    captions: "Show the words on screen",
-    captions_note: "Warning: very long! One picture per sentence: many more files, a battery that empties faster, and words that stay hard to read on a small screen.",
+    captions: "Display the text on screen",
+    captions_note: "Warning: beta support. Very slow, and it may not be usable - one picture per sentence means many more files, a battery that empties faster, and words that stay hard to read on a small screen.",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (beta)",
     fmt_mp3: "MP3 playlist",
@@ -115,6 +115,7 @@ export const UI = {
     card_label_one: "Chapter {n}",
     cards_title: "The chapter cards",
     cards_show_total: "Show how many parts there are",
+    cards_show_title: "Show the chapter title",
     cards_say_word: "Say the word chapter",
     cards_say_total: "Say how many parts there are",
     summary_more: "... {n} more",
@@ -137,6 +138,19 @@ export const UI = {
     prog_metadata: "story metadata",
     prog_interludes: "chapter names",
     prog_playlists: "playlists and text",
+    card_language: "Card and voice language",
+    card_audio: "Card audio",
+    card_audio_voice: "Spoken words",
+    card_audio_snippet: "Play the first seconds of the part",
+    card_audio_off: "Silent card",
+    card_seconds: "Card audio length (s)",
+    speech_auto: "Auto (the book's own)",
+    log_card_language: "the cards will be written and spoken in {language}: {source}",
+    source_metadata: "the pack's metadata",
+    source_text: "the pack's own text",
+    source_machine: "your machine",
+    source_declared: "your machine: the pack says {declared}, which has no words here",
+    source_pinned: "the language you chose",
   },
   fr: {
     tagline:
@@ -152,8 +166,8 @@ export const UI = {
     fmt_lunii: "Lunii (N&B)",
     fmt_lunii_pk: "Pack du commerce (.pk)",
     card_negative: "Inversion N&B (négatif)",
-    captions: "Afficher les mots à l'écran",
-    captions_note: "Attention : très long ! Une image par phrase : beaucoup plus de fichiers, une batterie qui se vide plus vite, et des mots difficiles à lire sur un petit écran.",
+    captions: "Afficher le texte à l'écran",
+    captions_note: "Attention : prise en charge bêta. Très lent, et peut-être inutilisable - une image par phrase veut dire beaucoup plus de fichiers, une batterie qui se vide plus vite et des mots difficiles à lire sur un petit écran.",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (bêta)",
     fmt_mp3: "Liste MP3",
@@ -230,6 +244,7 @@ export const UI = {
     card_label_one: "Chapitre {n}",
     cards_title: "Les cartes de chapitre",
     cards_show_total: "Afficher le nombre de parties",
+    cards_show_title: "Afficher le titre du chapitre",
     cards_say_word: "Annoncer le mot chapitre",
     cards_say_total: "Annoncer le nombre de parties",
     summary_more: "... {n} de plus",
@@ -252,6 +267,19 @@ export const UI = {
     prog_metadata: "métadonnées de l'histoire",
     prog_interludes: "noms des chapitres",
     prog_playlists: "listes de lecture et texte",
+    card_language: "Langue des cartes et de la voix",
+    card_audio: "Audio de la carte",
+    card_audio_voice: "Mots prononcés",
+    card_audio_snippet: "Jouer les premières secondes de la partie",
+    card_audio_off: "Carte silencieuse",
+    card_seconds: "Durée audio de la carte (s)",
+    speech_auto: "Auto (la langue du livre)",
+    log_card_language: "les cartes seront écrites et lues en {language} : {source}",
+    source_metadata: "les métadonnées du pack",
+    source_text: "le texte du pack",
+    source_machine: "votre machine",
+    source_declared: "votre machine : le pack indique {declared}, qui n'a pas de mots ici",
+    source_pinned: "la langue que vous avez choisie",
   },
   zh: {
     tagline: "放入 DAISY 有声书包，得到 Telmi、Lunii 或 Flam 故事。不上传任何内容：转换在本页完成。",
@@ -266,8 +294,8 @@ export const UI = {
     fmt_lunii: "Lunii（黑白）",
     fmt_lunii_pk: "商业 PK (.pk)",
     card_negative: "黑白反相（负片）",
-    captions: "在屏幕上显示文字",
-    captions_note: "警告：非常长！每个句子一张图片：文件多得多，耗电更快，小屏幕上的文字也难以阅读。",
+    captions: "在屏幕上显示文本",
+    captions_note: "警告：测试阶段支持。非常慢，可能无法使用——每个句子一张图片意味着文件多得多，耗电更快，小屏幕上的文字也难以阅读。",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (测试版)",
     fmt_mp3: "MP3 播放列表",
@@ -340,6 +368,7 @@ export const UI = {
     card_label_one: "第 {n} 章",
     cards_title: "章节卡片",
     cards_show_total: "显示总段数",
+    cards_show_title: "显示章节标题",
     cards_say_word: "读出“章节”这个词",
     cards_say_total: "读出总段数",
     summary_more: "…还有 {n} 段",
@@ -361,6 +390,19 @@ export const UI = {
     prog_metadata: "故事元数据",
     prog_interludes: "章节名称",
     prog_playlists: "播放列表和文本",
+    card_language: "卡片与语音语言",
+    card_audio: "卡片音频",
+    card_audio_voice: "朗读文字",
+    card_audio_snippet: "播放该部分的前几秒",
+    card_audio_off: "静音卡片",
+    card_seconds: "卡片音频时长（秒）",
+    speech_auto: "自动（书籍的语言）",
+    log_card_language: "卡片将以{language}书写和朗读：{source}",
+    source_metadata: "音频包的元数据",
+    source_text: "音频包自带的文本",
+    source_machine: "你的设备",
+    source_declared: "你的设备：音频包标注为 {declared}，这里没有这种语言",
+    source_pinned: "你选择的语言",
   },
   ar: {
     tagline: "ضع حزمة كتاب صوتي DAISY لتحصل على قصة لـ Telmi أو Lunii أو Flam. لا يُرفع شيء: التحويل يجري في هذه الصفحة.",
@@ -375,8 +417,8 @@ export const UI = {
     fmt_lunii: "Lunii (أبيض وأسود)",
     fmt_lunii_pk: "PK تجارية (.pk)",
     card_negative: "عكس الأبيض والأسود (سالبي)",
-    captions: "اعرض الكلمات على الشاشة",
-    captions_note: "تحذير: طويل جدًا! صورة لكل جملة: ملفات أكثر بكثير، وبطارية تفرغ أسرع، وكلمات تصعب قراءتها على شاشة صغيرة.",
+    captions: "اعرض النص على الشاشة",
+    captions_note: "تحذير: دعم تجريبي. بطيء جدًا وقد لا يكون قابلًا للاستخدام — صورة لكل جملة تعني ملفات أكثر بكثير، وبطارية تفرغ أسرع، وكلمات تصعب قراءتها على شاشة صغيرة.",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (تجريبي)",
     fmt_mp3: "قائمة MP3",
@@ -449,6 +491,7 @@ export const UI = {
     card_label_one: "الفصل {n}",
     cards_title: "بطاقات الفصول",
     cards_show_total: "إظهار عدد الأجزاء",
+    cards_show_title: "إظهار عنوان الفصل",
     cards_say_word: "نطق كلمة «فصل»",
     cards_say_total: "نطق عدد الأجزاء",
     summary_more: "… {n} جزء إضافي",
@@ -470,6 +513,19 @@ export const UI = {
     prog_metadata: "بيانات القصة",
     prog_interludes: "أسماء الفصول",
     prog_playlists: "قوائم التشغيل والنص",
+    card_language: "لغة البطاقات والصوت",
+    card_audio: "صوت البطاقة",
+    card_audio_voice: "كلمات منطوقة",
+    card_audio_snippet: "تشغيل الثواني الأولى من الجزء",
+    card_audio_off: "بطاقة صامتة",
+    card_seconds: "طول صوت البطاقة (ثانية)",
+    speech_auto: "تلقائي (لغة الكتاب)",
+    log_card_language: "ستُكتب البطاقات وتُقرأ بصوت {language}: {source}",
+    source_metadata: "بيانات الحزمة",
+    source_text: "نص الحزمة نفسه",
+    source_machine: "جهازك",
+    source_declared: "جهازك: الحزمة تقول {declared}، ولا كلمات بهذه اللغة هنا",
+    source_pinned: "اللغة التي اخترتها",
   },
   tr: {
     tagline:
@@ -485,8 +541,8 @@ export const UI = {
     fmt_lunii: "Lunii (S-B)",
     fmt_lunii_pk: "Ticari PK (.pk)",
     card_negative: "Siyah-beyaz tersleme (negatif)",
-    captions: "Kelimeleri ekranda göster",
-    captions_note: "Uyarı: çok uzun! Cümle başına bir resim: çok daha fazla dosya, daha çabuk biten pil ve küçük ekranda okuması güç kelimeler.",
+    captions: "Metni ekranda göster",
+    captions_note: "Uyarı: beta destek. Çok yavaş ve kullanılamaz olabilir - cümle başına bir resim çok daha fazla dosya, daha çabuk biten pil ve küçük ekranda okuması güç kelimeler demek.",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (beta)",
     fmt_mp3: "MP3 çalma listesi",
@@ -563,6 +619,7 @@ export const UI = {
     card_label_one: "Bölüm {n}",
     cards_title: "Bölüm kartları",
     cards_show_total: "Kaç parça olduğunu göster",
+    cards_show_title: "Bölümün başlığını göster",
     cards_say_word: "'bölüm' sözünü söyle",
     cards_say_total: "Kaç parça olduğunu söyle",
     summary_more: "... {n} parça daha",
@@ -585,6 +642,19 @@ export const UI = {
     prog_metadata: "hikâye üst verisi",
     prog_interludes: "bölüm adları",
     prog_playlists: "çalma listeleri ve metin",
+    card_language: "Kart ve ses dili",
+    card_audio: "Kart sesi",
+    card_audio_voice: "Söylenen sözler",
+    card_audio_snippet: "Parçanın ilk saniyelerini çal",
+    card_audio_off: "Sessiz kart",
+    card_seconds: "Kart sesi süresi (s)",
+    speech_auto: "Otomatik (kitabın dili)",
+    log_card_language: "kartlar {language} dilinde yazılacak ve okunacak: {source}",
+    source_metadata: "paketteki tanımlar",
+    source_text: "paketin kendi metni",
+    source_machine: "senin makinan",
+    source_declared: "senin makinan: paket {declared} diyor, burada bu dilin kelimeleri yok",
+    source_pinned: "seçtiğin dil",
   },
   de: {
     tagline:
@@ -600,8 +670,8 @@ export const UI = {
     fmt_lunii: "Lunii (S/W)",
     fmt_lunii_pk: "Kommerzielles PK (.pk)",
     card_negative: "S/W-Umkehr (Negativ)",
-    captions: "Wörter auf dem Bildschirm anzeigen",
-    captions_note: "Achtung: sehr lang! Ein Bild pro Satz: deutlich mehr Dateien, höherer Stromverbrauch und Wörter, die auf dem kleinen Bildschirm schwer zu lesen sind.",
+    captions: "Text auf dem Bildschirm anzeigen",
+    captions_note: "Warnung: Beta-Unterstützung. Sehr langsam und möglicherweise unbrauchbar - ein Bild pro Satz bedeutet deutlich mehr Dateien, höherer Stromverbrauch und Wörter, die auf dem kleinen Bildschirm schwer zu lesen sind.",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (Beta)",
     fmt_mp3: "MP3-Playlist",
@@ -678,6 +748,7 @@ export const UI = {
     card_label_one: "Kapitel {n}",
     cards_title: "Die Kapitalkarten",
     cards_show_total: "Anzahl der Teile anzeigen",
+    cards_show_title: "Den Kapiteltitel anzeigen",
     cards_say_word: "Das Wort Kapitel aussprechen",
     cards_say_total: "Die Anzahl der Teile sagen",
     summary_more: "... {n} weitere",
@@ -700,6 +771,19 @@ export const UI = {
     prog_metadata: "Geschichten-Metadaten",
     prog_interludes: "Kapitelnamen",
     prog_playlists: "Wiedergabelisten und Text",
+    card_language: "Sprache der Karten und der Stimme",
+    card_audio: "Kartenaudio",
+    card_audio_voice: "Gesprochene Worte",
+    card_audio_snippet: "Die ersten Sekunden des Abschnitts abspielen",
+    card_audio_off: "Stille Karte",
+    card_seconds: "Dauer der Kartenaudio (s)",
+    speech_auto: "Auto (die Sprache des Buchs)",
+    log_card_language: "die Karten werden in {language} geschrieben und gesprochen: {source}",
+    source_metadata: "die Metadaten des Packs",
+    source_text: "der Text des Packs",
+    source_machine: "dein Rechner",
+    source_declared: "dein Rechner: das Pack sagt {declared}, dafür gibt es hier keine Wörter",
+    source_pinned: "die gewählte Sprache",
   },
   it: {
     tagline:
@@ -715,8 +799,8 @@ export const UI = {
     fmt_lunii: "Lunii (B/N)",
     fmt_lunii_pk: "PK commerciale (.pk)",
     card_negative: "Inversione B/N (negativo)",
-    captions: "Mostra le parole sullo schermo",
-    captions_note: "Attenzione: molto lungo! Un'immagine per frase: molti più file, una batteria che si esaurisce prima e parole difficili da leggere su uno schermo piccolo.",
+    captions: "Testo sullo schermo",
+    captions_note: "Attenzione: supporto beta. Molto lento e forse inutilizzabile - un'immagine per frase significa molti più file, una batteria che si esaurisce prima e parole difficili da leggere su uno schermo piccolo.",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (beta)",
     fmt_mp3: "Playlist MP3",
@@ -793,6 +877,7 @@ export const UI = {
     card_label_one: "Capitolo {n}",
     cards_title: "Le carte dei capitoli",
     cards_show_total: "Mostrare quante parti ci sono",
+    cards_show_title: "Mostrare il titolo del capitolo",
     cards_say_word: "Dire la parola capitolo",
     cards_say_total: "Dire quante parti ci sono",
     summary_more: "... altri {n}",
@@ -815,6 +900,19 @@ export const UI = {
     prog_metadata: "metadati della storia",
     prog_interludes: "nomi dei capitoli",
     prog_playlists: "playlist e testo",
+    card_language: "Lingua delle schede e della voce",
+    card_audio: "Audio della scheda",
+    card_audio_voice: "Parole pronunciate",
+    card_audio_snippet: "Riprodurre i primi secondi della parte",
+    card_audio_off: "Scheda silenziosa",
+    card_seconds: "Durata audio della scheda (s)",
+    speech_auto: "Auto (la lingua del libro)",
+    log_card_language: "le schede saranno scritte e lette in {language}: {source}",
+    source_metadata: "i metadati del pacchetto",
+    source_text: "il testo del pacchetto",
+    source_machine: "la tua macchina",
+    source_declared: "la tua macchina: il pacchetto dice {declared}, che non ha parole qui",
+    source_pinned: "la lingua scelta",
   },
   es: {
     tagline:
@@ -830,8 +928,8 @@ export const UI = {
     fmt_lunii: "Lunii (B/N)",
     fmt_lunii_pk: "PK comercial (.pk)",
     card_negative: "Inversión B/N (negativo)",
-    captions: "Mostrar las palabras en pantalla",
-    captions_note: "¡Atención: muy largo! Una imagen por frase: muchos más archivos, más consumo de batería y palabras difíciles de leer en una pantalla pequeña.",
+    captions: "Mostrar el texto en pantalla",
+    captions_note: "Aviso: soporte beta. Muy lento y puede que no sea utilizable - una imagen por frase significa muchos más archivos, más consumo de batería y palabras difíciles de leer en una pantalla pequeña.",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (beta)",
     fmt_mp3: "Lista MP3",
@@ -908,6 +1006,7 @@ export const UI = {
     card_label_one: "Capítulo {n}",
     cards_title: "Las tarjetas de capítulo",
     cards_show_total: "Mostrar cuántas partes hay",
+    cards_show_title: "Mostrar el título del capítulo",
     cards_say_word: "Decir la palabra capítulo",
     cards_say_total: "Decir cuántas partes hay",
     summary_more: "... {n} más",
@@ -930,6 +1029,19 @@ export const UI = {
     prog_metadata: "metadatos del cuento",
     prog_interludes: "nombres de los capítulos",
     prog_playlists: "listas de reproducción y texto",
+    card_language: "Idioma de las tarjetas y de la voz",
+    card_audio: "Audio de la ficha",
+    card_audio_voice: "Palabras pronunciadas",
+    card_audio_snippet: "Reproducir los primeros segundos de la parte",
+    card_audio_off: "Ficha silenciosa",
+    card_seconds: "Duración del audio de la ficha (s)",
+    speech_auto: "Auto (el idioma del libro)",
+    log_card_language: "las tarjetas se escribirán y se leerán en {language}: {source}",
+    source_metadata: "los metadatos del pack",
+    source_text: "el texto del pack",
+    source_machine: "tu máquina",
+    source_declared: "tu máquina: el pack dice {declared}, que no tiene palabras aquí",
+    source_pinned: "el idioma elegido",
   },
   pt: {
     tagline:
@@ -945,8 +1057,8 @@ export const UI = {
     fmt_lunii: "Lunii (P&B)",
     fmt_lunii_pk: "PK comercial (.pk)",
     card_negative: "Inversão P&B (negativo)",
-    captions: "Mostrar as palavras na tela",
-    captions_note: "Atenção: muito longo! Uma imagem por frase: muitos mais arquivos, bateria que acaba mais rápido e palavras difíceis de ler numa tela pequena.",
+    captions: "Exibir o texto na tela",
+    captions_note: "Aviso: suporte beta. Muito lento e talvez inutilizável - uma imagem por frase significa muitos mais arquivos, bateria que acaba mais rápido e palavras difíceis de ler numa tela pequena.",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (beta)",
     fmt_mp3: "Lista MP3",
@@ -1023,6 +1135,7 @@ export const UI = {
     card_label_one: "Capítulo {n}",
     cards_title: "Os cartões de capítulo",
     cards_show_total: "Mostrar quantas partes há",
+    cards_show_title: "Mostrar o título do capítulo",
     cards_say_word: "Dizer a palavra capítulo",
     cards_say_total: "Dizer quantas partes há",
     summary_more: "... {n} a mais",
@@ -1045,6 +1158,19 @@ export const UI = {
     prog_metadata: "metadados da história",
     prog_interludes: "nomes dos capítulos",
     prog_playlists: "listas de reprodução e texto",
+    card_language: "Idioma dos cartões e da voz",
+    card_audio: "Áudio do cartão",
+    card_audio_voice: "Palavras faladas",
+    card_audio_snippet: "Tocar os primeiros segundos da parte",
+    card_audio_off: "Cartão silencioso",
+    card_seconds: "Duração do áudio do cartão (s)",
+    speech_auto: "Auto (o idioma do livro)",
+    log_card_language: "os cartões serão escritos e lidos em {language}: {source}",
+    source_metadata: "os metadados do pacote",
+    source_text: "o texto do pacote",
+    source_machine: "sua máquina",
+    source_declared: "sua máquina: o pacote diz {declared}, que não tem palavras aqui",
+    source_pinned: "o idioma escolhido",
   },
   nl: {
     tagline:
@@ -1060,8 +1186,8 @@ export const UI = {
     fmt_lunii: "Lunii (Z/W)",
     fmt_lunii_pk: "Commercieel PK (.pk)",
     card_negative: "Z/W-omkering (negatief)",
-    captions: "Woorden op het scherm tonen",
-    captions_note: "Waarschuwing: heel lang! Eén afbeelding per zin: veel meer bestanden, sneller batterijgebruik en woorden die op een klein scherm moeilijk leesbaar blijven.",
+    captions: "Tekst op het scherm tonen",
+    captions_note: "Waarschuwing: bèta-ondersteuning. Heel langzaam en mogelijk onbruikbaar - één afbeelding per zin betekent veel meer bestanden, sneller batterijgebruik en woorden die op een klein scherm moeilijk leesbaar blijven.",
     fmt_flam: "Flam",
     fmt_merlin: "Merlin (bèta)",
     fmt_mp3: "MP3-afspeellijst",
@@ -1138,6 +1264,7 @@ export const UI = {
     card_label_one: "Hoofdstuk {n}",
     cards_title: "De hoofdstukkaarten",
     cards_show_total: "Tonnen hoeveel delen er zijn",
+    cards_show_title: "De titel van het hoofdstuk tonen",
     cards_say_word: "Het woord hoofdstuk uitspreken",
     cards_say_total: "Uitspreken hoeveel delen er zijn",
     summary_more: "... nog {n}",
@@ -1160,8 +1287,124 @@ export const UI = {
     prog_metadata: "verhaalmetadata",
     prog_interludes: "hoofdstuknamen",
     prog_playlists: "afspeellijsten en tekst",
+    card_language: "Taal van de kaarten en de stem",
+    card_audio: "Kaartaudio",
+    card_audio_voice: "Gesproken woorden",
+    card_audio_snippet: "De eerste seconden van het deel afspelen",
+    card_audio_off: "Stille kaart",
+    card_seconds: "Lengte van de kaartaudio (s)",
+    speech_auto: "Auto (de taal van het boek)",
+    log_card_language: "de kaarten worden in het {language} geschreven en gesproken: {source}",
+    source_metadata: "de metadata van het pakket",
+    source_text: "de tekst van het pakket",
+    source_machine: "jouw machine",
+    source_declared: "jouw machine: het pakket zegt {declared}, daar zijn hier geen woorden voor",
+    source_pinned: "de gekozen taal",
   },
 };
+
+// A pack names its language in whichever way the tool that made it wrote it:
+// `FR`, `fre`, `fr-FR`, `Français`. The three-letter forms are what DAISY packs
+// carry in `dc:language`.
+const TAGS = {
+  eng: "en",
+  english: "en",
+  fre: "fr",
+  fra: "fr",
+  french: "fr",
+  ger: "de",
+  deu: "de",
+  german: "de",
+  dut: "nl",
+  nld: "nl",
+  dutch: "nl",
+  spa: "es",
+  spanish: "es",
+  por: "pt",
+  portuguese: "pt",
+  ita: "it",
+  italian: "it",
+  ara: "ar",
+  arabic: "ar",
+  tur: "tr",
+  turkish: "tr",
+  chi: "zh",
+  zho: "zh",
+  chinese: "zh",
+};
+
+// The words each language repeats constantly. A pack that declares no language
+// still carries its text, and a page of any of these is full of its own handful.
+const MARKERS = Object.fromEntries(
+  Object.entries({
+    en: "the and of to in a that is it for was with you he she they their from this are had have not but his her were as at be been would could",
+    fr: "de la le les des un une que qui dans pas est avec vous ne ce au aux du sur pour par plus était avait son sa elle ils nous cette quand sans",
+    de: "der die das und ist nicht mit ein eine einen von zu den dem des sie er wir ich auch noch schon aber oder wenn als wie so sehr mehr nach aus bei am im vom zum zur ohne",
+    es: "de la que el y en los las del se para con una por su es está son fue era ha muy más pero como cuando sin sobre entre",
+    it: "di che non la il e un una per con del della si sono era ha molto più ma come quando senza sopra tra questo quella",
+    pt: "de a o que e do da em um para com não os as uma por é são foi era tem muito mais mas como quando sem sobre entre esta essa",
+    nl: "de het een van en is in op te dat met ik hij zij niet voor ook nog maar als zijn was heeft geen deze",
+    tr: "ve bir bu için ile ki ne o ben gibi daha çok kadar diye her hiç şey ama değil çünkü yine artık beri onu bunu ona onun sen biz siz",
+    ar: "من في على أن إلى مع هذا التي الذي ما لا هو هي كان كانت هذه ذلك بين",
+  }).map(([code, words]) => [code, new Set(words.split(" "))]),
+);
+
+// Two of the ten are written in letters nothing else uses. Japanese is not one of
+// them, and its kana sit among the same Han characters Chinese is written in, so a
+// page carrying any of them is nobody's.
+const HAN = /[㐀-䶿一-鿿]/u;
+const KANA = /[぀-ヿ]/u;
+const ARABIC = /[؀-ۿ]/u;
+
+/** The page's own code for a language a pack declares: `FR`, `fre`, `fr-FR`, `Français`. */
+export function codeOf(tag) {
+  if (!tag) return null;
+  const head = String(tag).trim().toLowerCase().split(/[-_]/)[0];
+  if (LANGUAGES.includes(head)) return head;
+  if (TAGS[head]) return TAGS[head];
+  return LANGUAGES.find((code) => head === NAMES[code].toLowerCase()) ?? null;
+}
+
+// Turkish capitalises its dotted İ, and lowercasing it leaves a second dot
+// sitting on the i that no Turkish word is actually spelled with. The dots go
+// before the words are cut out, so `İLK` is one word and not two.
+const words = (page) => page.toLowerCase().replace(/\p{M}/gu, "").match(/\p{L}+/gu) ?? [];
+
+/**
+ * The language a page of the pack's own text reads as, among the ten the page has
+ * words for. Two of them give themselves away by their letters; the rest are
+ * counted by their handful of constant words, and a page that no language clearly
+ * wins is not a page this page has words for.
+ */
+export function guess(page) {
+  const letters = [...page.replace(/\s/gu, "")];
+  if (!letters.length) return null;
+  if (letters.some((character) => KANA.test(character))) return null;
+  for (const [script, code] of [[HAN, "zh"], [ARABIC, "ar"]]) {
+    if (letters.filter((character) => script.test(character)).length * 2 > letters.length) return code;
+  }
+  const counted = words(page);
+  if (!counted.length) return null;
+  const scored = Object.entries(MARKERS)
+    .map(([code, markers]) => [counted.filter((word) => markers.has(word)).length, code])
+    .sort((a, b) => a[0] - b[0] || (a[1] < b[1] ? -1 : 1));
+  const [runnerUp, best] = scored.slice(-2);
+  return best[0] >= 3 && best[0] > runnerUp[0] ? best[1] : null;
+}
+
+/**
+ * The language to write and speak a book's cards in, and where it came from:
+ * `metadata`, `text`, `machine`, or `declared` when the pack named a language this
+ * page has no words for.
+ */
+export function storyLanguage(declared, page, fallback) {
+  const code = codeOf(declared);
+  if (code) return { code, source: "metadata" };
+  const guessed = guess(page);
+  if (guessed) return { code: guessed, source: "text" };
+  if (declared) return { code: fallback, source: "declared" };
+  return { code: fallback, source: "machine" };
+}
 
 /** The saved choice wins, then the browser's language, then English. */
 export function pickLanguage(preferred, browserLanguage) {

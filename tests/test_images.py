@@ -233,6 +233,14 @@ def test_a_part_below_chapter_level_is_numbered_without_a_word() -> None:
     assert images.card_label("fr", 7, 213, word=False) == "7/213"
 
 
+def test_a_card_writes_its_chapter_title_beside_the_number() -> None:
+    assert images.card_label("en", 3, 12, title="The invisible dog") == "CHAPTER 3/12, THE INVISIBLE DOG"
+
+
+def test_a_title_the_card_has_no_room_for_is_left_off() -> None:
+    assert images.card_label("en", 3, 12, title="the invisible dog " * 14) == "CHAPTER 3/12"
+
+
 def test_the_placeholder_and_the_card_are_the_sizes_telmi_wants() -> None:
     assert png_header(images.placeholder_png())[:2] == (640, 480)
     assert png_header(images.placeholder_png(*images.COVER_SIZE))[:2] == (512, 512)

@@ -128,6 +128,24 @@ test("a Lunii number is sized as a three-digit one", async () => {
   assert.ok((await sizeOf("8888")) < three, "a fourth digit makes it give way");
 });
 
+test("a card writes its chapter title beside its number, and gives way to it", async () => {
+  const { cardPng } = await import("../../web/cover.js");
+  const { fontSize } = await import("./canvas-stub.mjs");
+  TEXTS.length = 0;
+  await cardPng("Chapter 1/6", "Once upon a time", null, {}, 640, 480, "colour", false, "The invisible dog");
+  const [number] = TEXTS;
+  assert.equal(number[0], "Chapter 1/6, The invisible dog");
+  assert.ok(fontSize(number[5]) < 44, "the number is drawn smaller than a bare one");
+  assert.ok(fontSize(number[5]) >= 28, "but never smaller than the card's own opening words");
+});
+
+test("a title the card has no room for is left off", async () => {
+  const { cardPng } = await import("../../web/cover.js");
+  TEXTS.length = 0;
+  await cardPng("Chapter 1/6", "Once upon a time", null, {}, 640, 480, "colour", false, "the invisible dog ".repeat(14));
+  assert.equal(TEXTS[0][0], "Chapter 1/6", "the card keeps its number alone");
+});
+
 const SHORT = "one two";
 const LONG = "you will need to assess the unique set of potential hazards in your area and prepare for them accordingly";
 

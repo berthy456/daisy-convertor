@@ -1,4 +1,4 @@
-import { CUT_LEVELS, cutChoices, extractBook } from "./daisy.js";
+import { CUT_LEVELS, cutChoices, extractBook, languageSample } from "./daisy.js";
 import {
   CROP_FOCUS,
   MAX_ZOOM,
@@ -13,8 +13,8 @@ import {
   squareJpeg,
 } from "./cover.js";
 import { findCover } from "./covers.js";
-import { CAPTION_FORMATS, buildStoryZip } from "./convert.js";
-import { LANGUAGES, NAMES, apply, pickLanguage, text } from "./i18n.js";
+import { CAPTION_FORMATS, CARD_SNIPPET_SECONDS, buildStoryZip } from "./convert.js";
+import { LANGUAGES, NAMES, apply, pickLanguage, storyLanguage, text } from "./i18n.js";
 import { buildPlainPk, buildStudioZip, packName } from "./lunii.js";
 import { buildMerlinFiles } from "./merlin.js";
 import { buildPlaylistZip } from "./playlist.js";
@@ -51,8 +51,12 @@ const cropReset = document.getElementById("crop-reset");
 const cardBoxes = {
   total: document.getElementById("card-total"),
   word: document.getElementById("card-word"),
+  title: document.getElementById("card-title"),
   count: document.getElementById("card-count"),
 };
+const cardLanguageSelect = document.getElementById("card-language");
+const cardAudioSelect = document.getElementById("card-audio");
+const cardSecondsInput = document.getElementById("card-seconds");
 const formatInputs = [...document.querySelectorAll('input[name="format"]')];
 const coverSection = document.getElementById("cover-section");
 const negativeRow = document.getElementById("card-negative-row");
@@ -74,8 +78,12 @@ const STORED_CUT = "daisy2telmi.cut";
 const STORED_FORMAT = "daisy2telmi.format";
 const STORED_CROP = "daisy2telmi.crop";
 const STORED_CARDS = "daisy2telmi.cards";
+const STORED_CARD_LANGUAGE = "daisy2telmi.cardLanguage";
 const STORED_NEGATIVE = "daisy2telmi.negative";
 const STORED_CAPTIONS = "daisy2telmi.captions";
+// What a card plays: one of the recorded clips, the part's own opening, or nothing.
+const CARD_SOURCES = ["voice", "snippet", "off"];
+const CARD_SECONDS_LIMITS = [0.5, 30];
 // The summary lists the parts it starts; a book cut to the sentence level has hundreds.
 const LISTED_PARTS = 30;
 // A sentence-level book can run to thousands of parts: past this the page says
@@ -103,9 +111,14 @@ let format = "telmi";
 // user moves the frame themselves.
 let focus = null;
 let zoom = 1;
-// What the card between two parts shows and says: the total on the picture, the
-// word chapter in the phrase, and the total in it too.
-let cards = { total: true, word: true, count: false };
+// What the card between two parts shows and says: the total and the chapter title
+// on the picture, the word chapter in the phrase, the total in it too, and what it
+// plays — a recorded clip, the part's own opening, or nothing.
+let cards = { total: true, word: true, title: false, count: false, audio: "voice", seconds: CARD_SNIPPET_SECONDS };
+// The language the cards are written and spoken in: null leaves it to the book,
+// whose own language is read off the pack as soon as it is opened (`bookLang`).
+let cardLang = null;
+let bookLang = null;
 // Whether the black-and-white Lunii cards are drawn as a negative of the cover.
 let negative = false;
 // Whether each part gets a picture of its own words, shown while its audio plays.
@@ -194,10 +207,64 @@ function startCards() {
       remember(STORED_CARDS, JSON.stringify(cards));
     });
   }
+  if (stored && CARD_SOURCES.includes(stored.audio)) cards.audio = stored.audio;
+  cardAudioSelect.value = cards.audio;
+  cardAudioSelect.addEventListener("change", () => {
+    cards.audio = cardAudioSelect.value;
+    remember(STORED_CARDS, JSON.stringify(cards));
+  });
+  cards.seconds = cardSeconds(stored?.seconds);
+  cardSecondsInput.value = cards.seconds;
+  cardSecondsInput.addEventListener("change", () => {
+    cards.seconds = cardSeconds(cardSecondsInput.value);
+    cardSecondsInput.value = cards.seconds;
+    remember(STORED_CARDS, JSON.stringify(cards));
+  });
 }
 
-/** A part's own words need a screen big enough to read a sentence on, and one sentence per part. */
-const captionsOn = () => captions && cut === "sentence" && CAPTION_FORMATS.includes(format);
+/** The card audio length as typed: a blank or unreadable box keeps the default. */
+function cardSeconds(value) {
+  const typed = Number(value);
+  if (!Number.isFinite(typed)) return CARD_SNIPPET_SECONDS;
+  const [low, high] = CARD_SECONDS_LIMITS;
+  return Math.min(Math.max(typed, low), high);
+}
+
+/**
+ * The language the cards are written and spoken in. Left on Auto it follows the
+ * book: a French book on an English page gets French cards, which is the only way
+ * the two can agree. Pinned, it stays whatever was picked, whatever the pack says.
+ */
+function startCardLanguage() {
+  const auto = document.createElement("option");
+  auto.value = "";
+  cardLanguageSelect.append(auto);
+  for (const code of LANGUAGES) {
+    const option = document.createElement("option");
+    option.value = code;
+    option.textContent = NAMES[code];
+    cardLanguageSelect.append(option);
+  }
+  cardLang = LANGUAGES.includes(saved(STORED_CARD_LANGUAGE)) ? saved(STORED_CARD_LANGUAGE) : null;
+  cardLanguageSelect.value = cardLang ?? "";
+  showCardLanguage();
+  cardLanguageSelect.addEventListener("change", () => {
+    cardLang = cardLanguageSelect.value || null;
+    if (cardLang === null) cardLanguageSelect.value = "";
+    remember(STORED_CARD_LANGUAGE, cardLang ?? "");
+    showCardLanguage();
+  });
+}
+
+// The Auto line names the language the last pack was read as, so the page says
+// what it is about to do rather than leaving it to be guessed.
+function showCardLanguage() {
+  const auto = cardLanguageSelect.firstElementChild;
+  auto.textContent = bookLang ? `${t("speech_auto")} — ${NAMES[bookLang]}` : t("speech_auto");
+}
+
+/** The language a card's words and its clip are asked for. */
+const cardLanguage = () => cardLang ?? bookLang ?? lang;
 
 function showCaptions() {
   // Only a Telmi or a Flam screen holds a sentence; the choice stays put while
@@ -628,7 +695,10 @@ function settingsKey() {
     lang,
     cards.total,
     cards.word,
+    cards.title,
     cards.count,
+    cards.audio,
+    cards.seconds,
     [...dropped].sort((a, b) => a - b),
   ]);
 }
@@ -645,7 +715,8 @@ async function buildPack() {
     log(label);
   };
   const spoken = async (number, count) => {
-    const voice = await cardAudio(lang, number, {
+    if (cards.audio === "off") return null;
+    const voice = await cardAudio(cardLanguage(), number, {
       word: cards.word,
       count: cards.count ? count : null,
     });
@@ -675,13 +746,17 @@ async function buildPack() {
           style: format === "lunii" ? "bw" : "colour",
           negative,
           captions: captionsOn(),
+          cardTitle: cards.title,
           t: (key) => t(key),
           cardLabel: (number, total, worded) =>
-            t(cards.total ? (worded ? "card_label" : "card_number") : (worded ? "card_label_one" : "card_number_one"), {
-              n: number,
-              total,
-            }),
+            text(
+              cardLanguage(),
+              cards.total ? (worded ? "card_label" : "card_number") : (worded ? "card_label_one" : "card_number_one"),
+              { n: number, total },
+            ),
           cardAudio: spoken,
+          cardAudioSource: cards.audio,
+          cardSeconds: cards.seconds,
         });
 
   // One archive, for the player chosen: a Lunii takes the STUdio form of the same
@@ -842,12 +917,14 @@ async function openCutLevels() {
   for (const input of cutInputs) input.disabled = true;
   try {
     const entries = await packEntries();
-    const choices = cutChoices(CUT_LEVELS.map((level) => extractBook(entries, level).chapters.length));
+    const books = CUT_LEVELS.map((level) => extractBook(entries, level));
+    const choices = cutChoices(books.map((book) => book.chapters.length));
     if (!choices.includes(cut)) {
       cut = choices[Math.min(CUT_LEVELS.indexOf(cut), choices.length - 1)];
       remember(STORED_CUT, cut);
     }
     cutLevels = choices;
+    showBookLanguage(books[CUT_LEVELS.indexOf(cut)] ?? books[0]);
     for (const input of cutInputs) {
       input.disabled = !choices.includes(input.value);
       input.checked = input.value === cut;
@@ -860,6 +937,27 @@ async function openCutLevels() {
   }
 }
 
+/**
+ * The language the book's cards will be written and spoken in, read off the pack as
+ * soon as it is opened: its own metadata first, then the text it carries, then the
+ * page's language — which is all that is left when a pack is audio alone. A language
+ * the user pinned on the cards row stands over all three.
+ */
+function showBookLanguage(book) {
+  const found = storyLanguage(book.language, languageSample(book), lang);
+  bookLang = found.code;
+  if (cardLang) {
+    log(t("log_card_language", { language: NAMES[cardLang], source: t("source_pinned") }));
+  } else {
+    const source =
+      found.source === "declared"
+        ? t("source_declared", { declared: book.language.trim() })
+        : t(`source_${found.source}`);
+    log(t("log_card_language", { language: NAMES[found.code], source }));
+  }
+  showCardLanguage();
+}
+
 function setSource(name, loader) {
   // The cover and the book's name a lookup gave belong to the pack they were
   // looked up for; everything else the page holds is the user's own setting and stays.
@@ -870,6 +968,10 @@ function setSource(name, loader) {
   source = { name, loader, entries: null };
   // A pack that is not the one a test played cannot be the story that test showed.
   tested = null;
+  // The last book's language says nothing about this one; the row goes back to
+  // naming the page's own until this pack has been read.
+  bookLang = null;
+  showCardLanguage();
   saveButton.disabled = false;
   testButton.disabled = false;
   clearResult();
@@ -958,4 +1060,5 @@ startNegative();
 startCaptions();
 startCut();
 startCards();
+startCardLanguage();
 startCrop();

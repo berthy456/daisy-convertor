@@ -64,7 +64,8 @@ Chapter card speech:
 
 | Flag | Values | Notes |
 | :--- | :--- | :--- |
-| `--announce` | `off` `number` `number_of` `title` `number_title` `title_number` `chapter` `prompt` | what the card says; `prompt` is the default. A pattern needing a name falls back to `chapter` when the parts carry no synced text |
+| `--announce` | `off` `number` `number_of` `title` `number_title` `title_number` `chapter` `prompt` `snippet` | what the card says; `prompt` is the default. A pattern needing a name falls back to `chapter` when the parts carry no synced text. `snippet` plays the part's own opening instead of any words |
+| `--card-seconds` | 0.5–30 | 3.0. How many seconds of the part a card plays: with `--announce snippet`, and with any `--cut` below chapter |
 | `--card-total` / `--no-card-total` | | whether the drawn card counts the parts: `4/12` or `4` |
 | `--card-negative` / `--no-card-negative` | | draws the black-and-white Lunii cards light-for-dark. Only those cards have a negative |
 | `--language` | `ar de en es fr it nl pt tr zh` | the phrase and the voice; wording in `src/daisy2telmi/i18n.py` |
@@ -81,7 +82,7 @@ Chapter card speech:
 | `--read-clip` | | the reference clip the book's text is read with. Empty takes `--tts-clip` |
 | `--read-speed` | `slow` `normal` `fast` | how fast the book's text is read. Empty takes `--tts-speed` |
 
-Cards get a spoken number only when the cut is by chapter. At paragraph or sentence level a card plays the opening seconds of its own part instead, which is the only way to tell hundreds of cards apart.
+Cards get a spoken number only when the cut is by chapter. At paragraph or sentence level a card plays the opening seconds of its own part instead, which is the only way to tell hundreds of cards apart; `--announce snippet` does the same at chapter level. `--card-seconds` sets how long that opening is. A part shorter than it is not stored twice: its card plays the part itself.
 
 ## Formats
 
@@ -234,9 +235,9 @@ The built binaries carry espeak-ng, its shared libraries and its language data, 
 
 The window draws its own bar along the top: the mark, its name and version, and the hide, enlarge and close controls when no system bar is left to provide them. **Options → Draw the window's own bar instead of the system one** takes the system bar away; the window then moves by dragging that bar. Without it the window is unmanaged, so it cannot be minimised or resized by its edges and the hide control is left out. Windows is not offered the choice: Tk's only way to remove the title bar there is `overrideredirect`, which removes the taskbar entry with it, so the window keeps the bar Windows gives it and the band draws no controls of its own.
 
-The main window asks which engine reads the cards, in a box beside the player the story is made for, with a **Configure the speech...** button beside it. That opens **Speech**: the engine at the top, the install rows at the bottom — whether the engine's package is in the interpreter named, and the voices the language still lacks — and between them two pages. **Chapters cards** holds its voice, the reading speed, the expressiveness, the Python the engine runs in, the device, the recording a cloning engine reads with and a text to hear that voice in. **Ebook reading** holds the voice, the speed and the recording the book's own text is spoken with, each left on **Same as the cards** until it is changed; the book is spoken with the cards' expressiveness. A row the chosen engine cannot answer for is greyed out rather than removed. The voice list and the engine's own state are asked on a background thread, so the window keeps moving while a slow machine starts the interpreters it asks with.
+The main window asks which engine reads the cards, in a box beside the player the story is made for, with a **Configure the speech...** button beside it. That opens **Speech**: the engine at the top, the install rows at the bottom — whether the engine's package is in the interpreter named, and the voices the language still lacks — and between them two pages. **Chapters cards** holds what each card plays — a spoken phrase in any of the patterns above, the first seconds of the part it introduces, or nothing — how many seconds that opening runs for, its voice, the reading speed, the expressiveness, the Python the engine runs in, the device, the recording a cloning engine reads with and a text to hear that voice in. **Ebook reading** holds the voice, the speed and the recording the book's own text is spoken with, each left on **Same as the cards** until it is changed; the book is spoken with the cards' expressiveness. A row the chosen engine cannot answer for is greyed out rather than removed. The voice list and the engine's own state are asked on a background thread, so the window keeps moving while a slow machine starts the interpreters it asks with.
 
-**Options** holds the rest: the interface language, what the cards say, whether the drawn card counts the parts, autoplay, the window bar (everywhere but Windows), and the two folders the app works in — the one the file lists open in, and the one stories are written to. Closing either window writes `~/.config/daisy2telmi/config.json` (`%APPDATA%\daisy2telmi\config.json` on Windows), which the CLI reads too, so a flag only overrides what is already saved.
+**Options** holds the rest: the interface language, whether the drawn card counts the parts, autoplay, the window bar (everywhere but Windows), and the two folders the app works in — the one the file lists open in, and the one stories are written to. Closing either window writes `~/.config/daisy2telmi/config.json` (`%APPDATA%\daisy2telmi\config.json` on Windows), which the CLI reads too, so a flag only overrides what is already saved.
 
 **Show the words on screen** sits under the crop controls: each part gets a picture of its own words, shown while its audio plays. The box is live only for Telmi and Flam, and ticking it moves the cut to sentences.
 

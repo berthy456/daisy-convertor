@@ -319,7 +319,7 @@ export async function cardPng(
   const wordsTop = margin + coverTop + margin;
 
   // A title is kept when the card has room for it at the size of its own words.
-  const named = title ? `${label}, ${title}` : label;
+  const named = title ? (label ? `${label}, ${title}` : title) : label;
   const lettering = ctx.measureText(named).width <= room ? named : label;
   // A titled line is drawn smaller than a bare number, never smaller than the
   // card's own opening words: below that the number stops being the thing a
@@ -327,13 +327,17 @@ export async function cardPng(
   ctx.font = `bold ${numberSize}px system-ui, sans-serif`;
   const wide = ctx.measureText(lettering).width;
   const drawn = wide <= room ? numberSize : Math.max(size, Math.round((numberSize * room) / wide));
-  ctx.font = `bold ${drawn}px system-ui, sans-serif`;
-  ctx.lineWidth = 6;
-  ctx.strokeStyle = PALETTE[style].border;
-  ctx.fillStyle = PALETTE[style].ink;
-  ctx.textAlign = "right";
-  ctx.strokeText(lettering, width - margin, margin);
-  ctx.fillText(lettering, width - margin, margin);
+  // A card asked to carry no words of its own keeps the picture and its opening
+  // lines: the number is what a card adds, and it was asked not to.
+  if (lettering) {
+    ctx.font = `bold ${drawn}px system-ui, sans-serif`;
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = PALETTE[style].border;
+    ctx.fillStyle = PALETTE[style].ink;
+    ctx.textAlign = "right";
+    ctx.strokeText(lettering, width - margin, margin);
+    ctx.fillText(lettering, width - margin, margin);
+  }
 
   ctx.font = `${size}px system-ui, sans-serif`;
   ctx.textAlign = "left";

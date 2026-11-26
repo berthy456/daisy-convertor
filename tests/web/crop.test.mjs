@@ -146,6 +146,24 @@ test("a title the card has no room for is left off", async () => {
   assert.equal(TEXTS[0][0], "Chapter 1/6", "the card keeps its number alone");
 });
 
+test("a card with no number writes its title alone", async () => {
+  const { cardPng } = await import("../../web/cover.js");
+  TEXTS.length = 0;
+  await cardPng("", "Once upon a time", null, {}, 640, 480, "colour", false, "The invisible dog");
+  assert.equal(TEXTS[0][0], "The invisible dog", "the title takes the corner by itself");
+});
+
+test("a card with no number and no title writes nothing of its own", async () => {
+  const { cardPng } = await import("../../web/cover.js");
+  TEXTS.length = 0;
+  await cardPng("", "Once upon a time", null, {}, 640, 480);
+  assert.deepEqual(
+    TEXTS.map((line) => line[0]),
+    ["Once upon a time"],
+    "only the part's own opening words are written",
+  );
+});
+
 const SHORT = "one two";
 const LONG = "you will need to assess the unique set of potential hazards in your area and prepare for them accordingly";
 

@@ -56,6 +56,16 @@ export function term(value) {
   return text;
 }
 
+/**
+ * The pack's author, unless all the pack says is that it does not know one.
+ *
+ * Read as a name it fills the Author box with a word the user then has to delete.
+ */
+export function credited(value) {
+  const text = (value ?? "").trim();
+  return PLACEHOLDERS.has(text.toLowerCase()) ? "" : text;
+}
+
 /** The exact answer: the print book's own ISBN, when the pack carries one. */
 export function openlibraryIsbn(book) {
   const isbn = isbnOf(book);

@@ -193,8 +193,13 @@ input[type="file"] {
   color: var(--muted);
 }
 
-.cards-language select,
-.cards-audio select,
+/* Each line of card choices is named at its start, so the boxes read as answers to
+   that line rather than as fields with nothing asked of them. */
+.cards-line {
+  color: var(--muted);
+}
+
+.cards-row select,
 .cards-seconds input {
   font: inherit;
   padding: 0.25rem 0.4rem;
@@ -202,6 +207,12 @@ input[type="file"] {
   border: 1px solid var(--line);
   background: var(--card);
   color: var(--ink);
+}
+
+/* A field the card cannot carry is left on the line, greyed: the total is the
+   number's tail, and a card with no number has none. */
+.cards-row select:disabled {
+  color: var(--muted);
 }
 
 .cards-seconds input {

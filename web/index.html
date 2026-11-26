@@ -81,8 +81,9 @@
               <span data-i18n="cover_pick"></span>
               <input id="cover-picker" type="file" accept="image/*" />
             </label>
+            <!-- One box for a link: what is typed in it is fetched as it is left,
+                 the same way the desktop window reads its Image box. -->
             <input id="cover-url" type="url" data-i18n-placeholder="cover_url" />
-            <button id="cover-use" type="button" data-i18n="cover_use"></button>
             <button id="cover-clear" type="button" hidden data-i18n="cover_clear"></button>
             <!-- The lookup asks four services in turn, so it can take a second or
                  two. The log says what it found; this says it is still working and
@@ -95,6 +96,7 @@
                the search - asked of the same catalogues the pack's own metadata is
                asked of, and of either engine that answers without an account. -->
           <div class="cover-row cover-search">
+            <button id="cover-search-app" type="button" data-i18n="cover_search_app" hidden></button>
             <label>
               <span data-i18n="cover_author"></span>
               <input id="cover-author" type="text" />
@@ -103,7 +105,6 @@
               <span data-i18n="cover_book_title"></span>
               <input id="cover-title" type="text" />
             </label>
-            <button id="cover-search-app" type="button" data-i18n="cover_search_app" hidden></button>
             <span class="muted" data-i18n="cover_search_on"></span>
             <a id="cover-search-ddg" class="quiet" target="_blank" rel="noopener" data-i18n="cover_search_ddg" hidden></a>
             <a id="cover-search-google" class="quiet" target="_blank" rel="noopener" data-i18n="cover_search_google" hidden></a>
@@ -173,25 +174,41 @@
         <div class="cards">
           <h2 data-i18n="cards_title"></h2>
           <div class="cards-row">
-            <label>
-              <input id="card-total" type="checkbox" checked />
-              <span data-i18n="cards_show_total"></span>
-            </label>
-            <label>
-              <input id="card-word" type="checkbox" checked />
-              <span data-i18n="cards_say_word"></span>
-            </label>
-            <label>
-              <input id="card-title" type="checkbox" />
-              <span data-i18n="cards_show_title"></span>
-            </label>
-            <label>
-              <input id="card-count" type="checkbox" />
-              <span data-i18n="cards_say_total"></span>
-            </label>
             <label class="cards-language">
               <span data-i18n="card_language"></span>
               <select id="card-language"></select>
+            </label>
+          </div>
+          <!-- One line for what a card carries, one for what it says: the same fields
+               asked for twice, once as words on the picture and once as sound. -->
+          <div class="cards-row">
+            <span class="cards-line" data-i18n="cards_text_line"></span>
+            <label>
+              <span data-i18n="card_field_title"></span>
+              <select id="card-text-title"></select>
+            </label>
+            <label>
+              <span data-i18n="card_field_chapter"></span>
+              <select id="card-text-chapter"></select>
+            </label>
+            <label>
+              <span data-i18n="card_field_number"></span>
+              <select id="card-text-number"></select>
+            </label>
+            <label>
+              <span data-i18n="card_field_total"></span>
+              <select id="card-text-total"></select>
+            </label>
+          </div>
+          <div class="cards-row">
+            <span class="cards-line" data-i18n="cards_say_line"></span>
+            <label>
+              <span data-i18n="card_field_chapter"></span>
+              <select id="card-say-word"></select>
+            </label>
+            <label>
+              <span data-i18n="card_field_total"></span>
+              <select id="card-say-count"></select>
             </label>
             <label class="cards-audio">
               <span data-i18n="card_audio"></span>
@@ -201,9 +218,12 @@
                 <option value="off" data-i18n="card_audio_off"></option>
               </select>
             </label>
+          </div>
+          <div class="cards-row">
             <label class="cards-seconds">
-              <span data-i18n="card_seconds"></span>
+              <span data-i18n="card_extract_first"></span>
               <input id="card-seconds" type="number" min="0.5" max="30" step="0.5" value="3" />
+              <span data-i18n="card_extract_seconds"></span>
             </label>
           </div>
         </div>

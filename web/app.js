@@ -33,7 +33,6 @@ const logView = document.getElementById("log");
 const langSelect = document.getElementById("lang");
 const coverPicker = document.getElementById("cover-picker");
 const coverUrl = document.getElementById("cover-url");
-const coverUse = document.getElementById("cover-use");
 const coverClear = document.getElementById("cover-clear");
 const coverAuthor = document.getElementById("cover-author");
 const coverTitle = document.getElementById("cover-title");
@@ -48,11 +47,17 @@ const cropCanvas = document.getElementById("crop-canvas");
 const cropInputs = [...document.querySelectorAll('input[name="crop"]')];
 const cropZoom = document.getElementById("crop-zoom");
 const cropReset = document.getElementById("crop-reset");
-const cardBoxes = {
-  total: document.getElementById("card-total"),
-  word: document.getElementById("card-word"),
-  title: document.getElementById("card-title"),
-  count: document.getElementById("card-count"),
+// One box per field, on the line that asks for it: the four a card can carry, and
+// the two a card can say around its number.
+const cardTextBoxes = {
+  title: document.getElementById("card-text-title"),
+  chapter: document.getElementById("card-text-chapter"),
+  number: document.getElementById("card-text-number"),
+  total: document.getElementById("card-text-total"),
+};
+const cardSayBoxes = {
+  word: document.getElementById("card-say-word"),
+  count: document.getElementById("card-say-count"),
 };
 const cardLanguageSelect = document.getElementById("card-language");
 const cardAudioSelect = document.getElementById("card-audio");
@@ -111,10 +116,20 @@ let format = "telmi";
 // user moves the frame themselves.
 let focus = null;
 let zoom = 1;
-// What the card between two parts shows and says: the total and the chapter title
-// on the picture, the word chapter in the phrase, the total in it too, and what it
-// plays — a recorded clip, the part's own opening, or nothing.
-let cards = { total: true, word: true, title: false, count: false, audio: "voice", seconds: CARD_SNIPPET_SECONDS };
+// What the card between two parts shows and says. `title`, `chapter`, `number` and
+// `total` are the words drawn on the picture; `word` and `count` are the ones spoken
+// around the part's number; `audio` is what the card plays — a recorded phrase, the
+// part's own opening, or nothing.
+let cards = {
+  title: false,
+  chapter: true,
+  number: true,
+  total: true,
+  word: true,
+  count: false,
+  audio: "voice",
+  seconds: CARD_SNIPPET_SECONDS,
+};
 // The language the cards are written and spoken in: null leaves it to the book,
 // whose own language is read off the pack as soon as it is opened (`bookLang`).
 let cardLang = null;
@@ -133,6 +148,9 @@ let coverJob = 0;
 // The lookup the page started on its own, so a conversion can wait for it: a cover
 // that lands after the story was built would make that story out of date.
 let coverLookup = Promise.resolve();
+// The link the box was left holding, once it has been asked for: the same link is
+// not fetched twice for one pack, whatever asked for it.
+let coverLink = "";
 // The pack a test just played, kept so Save can hand it over without building the
 // story a second time.
 let tested = null;
@@ -197,16 +215,35 @@ function startCut() {
   }
 }
 
+// The two answers every card field is asked for: on the picture it is drawn or
+// left out, in the phrase it is said or held back.
+const CARD_DRAWN = [
+  ["cards_show", true],
+  ["cards_hide", false],
+];
+const CARD_SPOKEN = [
+  ["cards_say", true],
+  ["cards_silent", false],
+];
+
 function startCards() {
   const stored = JSON.parse(saved(STORED_CARDS) ?? "null");
-  for (const [name, box] of Object.entries(cardBoxes)) {
-    if (stored && typeof stored[name] === "boolean") box.checked = stored[name];
-    cards[name] = box.checked;
-    box.addEventListener("change", () => {
-      cards[name] = box.checked;
+  for (const [name, box] of Object.entries(cardTextBoxes)) {
+    if (stored && typeof stored[name] === "boolean") cards[name] = stored[name];
+    startCardChoice(box, CARD_DRAWN, cards[name], (on) => {
+      cards[name] = on;
+      if (name === "number") showCardTotal();
       remember(STORED_CARDS, JSON.stringify(cards));
     });
   }
+  for (const [name, box] of Object.entries(cardSayBoxes)) {
+    if (stored && typeof stored[name] === "boolean") cards[name] = stored[name];
+    startCardChoice(box, CARD_SPOKEN, cards[name], (on) => {
+      cards[name] = on;
+      remember(STORED_CARDS, JSON.stringify(cards));
+    });
+  }
+  showCardTotal();
   if (stored && CARD_SOURCES.includes(stored.audio)) cards.audio = stored.audio;
   cardAudioSelect.value = cards.audio;
   cardAudioSelect.addEventListener("change", () => {
@@ -220,6 +257,24 @@ function startCards() {
     cardSecondsInput.value = cards.seconds;
     remember(STORED_CARDS, JSON.stringify(cards));
   });
+}
+
+/** One field's box: the two answers it offers, and the one it was left on. */
+function startCardChoice(box, answers, value, choose) {
+  for (const [key, on] of answers) {
+    const option = document.createElement("option");
+    option.value = String(on);
+    option.dataset.i18n = key;
+    option.textContent = t(key);
+    box.append(option);
+  }
+  box.value = String(Boolean(value));
+  box.addEventListener("change", () => choose(box.value === "true"));
+}
+
+/** The total is the number's tail: a card that draws no number has no total to draw. */
+function showCardTotal() {
+  cardTextBoxes.total.disabled = !cards.number;
 }
 
 /** The card audio length as typed: a blank or unreadable box keeps the default. */
@@ -476,6 +531,7 @@ function clearCover() {
   coverStamp += 1;
   coverClear.hidden = true;
   coverUrl.value = "";
+  coverLink = "";
   // The picture belongs to the cover that went away; the frame and the chosen band do not.
   focus = null;
   zoom = 1;
@@ -492,9 +548,11 @@ async function suggestCover() {
   const job = ++coverJob;
   if (cover) return;
   showSearching();
+  let book = null;
   let found = { bitmap: null };
   try {
-    found = await findCover(extractBook(await packEntries(), cut), location.href);
+    book = extractBook(await packEntries(), cut);
+    found = await findCover(book, location.href);
   } catch {
     found = { bitmap: null };
   }
@@ -503,10 +561,26 @@ async function suggestCover() {
   // A cover picked while the lookup ran wins over the suggestion, but either way
   // this lookup is over and the waiting goes away.
   showSearchDone();
+  // The words the lookup asked with land in the two boxes, whether or not it found
+  // anything: they are the words to correct when it did not.
+  if (book) fillCoverWords(book);
   if (cover) return;
   // The service names are its own, so they are not translated, only appended.
   log(found.bitmap ? `${t("cover_found")} (${found.source})` : t("cover_none"));
   if (found.bitmap) setCover(found.bitmap, true);
+}
+
+/**
+ * The picture a link typed in the box holds. The box is left as it was typed, and
+ * the link is remembered, so the same one is not fetched twice for one pack.
+ */
+async function useCoverLink() {
+  const link = coverUrl.value.trim();
+  if (!/^https?:\/\//.test(link) || link === coverLink) return;
+  coverLink = link;
+  const bitmap = await loadCoverUrl(link, location.href);
+  if (bitmap) setCover(bitmap);
+  else log(t("log_cover_url"));
 }
 
 function showSearching() {
@@ -662,12 +736,18 @@ function showSummary(story) {
   const more = parts.length > LISTED_PARTS ? `\n${t("summary_more", { n: parts.length - LISTED_PARTS })}` : "";
   summary.textContent = `${story.dirName}\n${t("log_chapters", { n: parts.length })}\n${listed}${more}`;
   summary.hidden = false;
+  fillCoverWords(story.book);
+}
+
+/** The words a book is known by, left in the two boxes so a search can be asked
+    again with them corrected. Only the boxes no one typed in are filled. */
+function fillCoverWords(book) {
   if (!coverTitle.value.trim()) {
-    coverTitle.value = story.book.title || "";
+    coverTitle.value = book.title || "";
     autoTitle = coverTitle.value;
   }
-  if (!coverAuthor.value.trim() && story.book.author) {
-    coverAuthor.value = story.book.author;
+  if (!coverAuthor.value.trim() && book.author) {
+    coverAuthor.value = book.author;
     autoAuthor = coverAuthor.value;
   }
   showCoverSearch();
@@ -693,9 +773,11 @@ function settingsKey() {
     negative,
     captionsOn(),
     lang,
+    cards.title,
+    cards.chapter,
+    cards.number,
     cards.total,
     cards.word,
-    cards.title,
     cards.count,
     cards.audio,
     cards.seconds,
@@ -749,11 +831,19 @@ async function buildPack() {
           cardTitle: cards.title,
           t: (key) => t(key),
           cardLabel: (number, total, worded) =>
-            text(
-              cardLanguage(),
-              cards.total ? (worded ? "card_label" : "card_number") : (worded ? "card_label_one" : "card_number_one"),
-              { n: number, total },
-            ),
+            cards.number
+              ? text(
+                  cardLanguage(),
+                  cards.total
+                    ? worded && cards.chapter
+                      ? "card_label"
+                      : "card_number"
+                    : worded && cards.chapter
+                      ? "card_label_one"
+                      : "card_number_one",
+                  { n: number, total },
+                )
+              : "",
           cardAudio: spoken,
           cardAudioSource: cards.audio,
           cardSeconds: cards.seconds,
@@ -800,6 +890,9 @@ async function saveStory() {
   saveButton.disabled = true;
   clearResult();
   try {
+    // A link still held by the box is fetched before anything is built: a story
+    // built without the cover the user just pasted would be out of date at once.
+    await useCoverLink();
     await coverLookup;
     const pack = tested && tested.key === settingsKey() ? tested : await buildPack();
     if (pack === tested) log(t("test_reuse"));
@@ -828,6 +921,7 @@ async function testStory() {
     return;
   }
   try {
+    await useCoverLink();
     await coverLookup;
     const key = settingsKey();
     const pack = tested && tested.key === key ? tested : await buildPack();
@@ -965,6 +1059,7 @@ function setSource(name, loader) {
   if (coverTitle.value === autoTitle) coverTitle.value = "";
   if (coverAuthor.value === autoAuthor) coverAuthor.value = "";
   autoTitle = autoAuthor = "";
+  coverLink = "";
   source = { name, loader, entries: null };
   // A pack that is not the one a test played cannot be the story that test showed.
   tested = null;
@@ -1039,11 +1134,9 @@ coverPicker.addEventListener("change", async () => {
   coverPicker.value = "";
 });
 
-coverUse.addEventListener("click", async () => {
-  const bitmap = await loadCoverUrl(coverUrl.value, location.href);
-  if (bitmap) setCover(bitmap);
-  else log(t("log_cover_url"));
-});
+// The link is asked for as the box is left — Enter, or the next field — the way
+// the desktop window reads its Image box.
+coverUrl.addEventListener("change", useCoverLink);
 
 coverClear.addEventListener("click", clearCover);
 coverAuthor.addEventListener("input", () => showCoverSearch());

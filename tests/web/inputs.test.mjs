@@ -92,6 +92,14 @@ test("a DAISY 3 pack is read from its NCX and its package document", () => {
   assert.equal(book.language, "en");
 });
 
+test("a producer's filler is not read as an author", () => {
+  // Dolphin EasyProducer writes `dc:creator=Unknown` when it has no author.
+  const pack = daisy3().map((e) =>
+    e.name.endsWith(".opf") ? entry(e.name, OPF("ARE YOU READY?").replace("WikiHow", "Unknown")) : e,
+  );
+  assert.equal(extractBook(pack).author, null);
+});
+
 test("one h1 wrapper does not swallow the book", () => {
   const book = extractBook(daisy3());
   assert.deepEqual(book.chapters.map((c) => c.title), ["The whole book", "Chapter One", "Chapter Two"]);

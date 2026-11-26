@@ -1,6 +1,7 @@
 // DAISY 2.02, DAISY 3 and EPUB reader over zip entries: find the pack, read the
 // outline, resolve each chapter's audio. Port of src/daisy2telmi/{detector,extractor}.py.
 
+import { credited } from "./covers.js";
 import { parseXml, parseClock } from "./xml.js";
 
 const HEADING_LEVELS = { h1: 1, h2: 2, h3: 3, h4: 4, h5: 5, h6: 6 };
@@ -524,7 +525,7 @@ export function extractBook(entries, level = "chapter") {
 
   return {
     title: metadata.get("dc:title") || pack.root.split("/").pop() || "Untitled",
-    author: metadata.get("dc:creator") || null,
+    author: credited(metadata.get("dc:creator")) || null,
     language: metadata.get("dc:language") || null,
     publisher: metadata.get("dc:publisher") || null,
     narrator: metadata.get("ncc:narrator") || null,

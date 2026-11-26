@@ -42,7 +42,7 @@ Name: "{autoprograms}\Daisy Convertor"; Filename: "{app}\daisy-convertor.exe"
 Name: "{autodesktop}\Daisy Convertor"; Filename: "{app}\daisy-convertor.exe"; Tasks: DesktopIcon
 
 [Run]
-Filename: "{tmp}\python-installer.exe"; Parameters: "/quiet InstallAllUsers=0 PrependPath=1 Include_launcher=1 Include_pip=1 AssociateFiles=0 Include_test=0"; Tasks: Python; Check: PythonAlreadyThere; StatusMsg: "Installing Python..."
+Filename: "{tmp}\python-installer.exe"; Parameters: "/quiet InstallAllUsers=0 PrependPath=1 Include_launcher=1 Include_pip=1 AssociateFiles=0 Include_test=0"; Tasks: Python; Check: NeedsPython; StatusMsg: "Installing Python..."
 Filename: "{app}\daisy-convertor.exe"; Description: "Start Daisy Convertor"; Flags: nowait postinstall skipifsilent
 
 [Code]
@@ -74,4 +74,11 @@ function PythonAlreadyThere(): Boolean;
 begin
   Result := PythonIn(ExpandConstant('{localappdata}\Programs\Python')) or
             PythonIn(ExpandConstant('{autopf}'));
+end;
+
+{ The offer is the install: it runs when the machine has no Python the app could
+  use, and is skipped when it has one. }
+function NeedsPython(): Boolean;
+begin
+  Result := not PythonAlreadyThere();
 end;

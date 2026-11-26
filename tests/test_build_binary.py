@@ -58,6 +58,11 @@ def test_the_setup_offers_python_where_the_app_looks_for_it() -> None:
     # The engine install runs pip in the environment it builds.
     assert "Include_pip=1" in ISS
     assert r"{localappdata}\Programs\Python" in ISS
+    # The run is gated on the machine having no Python. Gated on one already being
+    # there, it never ran and the app had no interpreter to build an engine in.
+    assert "Check: NeedsPython" in ISS
+    assert "Check: PythonAlreadyThere" not in ISS
+    assert "Result := not PythonAlreadyThere();" in ISS
 
 
 def test_the_uninstall_leaves_the_users_own_speech_folder_alone() -> None:

@@ -97,7 +97,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: daisy-convertor-windows
-          path: dist/*.exe
+          # The python.org bootstrapper is payload inside the setup, not a download
+          # of its own; this glob picked it up as a release asset.
+          path: dist/daisy-convertor-*-setup.exe
 
   # Pinned: the bundled libraries inherit the runner's glibc, and 22.04 is the
   # oldest Ubuntu image still published (glibc 2.35).

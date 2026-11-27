@@ -248,6 +248,27 @@ test("the story zip carries every entry Telmi-Sync requires", async () => {
   assert.equal([...names].filter((name) => name.startsWith("images/")).length, 6);
 });
 
+test("the story keeps the book's own words in text/", async () => {
+  const silent = new Uint8Array(await readFile(join(ROOT, "web/silence.mp3")));
+  const story = await buildStoryZip(await pack("gon-ruby-mp3.zip"), silent);
+  const named = new Map(story.files.map((file) => [file.name.replace(`${story.dirName}/`, ""), file.data]));
+  const spanned = story.book.chapters.map((chapter, k) => (chapter.spans.length ? k : -1)).filter((k) => k >= 0);
+  assert.ok(spanned.length, "the test pack carries no synced text to keep");
+
+  assert.ok(new TextDecoder().decode(named.get("text/book.txt")).trim());
+  for (const k of spanned) {
+    for (const extension of [".lrc", ".srt"]) {
+      assert.ok(named.has(`text/s${k}${extension}`), `missing text/s${k}${extension}`);
+    }
+  }
+  const lyric = new TextDecoder().decode(named.get("text/s0.lrc")).split("\n");
+  assert.ok(lyric[0].startsWith("[ti:"), lyric[0]);
+  assert.ok(lyric.slice(1).some((line) => line.startsWith("[0")), lyric.slice(1)[0]);
+
+  const inZip = new Set((await readZip(story.zip)).map((entry) => entry.name.replace(`${story.dirName}/`, "")));
+  assert.ok(inZip.has("text/book.txt"));
+});
+
 // The desktop Chapters window lets parts be left out; the page's boxes do the
 // same, so the numbers stay in order after the removal.
 test("leaving parts out renumbers the story", async () => {

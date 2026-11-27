@@ -110,6 +110,27 @@ def test_every_chapter_has_a_card_image(story: Path) -> None:
         assert image.stat().st_size > 1000
 
 
+@requires_pack
+def test_the_story_keeps_the_books_own_words(story: Path) -> None:
+    """The pack's synced text survives the conversion, although no story teller reads it."""
+    with open_pack(PACK) as pack:
+        timed = [k for k, chapter in enumerate(extract(pack).chapters) if chapter.spans]
+    assert timed, "the test pack carries no synced text to keep"
+
+    assert (story / "text" / "book.txt").read_text(encoding="utf-8").strip()
+    for k in timed:
+        for extension in (".lrc", ".srt"):
+            assert (story / "text" / f"s{k}{extension}").is_file(), f"missing text/s{k}{extension}"
+    for path in (story / "text").glob("*.lrc"):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        assert lines[0].startswith("[ti:")
+        assert any(line.startswith("[0") for line in lines[1:]), path
+
+    zip_path = story.with_name(story.name + "-telmi.zip")
+    with zipfile.ZipFile(zip_path) as archive:
+        assert f"{story.name}/text/book.txt" in archive.namelist()
+
+
 def _clip_count() -> int:
     with open_pack(PACK) as pack:
         return sum(len(chapter.segments) for chapter in extract(pack).chapters)

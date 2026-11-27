@@ -113,6 +113,10 @@ stories/_00_Wesh la fee_292b74ca-d8be-53f9-a5d5-5224a36bbd02/
   images/
     m0.png ... mN.png      640x480: the cover with the card text over it, or the number on a placeholder
     s0.png ... sN.png      only with --captions: the part's own words, on the card's ground and with no cover
+  text/
+    book.txt               the book as plain text, part by part
+    s0.lrc ... sN.lrc      each part's synced text, one `[mm:ss.xx]` line each
+    s0.srt ... sN.srt      the same lines as subtitles
 ```
 
 The zip nests the folder one level, because `findDirectory` in Telmi-Sync's `ConvertZip.js` counts `metadata.json`, `nodes.json`, `title.mp3` and `title.png` in a single zip directory and requires exactly four. Telmi-Sync renames the folder on import, so the name is for readability before import.
@@ -130,6 +134,12 @@ With `--captions` a chapter stage carries `image: s<k>.png` too; without it the 
 The last chapter's `ok` is `null`, which is how the published sample packs end a story.
 
 A Telmi story has no night-mode flag: the player's night mode takes the story already open in front of it. What decides whether a chapter joins that playlist is the graph's own `control.autoplay` and `control.ok`, set so a chapter runs on by itself. A Lunii archive carries one word, `nightModeAvailable`, and a converted audiobook always sets it, because it never asks for anything but the next chapter.
+
+### The book's text, kept in the story folder
+
+A DAISY pack carries its text synced to its audio. A story graph has nowhere to show that text, so the conversion keeps it in a `text/` folder beside the audio it was read over: `book.txt` holds the whole book part by part, and every part that had synced text gets a `.lrc` and a `.srt` named after its `s<k>.mp3`, timed the same way the mp3 playlist pack times them. No story teller reads any of it — it is the archive of what the pack said, kept so a later format can use it.
+
+The folder is written for every story format. It rides inside the Telmi and Flam zip, and it sits in the story folder for Lunii, Commercial PK and Merlin; the STUdio zip, the `.pk` archive and the Merlin card archive hold only the files their player reads, so those three keep the text in the folder next to them. The web page writes the same `text/` folder into the same zips.
 
 ### The sentence pictures
 

@@ -11,7 +11,7 @@ from xml.etree import ElementTree
 
 import pytest
 
-from daisy2telmi import audio, playlist, tts
+from daisy2telmi import audio, playlist, textfiles, tts
 from daisy2telmi.cli import main
 from daisy2telmi.extractor import AudioSegment, Book, Chapter, Span
 from daisy2telmi.telmi_builder import Announce
@@ -133,7 +133,7 @@ def test_details_lists_what_the_pack_declared_and_every_part_of_it() -> None:
 
 
 def test_book_text_writes_the_packs_own_words_chapter_by_chapter() -> None:
-    text = playlist.book_text(make_book())
+    text = textfiles.book_text(make_book())
     assert text.splitlines()[:4] == [
         "001  Le loup et l'agneau",
         "-" * 40,
@@ -141,7 +141,7 @@ def test_book_text_writes_the_packs_own_words_chapter_by_chapter() -> None:
         "",
     ]
     assert "Le loup résigné" in text
-    assert playlist.book_text(make_book(chapters=())) == ""
+    assert textfiles.book_text(make_book(chapters=())) == ""
 
 
 def spans(*words: str, length: float = 2.0) -> tuple[Span, ...]:
@@ -150,7 +150,7 @@ def spans(*words: str, length: float = 2.0) -> tuple[Span, ...]:
 
 def test_the_synced_lines_follow_the_clips_they_were_read_over() -> None:
     chapter = Chapter("Un", (), spans=spans("Un agneau", "buvait", "a la riviere"))
-    lines = playlist._timings(chapter, 6.0)
+    lines = textfiles.timings(chapter, 6.0)
     assert [line.text for line in lines] == ["Un agneau", "buvait", "a la riviere"]
     assert [(line.start, line.end) for line in lines] == [(0.0, 2.0), (2.0, 4.0), (4.0, 6.0)]
 
@@ -158,27 +158,27 @@ def test_the_synced_lines_follow_the_clips_they_were_read_over() -> None:
 def test_the_lines_are_stretched_to_the_chapter_that_was_written() -> None:
     # The pack rounds its times, so its own sum falls short of the mp3 it produced.
     chapter = Chapter("Un", (), spans=spans("Un agneau", "buvait"))
-    lines = playlist._timings(chapter, 20.0)
+    lines = textfiles.timings(chapter, 20.0)
     assert lines[-1].end == 20.0
     assert lines[1].start == pytest.approx(10.0)
 
 
 def test_a_heading_repeated_over_every_clip_of_its_level_becomes_one_line() -> None:
     chapter = Chapter("Chap 1", (), spans=spans("Chap 1", "Chap 1", "Chap 1"))
-    lines = playlist._timings(chapter, 6.0)
+    lines = textfiles.timings(chapter, 6.0)
     assert [line.text for line in lines] == ["Chap 1"]
     assert (lines[0].start, lines[0].end) == (0.0, 6.0)
 
 
 def test_a_chapter_with_no_synced_text_gets_no_lyric_file(tmp_path: Path) -> None:
     chapter = Chapter("Chap 1", ())
-    assert playlist._captions(chapter, tmp_path, "001 - Chap 1", 6.0, "Book", "") == []
+    assert textfiles.synced_text(chapter, tmp_path, "001 - Chap 1", 6.0, "Book", "") == []
     assert not list(tmp_path.iterdir())
 
 
 def test_the_lyric_and_subtitle_files_share_the_chapters_name_and_words(tmp_path: Path) -> None:
     chapter = Chapter("Un", (), spans=spans("Un agneau", "buvait"))
-    written = playlist._captions(chapter, tmp_path, "001 - Un - Book", 4.0, "Le loup", "La Fontaine")
+    written = textfiles.synced_text(chapter, tmp_path, "001 - Un - Book", 4.0, "Le loup", "La Fontaine")
     assert [p.name for p in written] == ["001 - Un - Book.lrc", "001 - Un - Book.srt"]
     lyric = written[0].read_text(encoding="utf-8")
     assert lyric.splitlines()[:2] == ["[ti:Le loup]", "[au:La Fontaine]"]

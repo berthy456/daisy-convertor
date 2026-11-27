@@ -1,4 +1,4 @@
-"""Write the Telmi story folder: metadata.json, nodes.json, notes.json, title assets, audios/, images/."""
+"""Write the Telmi story folder: metadata.json, nodes.json, notes.json, title assets, audios/, images/, text/."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from typing import Sequence
 from . import audio, images, tts
 from .extractor import AudioSegment, Book, Chapter, language_sample
 from .i18n import Language, language, story_language
+from .textfiles import book_text, synced_text
 
 log = logging.getLogger(__name__)
 
@@ -615,6 +616,25 @@ def build_story(
     (out_dir / "notes.json").write_text(
         json.dumps(build_notes(book), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+
+    # No story teller reads these. They are the pack's own words, kept beside the
+    # audio they were read over, so the conversion does not throw the text away.
+    text_dir = out_dir / "text"
+    body = book_text(book)
+    if body:
+        text_dir.mkdir(parents=True, exist_ok=True)
+        (text_dir / "book.txt").write_text(body, encoding="utf-8")
+        log.info("keeping the book's text in text/book.txt")
+    byline = book.author or book.narrator or ""
+    timed = 0
+    for name, chapter in zip(chapter_names, book.chapters):
+        if not chapter.spans:
+            continue
+        length = audio.duration(audios / f"{name}.mp3")
+        if synced_text(chapter, text_dir, name, length, book.title, byline):
+            timed += 1
+    if timed:
+        log.info("keeping the synced words of %d part(s) in text/ as .lrc and .srt", timed)
 
     audio_mode = modes.pop() if len(modes) == 1 else "mixed"
     return StoryReport(

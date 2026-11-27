@@ -21,8 +21,9 @@ from urllib.parse import quote
 from xml.etree import ElementTree
 
 from . import audio, tts
-from .extractor import Book, Chapter
+from .extractor import Book
 from .telmi_builder import Announce, narrate
+from .textfiles import book_text, digits, synced_text
 
 log = logging.getLogger(__name__)
 
@@ -53,15 +54,6 @@ def safe_name(value: str) -> str:
     """A file name every player's file system accepts, accents and all."""
     cleaned = re.sub(r"\s{2,}", " ", _UNSAFE.sub(" ", value)).strip(" .")
     return cleaned or "story"
-
-
-def digits(total: int) -> int:
-    """How many digits the part numbers need: three, or as many as the book has parts.
-
-    A book cut at sentences runs past a thousand parts, and `999` sorts after `1000`:
-    the padding has to cover the largest number the pack will write.
-    """
-    return max(3, len(str(total)))
 
 
 def chapter_name(number: int, title: str, book_title: str, total: int = 0) -> str:
@@ -148,111 +140,6 @@ def details(book: Book, chapters: list[Track]) -> str:
     for index, track in enumerate(chapters, start=1):
         lines.append(f"{index:0{digits(len(chapters))}}  {clock(track.duration)}  {track.title}")
     return "\n".join(lines) + "\n"
-
-
-def book_text(book: Book) -> str:
-    """The book as plain text, chapter by chapter, from the pack's own words."""
-    blocks = []
-    for index, chapter in enumerate(book.chapters, start=1):
-        body = (chapter.body or chapter.text).strip()
-        if not body:
-            continue
-        heading = chapter.title or f"{index}"
-        blocks.append(f"{index:0{digits(len(book.chapters))}}  {heading}\n{'-' * 40}\n{body}")
-    return "\n\n".join(blocks) + "\n" if blocks else ""
-
-
-@dataclass(frozen=True)
-class Line:
-    """One synced line of the chapter's text, on that chapter's own timeline."""
-
-    start: float
-    end: float
-    text: str
-
-
-def _timings(chapter: Chapter, length: float | None) -> list[Line]:
-    """Put the pack's synced spans on the timeline of the mp3 they were rendered into.
-
-    The SMIL times are trims inside each source clip, and the chapter is those clips
-    end to end, so the offsets are their durations added up. The pack rounds its
-    times, so the sum lands a little short of the file that was written: scaling by
-    the measured length keeps the last line inside the chapter instead of after it.
-    """
-    spans = [span for span in chapter.spans if span.text]
-    if not spans:
-        return []
-    probed: dict[Path, float] = {}
-    starts: list[float] = []
-    offset = 0.0
-    for span in spans:
-        starts.append(offset)
-        if span.begin is not None and span.end is not None:
-            offset += max(span.end - span.begin, 0.0)
-        else:
-            # A clip the pack never trimmed plays whole, so only its own length is known.
-            offset += probed.setdefault(span.src, audio.duration(span.src) or 0.0)
-    scale = length / offset if length and offset > 0 else 1.0
-    starts = [start * scale for start in starts]
-    ends = starts[1:] + [max(length or offset, starts[-1])]
-
-    # A pack that synced only its headings repeats the heading over every clip of the
-    # level; those clips are one line of text, so they become one line covering them.
-    lines: list[Line] = []
-    for start, end, span in zip(starts, ends, spans):
-        text = " ".join(span.text.split())
-        if lines and lines[-1].text == text:
-            lines[-1] = replace(lines[-1], end=end)
-        else:
-            lines.append(Line(start, end, text))
-    return lines
-
-
-def _lrc_clock(seconds: float) -> str:
-    hundredths = int(round(seconds * 100))
-    minutes, rest = divmod(hundredths, 6000)
-    return f"[{minutes:02d}:{rest // 100:02d}.{rest % 100:02d}]"
-
-
-def _srt_clock(seconds: float) -> str:
-    millis = int(round(seconds * 1000))
-    hours, rest = divmod(millis, 3_600_000)
-    minutes, rest = divmod(rest, 60_000)
-    return f"{hours:02d}:{minutes:02d}:{rest // 1000:02d},{rest % 1000:03d}"
-
-
-def lrc(lines: list[Line], title: str, byline: str) -> str:
-    """LRC: one `[mm:ss.xx]` stamp per line, which is what a lyric screen reads."""
-    head = [f"[ti:{title}]"]
-    if byline:
-        head.append(f"[au:{byline}]")
-    body = [f"{_lrc_clock(line.start)}{line.text}" for line in lines]
-    return "\n".join(head + body) + "\n"
-
-
-def srt(lines: list[Line]) -> str:
-    """SubRip: the numbered block most video players already know how to show."""
-    blocks = [
-        f"{index}\n{_srt_clock(line.start)} --> {_srt_clock(line.end)}\n{line.text}"
-        for index, line in enumerate(lines, start=1)
-    ]
-    return "\n\n".join(blocks) + "\n"
-
-
-def _captions(chapter: Chapter, folder: Path, stem: str, length: float | None, title: str, byline: str) -> list[Path]:
-    """The chapter's text as a lyric file and as a subtitle file, named after its mp3.
-
-    Players look for these beside the audio: VLC and mpv pick up the `.srt`, most
-    lyric screens pick up the `.lrc`. A pack that synced nothing gets neither.
-    """
-    lines = _timings(chapter, length)
-    if not lines:
-        return []
-    lyric = folder / f"{stem}.lrc"
-    lyric.write_text(lrc(lines, title, byline), encoding="utf-8")
-    subtitle = folder / f"{stem}.srt"
-    subtitle.write_text(srt(lines), encoding="utf-8")
-    return [lyric, subtitle]
 
 
 def _interludes(book: Book, announce: Announce | None, folder: Path, chapters: list[Track]) -> list[Track]:
@@ -344,7 +231,7 @@ def export(
         length = audio.duration(dest)
         chapters.append(Track(dest.name, chapter.title or str(index), length))
         written.append(dest)
-        written += _captions(chapter, folder, name, length, book.title, byline)
+        written += synced_text(chapter, folder, name, length, book.title, byline)
 
     interludes = _interludes(book, announce, folder, chapters)
     written += [folder / track.file for track in interludes]

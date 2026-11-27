@@ -2,12 +2,14 @@
 
 import { captionPng, cardPng, coverPng, screen } from "./cover.js";
 import { extractBook, normalizePath } from "./daisy.js";
-import { concatSegments } from "./mp3.js";
+import { concatSegments, mp3Duration } from "./mp3.js";
 import { placeholderPng } from "./png.js";
+import { bookText, lrc, srt, timings } from "./playlist.js";
 import { writeZip } from "./zip.js";
 import { buildMetadata, buildNotes, buildNodes, storyDirName, storyUuid } from "./telmi.js";
 
 const json = (value) => new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`);
+const utf8 = (value) => new TextEncoder().encode(value);
 
 // A part cut below chapter level has no title that says which part it is, so its
 // card plays the sound it opens with instead of a spoken number.
@@ -105,6 +107,7 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
 
   const uuid = await storyUuid(book);
   const dirName = storyDirName(book.title, uuid, 0, "", options.pack);
+  const byline = book.author || book.narrator || "";
   const byName = new Map(entries.map((entry) => [normalizePath(entry.name), entry]));
   const bytesOf = (segment) => ({ ...segment, data: byName.get(segment.src).data });
   const files = [];
@@ -184,8 +187,19 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
     }
     cards[k] = card;
 
+    // No story teller reads these. They are the pack's own words, kept beside the
+    // audio they were read over, so the conversion does not throw the text away.
+    const lines = timings(chapter, mp3Duration(audio), bytesOf);
+    if (lines.length) {
+      files.push({ name: `${dirName}/text/s${k}.lrc`, data: utf8(lrc(lines, book.title, byline)) });
+      files.push({ name: `${dirName}/text/s${k}.srt`, data: utf8(srt(lines)) });
+    }
+
     step(`${k + 1}/${partCount}: ${chapter.title}`);
   }
+
+  const body = bookText(book);
+  if (body) files.push({ name: `${dirName}/text/book.txt`, data: utf8(body) });
 
   files.push({
     name: `${dirName}/title.mp3`,

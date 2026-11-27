@@ -283,8 +283,7 @@ def test_the_options_page_never_asks_about_the_system_bar(app: gui.App, monkeypa
         page = gui.Options(app)
         try:
             boxes = {item.cget("text") for item in page.grid.grid_slaves() if isinstance(item, ttk.Checkbutton)}
-            assert app.t("opt_autoplay") in boxes
-            assert "frameless" not in " ".join(boxes).lower(), "the page does not ask about the bar"
+            assert not boxes, "the page asks about nothing you tick, the bar least of all"
         finally:
             page.top.destroy()
 
@@ -943,12 +942,10 @@ def test_the_options_page_saves_what_it_shows(app: gui.App, tmp_path, monkeypatc
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     page = gui.Options(app)
     page.language_box.set("fr - Français")
-    page.autoplay_var.set(True)
     page.python_box.insert(0, "/opt/python")
     page._close()
 
     assert app.options["language"] == "fr"
-    assert app.options["autoplay"] is True
     assert app.options["python"] == "/opt/python"
     saved = (tmp_path / "daisy2telmi" / "config.json").read_text(encoding="utf-8")
     assert '"language": "fr"' in saved
@@ -2130,6 +2127,44 @@ def test_the_card_is_lettered_in_the_books_own_language(app: gui.App, tmp_path: 
 
     word = gui.LANGUAGES["fr"].card.upper()
     assert app.card_text_names() == [f"{word} 1", f"{word} 1/20", "1", "1/20"]
+
+
+def test_the_story_says_where_it_stops_for_ok(app: gui.App) -> None:
+    """Autoplay is asked beside the chapters it advances through, and what it pauses on
+    is asked next to it - but only where a pause was asked for at all."""
+    assert app.autoplay_box.cget("text") == app.t("opt_autoplay")
+    assert app.pause_names() == [
+        app.t(key) for key in ("pause_sentence", "pause_paragraph", "pause_chapter", "pause_never")
+    ]
+    assert app.pause_box.instate(["disabled"]), "without autoplay there is no pause to choose"
+
+    app.autoplay_var.set(True)
+    app._choose_autoplay()
+    assert app.options["autoplay"] is True
+    assert app.pause_box.instate(["!disabled"])
+
+    app.pause_box.set(app.pause_names()[2])
+    app._choose_pause()
+    assert app.options["pause_after"] == "chapter"
+    assert app.announce().pause_after == "chapter"
+
+
+def test_a_book_cut_below_its_chapters_reads_on(app: gui.App, three_chapters, monkeypatch) -> None:
+    """Nobody cuts a book to sentences to press OK at every one of them: a fine cut runs
+    a chapter through and stops at its end."""
+    sentences = Book(
+        "Wesh la fee",
+        tuple(Chapter(f"Phrase {n}", (AudioSegment(Path(f"/tmp/s{n}.mp3")),), group=n // 2) for n in (1, 2, 3)),
+    )
+    monkeypatch.setattr(
+        gui, "extract", lambda pack, level="chapter": three_chapters if level == "chapter" else sentences
+    )
+
+    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
+    assert app.options["autoplay"] is False
+    page._choose("sentence")
+    assert app.options["autoplay"] is True
+    assert app.autoplay_var.get() is True
 
 
 def test_the_contrast_reaches_the_conversion(app: gui.App) -> None:

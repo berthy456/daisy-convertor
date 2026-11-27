@@ -113,7 +113,7 @@ import {readZip} from './web/zip.js';
 import {buildStoryZip} from './web/convert.js';
 const silent = new Uint8Array(await readFile('web/silence.mp3'));
 const entries = await readZip(new Uint8Array(await readFile(process.argv[1])));
-const story = await buildStoryZip(entries, silent, () => {}, {cut: 'sentence'});
+const story = await buildStoryZip(entries, silent, () => {}, {cut: 'sentence', autoplay: true, pauseAfter: 'sentence'});
 await writeFile(process.argv[2], story.zip);
 """
 )

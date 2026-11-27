@@ -59,6 +59,10 @@ class Chapter:
     text: str = ""
     body: str = ""
     spans: tuple[Span, ...] = ()
+    # Which chapter of the pack this part came from, counted through the table of
+    # contents: at a chapter cut a part is its own chapter, and its number is its
+    # own.
+    group: int = 0
 
 
 @dataclass(frozen=True)
@@ -104,6 +108,7 @@ class _Draft:
     body: str = ""
     spans: list[Span] = field(default_factory=list)
     level: int = 1
+    group: int = 0
 
 
 CUT_LEVELS = ("chapter", "paragraph", "sentence")
@@ -585,7 +590,12 @@ def _group(
         else:
             chapters.append(draft)
 
+    group = 0
     for entry in entries:
+        # A heading at the chapter level opens a chapter; whatever hangs under it
+        # belongs to it, however finely the book is cut below that.
+        if not entry.is_front_matter and entry.level <= chapter_level:
+            group += 1
         smil = _split_target(entry.target)
         if smil is not None:
             resolved = (pack_root / smil).resolve()
@@ -598,7 +608,14 @@ def _group(
             parts = _smil_parts(resolved, marks)
             if level == "sentence" and _synced_words(parts, entry.title):
                 chapters.extend(
-                    _Draft(title="", segments=list(p.segments), text=p.text, body=p.text, spans=list(p.spans))
+                    _Draft(
+                        title="",
+                        segments=list(p.segments),
+                        text=p.text,
+                        body=p.text,
+                        spans=list(p.spans),
+                        group=group,
+                    )
                     for p in parts
                 )
                 continue
@@ -610,6 +627,7 @@ def _group(
                     body=_join_texts(p.text for p in parts if p.text),
                     spans=[s for p in parts for s in p.spans],
                     level=entry.level,
+                    group=group,
                 )
             )
             continue
@@ -624,7 +642,9 @@ def _group(
             continue
         body = _document_texts(resolved, documents[path], marks).get(anchor, "")
         if level == "sentence":
-            chapters.extend(_Draft(title="", text=sentence, body=sentence) for sentence in _sentences(body))
+            chapters.extend(
+                _Draft(title="", text=sentence, body=sentence, group=group) for sentence in _sentences(body)
+            )
             continue
         place(
             _Draft(
@@ -632,6 +652,7 @@ def _group(
                 text=_first_words(body),
                 body=body,
                 level=entry.level,
+                group=group,
             )
         )
     return chapters, front_matter
@@ -679,6 +700,7 @@ def extract(pack: DaisyPack, level: str = "chapter") -> Book:
             text=d.text,
             body=d.body,
             spans=tuple(d.spans),
+            group=d.group,
         )
         for index, d in enumerate(drafts)
         if d.segments or d.body

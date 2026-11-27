@@ -12,7 +12,7 @@ const PACK = join(ROOT, "gon-ruby-mp3.zip");
 
 const { readZip, writeZip } = await import("../../web/zip.js");
 const { extractBook } = await import("../../web/daisy.js");
-const { buildStoryFiles, buildStoryZip, partTitle } = await import("../../web/convert.js");
+const { buildStoryFiles, buildStoryZip, pausePoints, partTitle } = await import("../../web/convert.js");
 const { buildNodes, normalizeFileName, slugify, storyDirName, storyUuid } = await import("../../web/telmi.js");
 const { mp3Frames, trimFrames } = await import("../../web/mp3.js");
 const { cardWords } = await import("../../web/cover.js");
@@ -103,12 +103,20 @@ test("a sentence-cut part knows the chapter it was read under", async () => {
     "a chapter's sentences stay together in the list",
   );
   assert.equal(sentences[0].chapterTitle, chapters[0].title);
-  assert.equal(chapters[0].chapter, undefined, "at chapter level a part is its own chapter");
+  assert.deepEqual(
+    chapters.map((part) => part.chapter),
+    chapters.map((_, index) => index),
+    "at chapter level a part is its own chapter",
+  );
 });
 
 test("a card below chapter level plays the opening seconds of its part", async () => {
   const silent = new Uint8Array(await readFile(join(ROOT, "web/silence.mp3")));
-  const story = await buildStoryFiles(await pack("gon-ruby-mp3.zip"), silent, () => {}, { cut: "paragraph" });
+  const story = await buildStoryFiles(await pack("gon-ruby-mp3.zip"), silent, () => {}, {
+    cut: "paragraph",
+    autoplay: true,
+    pauseAfter: "paragraph",
+  });
   const bytes = new Map(story.files.map((file) => [file.name.replace(`${story.dirName}/`, ""), file.data.length]));
 
   // A paragraph runs about a minute, so the card clip is a fraction of its part.
@@ -119,7 +127,11 @@ test("a card below chapter level plays the opening seconds of its part", async (
 
 test("a part shorter than the card clip is not stored twice", async () => {
   const silent = new Uint8Array(await readFile(join(ROOT, "web/silence.mp3")));
-  const story = await buildStoryFiles(await pack("gon-ruby-mp3.zip"), silent, () => {}, { cut: "sentence" });
+  const story = await buildStoryFiles(await pack("gon-ruby-mp3.zip"), silent, () => {}, {
+    cut: "sentence",
+    autoplay: true,
+    pauseAfter: "sentence",
+  });
   const nodes = JSON.parse(new TextDecoder().decode(story.files.find((file) => file.name.endsWith("nodes.json")).data));
   const cards = story.book.chapters.map((_, k) => nodes.stages[`m${k}`].audio);
 
@@ -206,6 +218,55 @@ test("a chapter can carry its own picture", () => {
   assert.equal(nodes.stages.s0.image, "s0.png");
   assert.equal(nodes.stages.s1.image, null);
   assert.equal(nodes.stages.m1.audio, null);
+});
+
+test("a card that runs on does not wait for ok", () => {
+  const once = buildNodes(["s0", "s1"], [], [], [false, true]);
+  assert.equal(once.stages.m0.control.autoplay, false);
+  assert.equal(once.stages.m1.control.autoplay, true);
+  const all = buildNodes(["s0", "s1"], [], [], true);
+  assert.deepEqual(
+    ["m0", "m1"].map((name) => all.stages[name].control.autoplay),
+    [true, true],
+  );
+});
+
+test("where a story stops for ok follows its cut and the pause asked for", () => {
+  const parts = [0, 0, 1, 2, 2].map((group) => ({ chapter: group }));
+  assert.deepEqual(pausePoints(parts, "chapter", "paragraph"), [true, true, true, true, true]);
+  assert.deepEqual(pausePoints(parts, "chapter", "never"), [false, false, false, false, false]);
+  assert.deepEqual(pausePoints(parts, "sentence", "sentence"), [true, true, true, true, true]);
+  assert.deepEqual(pausePoints(parts, "sentence", "never"), [false, false, false, false, false]);
+  for (const pause of ["chapter", "paragraph"]) {
+    assert.deepEqual(pausePoints(parts, "sentence", pause), [true, false, true, true, false], pause);
+  }
+});
+
+test("a story cut below its chapters stops at the end of each one", async () => {
+  const silent = new Uint8Array(await readFile(join(ROOT, "web/silence.mp3")));
+  const story = await buildStoryFiles(await pack("gon-ruby-mp3.zip"), silent, () => {}, {
+    cut: "sentence",
+    autoplay: true,
+    pauseAfter: "chapter",
+    cardAudioSource: "snippet",
+  });
+  const cards = Object.keys(story.nodes.stages).filter((name) => name.startsWith("m"));
+  const stops = cards.filter((name) => !story.nodes.stages[name].control.autoplay);
+  const spoken = cards.filter((name) => story.nodes.stages[name].audio !== null);
+  assert.ok(stops.length > 0 && stops.length < cards.length, `${stops.length} stops over ${cards.length} cards`);
+  assert.deepEqual(spoken, stops, "only the cards the story stops on have something to play");
+});
+
+test("a story that does not autoplay waits at its chapters, whatever pause was asked for", async () => {
+  const silent = new Uint8Array(await readFile(join(ROOT, "web/silence.mp3")));
+  const story = await buildStoryFiles(await pack("gon-ruby-mp3.zip"), silent, () => {}, {
+    cut: "sentence",
+    pauseAfter: "never",
+    cardAudioSource: "snippet",
+  });
+  const cards = Object.keys(story.nodes.stages).filter((name) => name.startsWith("m"));
+  const stops = cards.filter((name) => !story.nodes.stages[name].control.autoplay);
+  assert.ok(stops.length > 0 && stops.length < cards.length, `${stops.length} stops over ${cards.length} cards`);
 });
 
 test("trimming an MP3 keeps whole frames inside the asked range", async () => {

@@ -1043,6 +1043,16 @@ def test_the_card_word_flag_overrides_the_saved_choice(monkeypatch, tmp_path) ->
     assert bare.show_word is False
 
 
+def test_the_pause_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    settings.save({**settings.DEFAULTS, "pause_after": "paragraph"})
+
+    saved = cli.announce_options(cli._parse_args(["pack.zip", "out"]))
+    asked = cli.announce_options(cli._parse_args(["pack.zip", "out", "--pause-after", "never"]))
+    assert saved.pause_after == "paragraph", "the saved choice is used when no flag is given"
+    assert asked.pause_after == "never"
+
+
 def test_the_reading_speed_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     settings.save({**settings.DEFAULTS, "read_voice": "saved-reader", "read_speed": "slow"})

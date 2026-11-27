@@ -65,10 +65,13 @@ export async function storyUuid(book) {
  * `cardAudio[k]` is the file each menu card says, or null for a silent card.
  * `chapterImages[k]` is the picture a chapter shows while its audio plays, or null
  * to keep showing the card it was read from.
+ * `cardAutoplay` is one answer for every card, or one per card: where it is true the
+ * story runs on when the card's audio ends, instead of waiting for OK.
  */
-export function buildNodes(chapterNames, cardAudio = [], chapterImages = []) {
+export function buildNodes(chapterNames, cardAudio = [], chapterImages = [], cardAutoplay = false) {
   if (!chapterNames.length) throw new Error("no chapters to build a story from");
 
+  const runs = Array.isArray(cardAutoplay) ? cardAutoplay : chapterNames.map(() => cardAutoplay);
   const stages = {};
   const actions = { m: chapterNames.map((_, k) => ({ stage: `m${k}` })) };
   const last = chapterNames.length - 1;
@@ -79,7 +82,7 @@ export function buildNodes(chapterNames, cardAudio = [], chapterImages = []) {
       audio: cardAudio[k] ?? null,
       ok: { action: `s${k}`, index: 0 },
       home: null,
-      control: { ok: true, home: true, autoplay: false },
+      control: { ok: true, home: true, autoplay: Boolean(runs[k]) },
     };
     stages[`s${k}`] = {
       image: chapterImages[k] ?? null,

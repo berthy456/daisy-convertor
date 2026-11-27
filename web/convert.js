@@ -19,6 +19,21 @@ export const CARD_SNIPPET_SECONDS = 3;
 // and a Merlin card has no screen at all.
 export const CAPTION_FORMATS = ["telmi", "flam"];
 
+export const PAUSE_LEVELS = ["sentence", "paragraph", "chapter", "never"];
+
+/**
+ * Which part's card waits for OK before its audio plays.
+ *
+ * A book cut to chapters stops at every part whatever was asked for. Below that, a
+ * pause the cut cannot find — a paragraph pause in a book cut to sentences — falls
+ * back to the chapter ends, which the cut keeps as each part's `chapter`.
+ */
+export function pausePoints(chapters, cut, pause) {
+  if (pause === "never") return chapters.map(() => false);
+  if (cut === "chapter" || pause === "sentence" || pause === cut) return chapters.map(() => true);
+  return chapters.map((chapter, k) => k === 0 || chapter.chapter !== chapters[k - 1].chapter);
+}
+
 /**
  * The part's own name, or nothing when its label only numbers it.
  *
@@ -85,6 +100,10 @@ function firstSeconds(segments, bytesOf, seconds) {
  * options.cardAudioSource: "voice" (a recorded clip), "snippet" (the part's own opening)
  *   or "off" (a silent card). A part cut below chapter level always plays its opening.
  * options.cardSeconds: how many seconds of the part a card that plays its opening plays it for.
+ * options.autoplay: run on to the next part when a card's audio ends, instead of waiting
+ *   for OK. Without it the story waits at its chapters, whatever pauseAfter asks for.
+ * options.pauseAfter: "sentence", "paragraph", "chapter" or "never" — where an
+ *   autoplaying story waits for OK.
  * options.captions: give each part a picture of its own words, shown while its
  *   audio plays instead of the card's.
  * options.drop: 1-based part numbers to leave out of the story.
@@ -134,6 +153,8 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
   const titled = Boolean(options.cardTitle) && cut === "chapter";
   const words = options.chapterWords ?? [];
   const titles = book.chapters.map((chapter) => partTitle(chapter.title, words));
+  const autoplay = Boolean(options.autoplay);
+  const pauses = pausePoints(book.chapters, cut, autoplay ? options.pauseAfter ?? "chapter" : "chapter");
   const cards = [];
   const scenes = [];
   let done = 0;
@@ -171,14 +192,15 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
 
     let card = null;
     // A part cut below chapter level has no name of its own to speak, so its card
-    // plays its opening whatever the card audio was set to.
-    const plays = source !== "off" && (source === "snippet" || cut !== "chapter");
+    // plays its opening whatever the card audio was set to. A card the story runs
+    // straight through has nothing to say at all.
+    const plays = pauses[k] && source !== "off" && (source === "snippet" || cut !== "chapter");
     if (plays) {
       const snippet = firstSeconds(chapter.segments, bytesOf, seconds);
       // A part shorter than the snippet needs no second copy: its card plays the part.
       card = snippet.length === 0 ? null : snippet.length === audio.length ? `s${k}.mp3` : `c${k}.mp3`;
       if (card === `c${k}.mp3`) files.push({ name: `${dirName}/audios/c${k}.mp3`, data: snippet });
-    } else if (source !== "off") {
+    } else if (pauses[k] && source !== "off") {
       const voice = await spoken(k + 1, partCount);
       if (voice !== null) {
         files.push({ name: `${dirName}/audios/c${k}.mp3`, data: voice });
@@ -222,7 +244,7 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
   step(say("prog_title_images"));
 
   const metadata = buildMetadata(book, uuid);
-  const nodes = buildNodes(book.chapters.map((_, k) => `s${k}`), cards, scenes);
+  const nodes = buildNodes(book.chapters.map((_, k) => `s${k}`), cards, scenes, pauses.map((stop) => !stop));
   files.push({ name: `${dirName}/metadata.json`, data: json(metadata) });
   files.push({ name: `${dirName}/nodes.json`, data: json(nodes) });
   files.push({ name: `${dirName}/notes.json`, data: json(buildNotes(book)) });

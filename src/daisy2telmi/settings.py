@@ -34,6 +34,9 @@ DEFAULTS: dict = {
     "speech_language": None,
     "announce": "title",
     "autoplay": False,
+    # Where an autoplaying story waits for OK. Ignored when autoplay is off: such a
+    # story waits at its chapters whatever was asked for here.
+    "pause_after": "chapter",
     # How long a card that plays the part's own opening plays it for.
     "card_seconds": 3.0,
     "card_total": True,

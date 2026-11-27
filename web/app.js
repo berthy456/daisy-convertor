@@ -14,7 +14,7 @@ import {
   squareJpeg,
 } from "./cover.js";
 import { findCover } from "./covers.js";
-import { CAPTION_FORMATS, CARD_SNIPPET_SECONDS, buildStoryZip, partTitle } from "./convert.js";
+import { CAPTION_FORMATS, CARD_SNIPPET_SECONDS, PAUSE_LEVELS, buildStoryZip, partTitle } from "./convert.js";
 import { LANGUAGES, NAMES, apply, chapterWords, pickLanguage, storyLanguage, text } from "./i18n.js";
 import { buildPlainPk, buildStudioZip, packName } from "./lunii.js";
 import { buildMerlinFiles } from "./merlin.js";
@@ -65,6 +65,9 @@ const cardsTextRow = document.getElementById("cards-text-row");
 const cardLanguageSelect = document.getElementById("card-language");
 const cardAudioSelect = document.getElementById("card-audio");
 const cardSecondsInput = document.getElementById("card-seconds");
+const autoplayBox = document.getElementById("autoplay");
+const pauseLabel = document.getElementById("pause-label");
+const pauseSelect = document.getElementById("pause-after");
 const formatInputs = [...document.querySelectorAll('input[name="format"]')];
 const coverSection = document.getElementById("cover-section");
 const negativeRow = document.getElementById("card-negative-row");
@@ -84,6 +87,8 @@ const testFrame = document.getElementById("test-frame");
 const silentMp3 = new Uint8Array(await (await fetch("./silence.mp3")).arrayBuffer());
 const STORED_LANGUAGE = "daisy2telmi.language";
 const STORED_CUT = "daisy2telmi.cut";
+const STORED_AUTOPLAY = "daisy2telmi.autoplay";
+const STORED_PAUSE = "daisy2telmi.pause";
 const STORED_FORMAT = "daisy2telmi.format";
 const STORED_CROP = "daisy2telmi.crop";
 const STORED_CARDS = "daisy2telmi.cards";
@@ -114,6 +119,11 @@ let autoTitle = "";
 let autoAuthor = "";
 let lang = "en";
 let cut = "chapter";
+// Whether the story runs on when a card's audio ends, and where it waits for OK
+// when it does not. Without autoplay the pause is the story's chapters, whatever
+// was picked for it.
+let autoplay = false;
+let pauseAfter = "chapter";
 let crop = "center";
 let format = "telmi";
 // Where the frame sits over the cover and how far it is enlarged. `focus` stays
@@ -219,10 +229,40 @@ function startCut() {
     input.addEventListener("change", () => {
       cut = input.value;
       remember(STORED_CUT, cut);
+      // A book cut below its chapters is cut that finely to be read through: its
+      // parts run on their own, and the story stops at the end of a chapter.
+      if (cut !== "chapter") choosePause(true);
       showCaptions();
       showParts();
     });
   }
+}
+
+function startPause() {
+  autoplay = saved(STORED_AUTOPLAY) === "1";
+  const stored = saved(STORED_PAUSE);
+  pauseAfter = PAUSE_LEVELS.includes(stored) ? stored : "chapter";
+  autoplayBox.checked = autoplay;
+  pauseSelect.value = pauseAfter;
+  autoplayBox.addEventListener("change", () => choosePause(autoplayBox.checked));
+  pauseSelect.addEventListener("change", () => {
+    pauseAfter = pauseSelect.value;
+    remember(STORED_PAUSE, pauseAfter);
+  });
+  showPause();
+}
+
+function choosePause(on) {
+  autoplay = on;
+  autoplayBox.checked = on;
+  remember(STORED_AUTOPLAY, on ? "1" : "0");
+  showPause();
+}
+
+/** The pause is a choice about autoplay: without it the story waits at its chapters. */
+function showPause() {
+  pauseSelect.disabled = !autoplay;
+  pauseLabel.classList.toggle("off", !autoplay);
 }
 
 // The two answers every card field is asked for: on the picture it is drawn or
@@ -904,6 +944,8 @@ async function buildPack() {
           cardAudio: spoken,
           cardAudioSource: cards.audio,
           cardSeconds: cards.seconds,
+          autoplay,
+          pauseAfter,
           chapterWords: chapterWords(cardLanguage()),
         });
 
@@ -1211,6 +1253,7 @@ startFormat();
 startNegative();
 startCaptions();
 startCut();
+startPause();
 startCards();
 startCardLanguage();
 startCrop();

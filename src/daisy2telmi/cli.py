@@ -20,6 +20,7 @@ from .lunii_pk import write_pack
 from .merlin import MerlinError
 from .telmi_builder import (
     ANNOUNCE_MODES,
+    PAUSE_LEVELS,
     Announce,
     StoryError,
     build_story,
@@ -190,7 +191,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     speech.add_argument(
         "--autoplay",
         action="store_true",
-        help="advance to the next chapter when the card's audio ends, instead of waiting for OK",
+        help="advance to the next part when the card's audio ends, instead of waiting for OK",
+    )
+    speech.add_argument(
+        "--pause-after",
+        choices=PAUSE_LEVELS,
+        help="where an autoplaying story waits for OK: after each sentence, paragraph or chapter, "
+        "or never for full autoplay; a story that does not autoplay waits at its chapters whatever "
+        "is given here",
     )
     speech.add_argument(
         "--tts",
@@ -281,6 +289,7 @@ def announce_options(args: argparse.Namespace) -> Announce:
         language=chosen or saved["language"],
         auto_language=chosen is None,
         autoplay=bool(args.autoplay or saved["autoplay"]),
+        pause_after=args.pause_after or saved["pause_after"],
         show_total=saved["card_total"] if args.card_total is None else args.card_total,
         show_word=saved["card_word"] if args.card_word is None else args.card_word,
         show_title=saved["card_title"] if args.card_title is None else args.card_title,

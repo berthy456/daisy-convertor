@@ -491,6 +491,7 @@ export function extractBook(entries, level = "chapter") {
         body: joinTexts(marks.map((mark) => mark.text).filter(Boolean)),
         spans: marks.flatMap((mark) => mark.spans),
         level: entry.level,
+        ...ownerOf(entry),
       });
       continue;
     }
@@ -518,6 +519,7 @@ export function extractBook(entries, level = "chapter") {
       body,
       spans: [],
       level: entry.level,
+      ...ownerOf(entry),
     });
   }
 
@@ -544,7 +546,8 @@ export function extractBook(entries, level = "chapter") {
         // That same text one piece per synced clip, in the order the clips play.
         spans: c.spans ?? [],
         segments: merge(c.segments),
-        // Only the sentence level needs it: at the other two, a part is a chapter.
+        // The chapter each part was read under, at every level: where a story cut
+        // below the chapters stops to wait for OK.
         ...(c.chapter === undefined ? {} : { chapter: c.chapter, chapterTitle: c.chapterTitle }),
       })),
     frontMatter: merge(frontMatter),

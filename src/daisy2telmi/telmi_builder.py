@@ -72,6 +72,10 @@ ANNOUNCE_MODES = (
     "off",
 )
 
+# Where the story stops for the player: after every part of the named kind, or
+# nowhere at all. A pause below chapter level needs a book cut that finely.
+PAUSE_LEVELS = ("sentence", "paragraph", "chapter", "never")
+
 
 @dataclass(frozen=True)
 class Announce:
@@ -89,6 +93,9 @@ class Announce:
     language: str = "en"
     auto_language: bool = True
     autoplay: bool = False
+    # Where an autoplaying story stops: one of PAUSE_LEVELS. With autoplay off the
+    # story stops at its chapters whatever was asked for.
+    pause_after: str = "chapter"
     # Whether the drawn card counts the parts as well as numbering them.
     show_total: bool = True
     # Whether the drawn card writes the word for the part beside its number.
@@ -261,10 +268,24 @@ def build_metadata(book: Book) -> dict:
     return metadata
 
 
+def pause_points(chapters: Sequence[Chapter], cut: str, pause: str) -> list[bool]:
+    """Which part's card waits for OK before its audio plays.
+
+    A book cut to chapters stops at every part whatever was asked for. Below that, a
+    pause the cut cannot find — a paragraph pause in a book cut to sentences — falls
+    back to the chapter ends, which the cut keeps as each part's `group`.
+    """
+    if pause == "never":
+        return [False] * len(chapters)
+    if cut == "chapter" or pause == "sentence" or pause == cut:
+        return [True] * len(chapters)
+    return [k == 0 or chapter.group != chapters[k - 1].group for k, chapter in enumerate(chapters)]
+
+
 def build_nodes(
     chapter_names: Sequence[str],
     card_audio: Sequence[str | None] | None = None,
-    card_autoplay: bool = False,
+    card_autoplay: bool | Sequence[bool] = False,
     chapter_images: Sequence[str | None] | None = None,
 ) -> dict:
     """Chapter-menu `nodes.json`, mirroring Telmi-Sync's own audio-list generator.
@@ -279,9 +300,14 @@ def build_nodes(
 
     A chapter stage shows the card it was read from until its own picture, if the
     story has one, replaces it: `chapter_images` is that picture per chapter.
+
+    `card_autoplay` is one answer for every card or one per card, for a story that
+    runs the parts inside a chapter on their own and stops at its end.
     """
     if not chapter_names:
         raise StoryError("no chapters to build a story from")
+    if isinstance(card_autoplay, bool):
+        card_autoplay = [card_autoplay] * len(chapter_names)
 
     if card_audio is None:
         card_audio = [None] * len(chapter_names)
@@ -297,7 +323,7 @@ def build_nodes(
             "audio": card_audio[k],
             "ok": {"action": f"s{k}", "index": 0},
             "home": None,
-            "control": {"ok": True, "home": True, "autoplay": card_autoplay},
+            "control": {"ok": True, "home": True, "autoplay": card_autoplay[k]},
         }
         stages[f"s{k}"] = {
             "image": chapter_images[k],
@@ -326,11 +352,17 @@ def build_card_audio(
     audios: Path,
     loudness: str | None = None,
     titles: Sequence[str] = (),
+    pauses: Sequence[bool] | None = None,
 ) -> tuple[list[str | None], bool]:
     """Speak one announcement per card. A failure silences them all: the same
-    engine would fail again, and a silent card is still a valid story."""
+    engine would fail again, and a silent card is still a valid story.
+
+    A card the story runs through without stopping has nothing to announce.
+    """
     phrases = {
-        k: announce.phrase(k + 1, count, titles[k] if k < len(titles) else "") for k in range(count)
+        k: announce.phrase(k + 1, count, titles[k] if k < len(titles) else "")
+        for k in range(count)
+        if pauses is None or pauses[k]
     }
     spoken = [k for k, phrase in phrases.items() if phrase is not None]
     if not spoken:
@@ -396,16 +428,23 @@ def _span(segments: Sequence[AudioSegment]) -> float | None:
 
 
 def build_snippets(
-    chapters: Sequence[Chapter], audios: Path, seconds: float = CARD_SNIPPET_SECONDS
+    chapters: Sequence[Chapter],
+    audios: Path,
+    seconds: float = CARD_SNIPPET_SECONDS,
+    pauses: Sequence[bool] | None = None,
 ) -> list[str | None]:
     """The first seconds of each part, so a card can be told apart by ear.
 
     A book cut to the sentence level has hundreds of parts, and no word in any
     language would say which one a card is; its own opening sound does. A part
-    shorter than the clip gets no second copy: its card plays the part.
+    shorter than the clip gets no second copy: its card plays the part. A card the
+    story runs through without stopping plays no opening of its own.
     """
     cards: list[str | None] = []
     for k, chapter in enumerate(chapters):
+        if pauses is not None and not pauses[k]:
+            cards.append(None)
+            continue
         span = _span(chapter.segments)
         if span is not None and span <= seconds:
             cards.append(f"s{k}.mp3")
@@ -485,6 +524,15 @@ def build_story(
             narrate(chapter.body, announce, audios / f"{name}.mp3")
             modes.add("spoken")
 
+    # An autoplaying story pauses where it was told to; one that does not autoplay
+    # pauses at its chapters, however finely it was cut.
+    autoplay = bool(announce.autoplay) if announce is not None else False
+    pauses = pause_points(book.chapters, cut, announce.pause_after if autoplay and announce else "chapter")
+    stops = sum(1 for stop in pauses if stop)
+    log.info(
+        "the story stops after %s of the %d part(s)", f"{stops} card(s)" if stops else "nothing", count
+    )
+
     cards = [None] * count
     spoken = 0
     if announce is not None and announce.mode != "off":
@@ -495,12 +543,12 @@ def build_story(
             where = f"; the card is levelled to {tts.card_target(story):.1f} LUFS" if story is not None else ""
             log.info("speaking %d chapter card(s) in %s%s", count, language(announce.language).name, where)
             cards, spoken = build_card_audio(
-                count, announce, audios, tts.card_loudness(story), [c.title for c in book.chapters]
+                count, announce, audios, tts.card_loudness(story), [c.title for c in book.chapters], pauses
             )
         else:
-            log.info("playing the first %.1f s of each of the %d part(s) on its card", announce.seconds, count)
-            cards = build_snippets(book.chapters, audios, announce.seconds)
-            spoken = len(cards)
+            log.info("playing the first %.1f s of each of the %d stopping card(s)", announce.seconds, stops)
+            cards = build_snippets(book.chapters, audios, announce.seconds, pauses)
+            spoken = sum(1 for card in cards if card)
 
     # The player plays title.mp3 when the story is selected, so the pack's own
     # spoken title belongs there rather than in a second stage inside the story.
@@ -613,7 +661,7 @@ def build_story(
             build_nodes(
                 chapter_names,
                 cards,
-                announce.autoplay if announce else False,
+                [not stop for stop in pauses],
                 [f"s{k}.png" if shown else None for k, shown in enumerate(captioned)],
             ),
             ensure_ascii=False,

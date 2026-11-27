@@ -171,6 +171,23 @@
               <span data-i18n="cut_sentence"></span>
             </label>
           </div>
+          <!-- Where the story waits for OK. Without autoplay there is nothing to
+               choose: such a story waits at its chapters, however it was cut. -->
+          <div class="cut-row">
+            <label>
+              <input id="autoplay" type="checkbox" />
+              <span data-i18n="autoplay"></span>
+            </label>
+            <label id="pause-label">
+              <span data-i18n="pause_after"></span>
+              <select id="pause-after">
+                <option value="sentence" data-i18n="pause_sentence"></option>
+                <option value="paragraph" data-i18n="pause_paragraph"></option>
+                <option value="chapter" data-i18n="pause_chapter"></option>
+                <option value="never" data-i18n="pause_never"></option>
+              </select>
+            </label>
+          </div>
         </div>
 
         <!-- What the card between two parts shows and says. The words are the

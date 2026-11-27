@@ -274,6 +274,17 @@ input[type="file"] {
   white-space: nowrap;
 }
 
+/* Without autoplay there is no pause to choose: the story waits at its chapters
+   whatever was picked, so the field stays on its line and greyed. */
+.cut-row label.off {
+  color: var(--muted);
+}
+
+.cut-row select:disabled {
+  color: var(--muted);
+  background: var(--bg);
+}
+
 /* The cover lookup asks three services in turn and runs while the rest of the
    page is ready, so the page says it is working instead of sitting quiet. */
 .spinner {

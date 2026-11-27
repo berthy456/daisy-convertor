@@ -21,6 +21,7 @@ from daisy2telmi.telmi_builder import (
     build_story,
     narrate,
     part_title,
+    pause_points,
     story_dir_name,
     story_uuid,
 )
@@ -235,6 +236,43 @@ def test_cards_stay_silent_by_default() -> None:
     nodes = build_nodes(SAMPLE)
     assert all(stage["audio"] is None for name, stage in nodes["stages"].items() if name.startswith("m"))
     assert all(stage["control"]["autoplay"] is False for name, stage in nodes["stages"].items() if name.startswith("m"))
+
+
+def test_a_story_cut_to_chapters_stops_at_every_one_of_them() -> None:
+    parts = [Chapter(f"Ch {k}", (), group=k) for k in range(3)]
+    assert pause_points(parts, "chapter", "never") == [False, False, False]
+    assert pause_points(parts, "chapter", "sentence") == [True, True, True]
+    assert pause_points(parts, "chapter", "chapter") == [True, True, True]
+
+
+def test_a_finer_cut_keeps_its_chapters_as_the_places_it_stops() -> None:
+    """A book cut to sentences still knows which chapter each sentence came from."""
+    parts = [Chapter("", (), group=group) for group in (0, 0, 1, 2, 2)]
+    assert pause_points(parts, "sentence", "chapter") == [True, False, True, True, False]
+    assert pause_points(parts, "sentence", "paragraph") == [True, False, True, True, False]
+    assert pause_points(parts, "sentence", "sentence") == [True] * 5
+    assert pause_points(parts, "sentence", "never") == [False] * 5
+
+
+def test_a_cut_that_matches_the_pause_stops_at_every_part() -> None:
+    parts = [Chapter("", (), group=group) for group in (0, 0, 1)]
+    assert pause_points(parts, "paragraph", "paragraph") == [True, True, True]
+
+
+def test_only_the_stopping_cards_get_a_card(tmp_path, monkeypatch) -> None:
+    from daisy2telmi import audio
+    from daisy2telmi.extractor import AudioSegment
+    from daisy2telmi.telmi_builder import build_snippets
+
+    monkeypatch.setattr(audio, "render", lambda segments, dest, limit=None: "cut")
+    parts = [Chapter("", (AudioSegment(tmp_path / "p.mp3"),)) for _ in range(4)]
+    assert build_snippets(parts, tmp_path, pauses=[True, False, False, True]) == ["c0.mp3", None, None, "c3.mp3"]
+
+
+def test_a_card_that_runs_on_does_not_wait_for_ok() -> None:
+    nodes = build_nodes(SAMPLE, card_autoplay=[False, True, True])
+    assert validate_nodes(nodes) == []
+    assert [nodes["stages"][f"m{k}"]["control"]["autoplay"] for k in range(3)] == [False, True, True]
 
 
 def test_a_card_snippet_is_the_opening_seconds_of_its_part(tmp_path, monkeypatch) -> None:

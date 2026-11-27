@@ -33,7 +33,7 @@ from .detector import DaisyPackError, open_pack
 from .extractor import CUT_LEVELS, extract
 from .i18n import LANGUAGES, Language, text
 from .proc import NO_WINDOW
-from .telmi_builder import ANNOUNCE_MODES, Announce, card_language, part_title, slugify
+from .telmi_builder import ANNOUNCE_MODES, PAUSE_LEVELS, Announce, card_language, part_title, slugify
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -918,6 +918,21 @@ class App:
             self.seconds_box.bind(event, lambda _e: self._type_seconds())
         self._show_announce()
 
+        # Where the story waits for OK. Without autoplay there is nothing to choose:
+        # such a story waits at its chapters, however it was cut.
+        self.autoplay_var = tk.BooleanVar(value=bool(self.options["autoplay"]))
+        self.autoplay_box = ttk.Checkbutton(
+            fields, text=self.t("opt_autoplay"), variable=self.autoplay_var, command=self._choose_autoplay
+        )
+        self.autoplay_box.grid(row=6, column=0, sticky="w", pady=(8, 0))
+        self._labels["opt_autoplay"] = self.autoplay_box
+        self.pause_keys = list(PAUSE_LEVELS)
+        self._label(fields, "opt_pause").grid(row=5, column=1, sticky="w", padx=(8, 0))
+        self.pause_box = ttk.Combobox(fields, values=self.pause_names(), state="readonly", width=12)
+        self.pause_box.grid(row=6, column=1, sticky="w", padx=(8, 0))
+        self.pause_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_pause())
+        self._show_pause()
+
         # The cover and the card's lettering stand in the column beside the picture:
         # stacked under it they make the page taller than any screen they open on.
         right = ttk.Frame(display)
@@ -1203,6 +1218,7 @@ class App:
         self._show_formats()
         self._show_engines()
         self._show_announce()
+        self._show_pause()
         self._show_card_text()
         self._show_crop()
         if not DND_FILES:
@@ -1449,6 +1465,7 @@ class App:
             language=self.speech_language(),
             auto_language=self.options["speech_language"] is None,
             autoplay=self.options["autoplay"],
+            pause_after=self.options["pause_after"],
             show_total=self.options["card_total"],
             show_word=self.options["card_word"],
             show_title=self.options["card_title"],
@@ -1794,6 +1811,29 @@ class App:
         self.options["announce"] = self.announce_keys[self.announce_names().index(self.announce_box.get())]
         settings.save(self.options)
         self._show_announce()
+
+    def pause_names(self) -> list[str]:
+        """Where a story can stop for OK, by the name this window's language gives it."""
+        return [self.t(f"pause_{mode}") for mode in self.pause_keys]
+
+    def _show_pause(self) -> None:
+        """Refill the box in this language, and grey it out where it asks nothing."""
+        names = self.pause_names()
+        self.pause_box.configure(values=names)
+        chosen = self.options["pause_after"]
+        self.pause_box.set(names[self.pause_keys.index(chosen) if chosen in self.pause_keys else 0])
+        asked = bool(self.options["autoplay"])
+        self.pause_box.configure(state="readonly" if asked else "disabled")
+        self._labels["opt_pause"].configure(foreground=INK if asked else MUTED)
+
+    def _choose_autoplay(self) -> None:
+        self.options["autoplay"] = bool(self.autoplay_var.get())
+        settings.save(self.options)
+        self._show_pause()
+
+    def _choose_pause(self) -> None:
+        self.options["pause_after"] = self.pause_keys[self.pause_names().index(self.pause_box.get())]
+        settings.save(self.options)
 
     def _card_seconds(self) -> float:
         try:
@@ -2648,6 +2688,12 @@ class ChapterList:
         self.cut_var.set(level)
         self.app.cut = level
         self.app.dropped = set()
+        if level != "chapter":
+            # A book cut below its chapters is cut that finely to be read through: its
+            # parts run on their own and the story stops at the end of a chapter.
+            self.app.options["autoplay"] = True
+            self.app.autoplay_var.set(True)
+            self.app._show_pause()
         self.app._show_crop()
         self._build()
         threading.Thread(target=self._measure, daemon=True).start()
@@ -2891,16 +2937,14 @@ class Options(Settings):
         self._answered = 0
 
         self.language_box = self._combo(self.grid, self.language_keys, app.options["language"])
-        self.autoplay_var = tk.BooleanVar(value=bool(app.options["autoplay"]))
-
         self._row(self.grid, "opt_language", 0, self.language_box)
-        self._check(self.grid, "opt_autoplay", 1, self.autoplay_var)
         # The bar is not asked for here: the system's own bar is kept everywhere Tk can
         # only lose it by handing the window back to the app, and macOS is the one
-        # system where it can be hidden and leave the window managed.
+        # system where it can be hidden and leave the window managed. Autoplay is not
+        # asked here either: it belongs with the chapters it advances through.
 
         engine = ttk.Labelframe(self.grid, text=app.t("speech_section"), padding=(10, 6))
-        engine.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        engine.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(14, 0))
         engine.columnconfigure(1, weight=1)
         self.python_box = ttk.Entry(engine, width=28)
         self.python_box.insert(0, app.options["python"] or "")
@@ -2920,7 +2964,7 @@ class Options(Settings):
         self._show_engine()
 
         folders = ttk.Labelframe(self.grid, text=app.t("opt_section_folders"), padding=(10, 6))
-        folders.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        folders.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(14, 0))
         folders.columnconfigure(1, weight=1)
         self.input_box = self._folder(folders, "opt_input_dir", 0, app.options["input_dir"])
         self.output_box = self._folder(folders, "output_label", 1, app.options["output_dir"])
@@ -2934,7 +2978,7 @@ class Options(Settings):
         self.folders_hint.grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         ttk.Button(self.grid, text=app.t("opt_close"), command=self._close).grid(
-            row=4, column=0, columnspan=2, sticky="e", pady=(12, 0)
+            row=3, column=0, columnspan=2, sticky="e", pady=(12, 0)
         )
 
     def _telmi_stories(self) -> None:
@@ -3002,7 +3046,6 @@ class Options(Settings):
         self._save(
             {
                 "language": self._chosen(self.language_box, self.language_keys),
-                "autoplay": self.autoplay_var.get(),
                 "python": self.python_box.get().strip() or None,
                 "input_dir": input_dir,
                 "output_dir": output_dir,

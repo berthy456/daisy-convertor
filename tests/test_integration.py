@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from daisy2telmi import audio, cli, images, merlin
+from daisy2telmi import audio, cli, images, merlin, settings
 from daisy2telmi.cli import CARD_FORMATS, main
 from daisy2telmi.detector import open_pack
 from daisy2telmi.extractor import extract
@@ -296,6 +296,34 @@ def test_each_cover_crop_draws_a_different_pack(tmp_path: Path) -> None:
         folder = next(entry for entry in out.iterdir() if entry.is_dir())
         titles[mode] = (folder / images.TITLE_IMAGE).read_bytes()
     assert len(set(titles.values())) == 3, "each band has to land somewhere else in the pack"
+
+
+@requires_pack
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_the_card_contrast_comes_from_the_flag_or_from_the_saved_slider(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    cover = tmp_path / "ramp.png"
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "nullsrc=s=300x300,geq=lum='64+127*X/W':cb=128:cr=128",
+            "-frames:v", "1", str(cover),
+        ],
+        check=True,
+    )
+
+    def card(name: str, *flag: str) -> bytes:
+        out = tmp_path / name
+        assert main([str(PACK), str(out), "--cover", str(cover), *flag]) == 0
+        return (_story(out) / images.TITLE_IMAGE).read_bytes()
+
+    flat = card("flat")
+    deep = card("deep", "--card-contrast", "1.5")
+    assert flat != deep, "the flag moves the cover's shades"
+
+    settings.save({"card_contrast": 1.5})
+    assert card("saved") == deep, "the slider's saved value reaches a run with no flag"
+    assert card("overridden", "--card-contrast", "1") == flat, "the flag still outranks it"
 
 
 @requires_pack

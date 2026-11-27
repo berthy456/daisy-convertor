@@ -357,6 +357,20 @@ def _sided_cover(tmp_path: Path) -> Path:
     return source
 
 
+def _ramp_cover(tmp_path: Path) -> Path:
+    """A grey ramp from 64 to 191, 300x300: no end of it is already black or white."""
+    source = tmp_path / "ramp.png"
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "nullsrc=s=300x300,geq=lum='64+127*X/W':cb=128:cr=128",
+            "-frames:v", "1", str(source),
+        ],
+        check=True,
+    )
+    return source
+
+
 def _colour(png: Path) -> tuple[int, int, int]:
     result = subprocess.run(
         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(png),
@@ -429,6 +443,35 @@ def test_the_zoom_enlarges_the_picture_the_frame_moves_over(tmp_path: Path) -> N
     assert twice == (one[0] * 2, one[1] * 2)
     _, clamped = images.cover_fit(source, images.PREVIEW_SIZE, 99)
     assert clamped == (one[0] * images.MAX_ZOOM, one[1] * images.MAX_ZOOM), "no zoom past the ceiling"
+
+
+@NO_FFMPEG
+def test_the_contrast_slider_moves_the_cover_s_shades_away_from_the_middle(tmp_path: Path) -> None:
+    """`eq=contrast` turns about the middle grey, so the slider's ends carry the
+    cover's darkest and brightest shades further from it, and stop at their limits."""
+    source = _ramp_cover(tmp_path)
+
+    def drawn(contrast: float) -> tuple[Path, tuple[int, int]]:
+        png, size = images.cover_fit(source, images.PREVIEW_SIZE, 1.0, "colour", False, contrast)
+        out = tmp_path / f"contrast-{contrast}.png"
+        out.write_bytes(png)
+        return out, size
+
+    def ends(contrast: float) -> tuple[int, int]:
+        out, size = drawn(contrast)
+        return _pixel(out, 2, size[1] // 2)[0], _pixel(out, size[0] - 3, size[1] // 2)[0]
+
+    flat = ends(1.0)
+    assert 55 <= flat[0] <= 75 and 180 <= flat[1] <= 200, "the slider's middle leaves the ramp as it is"
+
+    deep = ends(1.5)
+    assert deep[0] < flat[0] - 15 and deep[1] > flat[1] + 15, "the slider's top pushes both ends further out"
+
+    thin = ends(0.5)
+    assert thin[0] > flat[0] + 15 and thin[1] < flat[1] - 15, "and its bottom pulls both ends back"
+
+    assert drawn(4.0)[0].read_bytes() == drawn(2.0)[0].read_bytes(), "the drawing stops at the slider's ceiling"
+    assert drawn(0.1)[0].read_bytes() == drawn(0.5)[0].read_bytes(), "and at its floor"
 
 
 @NO_FFMPEG

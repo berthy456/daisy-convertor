@@ -167,6 +167,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "(--no-card-negative for the cover as it is)",
     )
     speech.add_argument(
+        "--card-contrast",
+        type=float,
+        default=None,
+        metavar="FACTOR",
+        help="pull the cover's lights and shadows further apart on every card picture: 1 leaves them "
+        "as they are, more than 1 separates them, less than 1 brings them together (0.5 to 2)",
+    )
+    speech.add_argument(
         "--language",
         choices=sorted(LANGUAGES),
         help="language of the chapter cards and the voice that reads them; by default the book's own, "
@@ -279,6 +287,7 @@ def announce_options(args: argparse.Namespace) -> Announce:
         read_voice=args.read_voice,
         read_clip=args.read_clip,
         read_speed=args.read_speed or saved["read_speed"],
+        contrast=saved["card_contrast"] if args.card_contrast is None else args.card_contrast,
     )
 
 

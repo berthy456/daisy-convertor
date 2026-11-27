@@ -55,6 +55,11 @@ def test_a_pinned_card_language_survives_the_next_run(tmp_path, monkeypatch) -> 
     assert settings.load()["speech_language"] == "tr"
 
 
+def test_the_card_audio_says_the_chapter_title_by_default(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "absent"))
+    assert settings.load()["announce"] == "title"
+
+
 def test_round_trip(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     options = dict(settings.DEFAULTS, language="tr", announce="chapter", autoplay=True, voice="Cem")

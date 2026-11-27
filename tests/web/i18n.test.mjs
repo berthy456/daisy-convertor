@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
-const { LANGUAGES, NAMES, RTL, UI, codeOf, guess, pickLanguage, storyLanguage, text } = await import(
+const { LANGUAGES, NAMES, RTL, UI, chapterWords, codeOf, guess, pickLanguage, storyLanguage, text } = await import(
   "../../web/i18n.js"
 );
 
@@ -65,7 +65,8 @@ test("every language translates every key", () => {
 // translates, and so are the two search engines; "beta" and "Zoom" are the words
 // the Latin-script languages all borrow as is; so does the machine's "OK", which the
 // five Latin-script dictionaries write as it is, while Arabic, Chinese and Turkish
-// write their own; Dutch writes the button's "Stop" as it is too.
+// write their own; Dutch writes the button's "Stop" and the slider's "Contrast" as
+// it is too.
 // Anything else that matches was left untranslated.
 test("no language is left in English by accident", () => {
   const allowed = new Set([
@@ -81,6 +82,7 @@ test("no language is left in English by accident", () => {
     "cover_search_ddg",
     "cover_search_google",
     "crop_zoom",
+    "contrast",
     "cover_stop",
     "emu_ok",
   ]);
@@ -114,6 +116,17 @@ test("a saved choice beats the browser", () => {
 test("the card label fills its numbers", () => {
   assert.equal(text("en", "card_label", { n: 2, total: 23 }), "Chapter 2/23");
   assert.equal(text("ar", "card_label", { n: 2, total: 23 }), "الفصل 2/23");
+});
+
+test("each language names a chapter the way an outline writes it", () => {
+  assert.deepEqual(chapterWords("en"), ["part", "chapter"]);
+  assert.ok(chapterWords("fr").includes("chapitre"));
+  assert.ok(chapterWords("zh").includes("章"));
+  assert.ok(chapterWords("ar").includes("الفصل"));
+  for (const code of LANGUAGES) {
+    assert.ok(chapterWords(code).includes("part"), `${code} lost the word "part"`);
+    assert.ok(!chapterWords(code).includes("n"), `${code} read its own placeholder`);
+  }
 });
 
 test("an unknown key or language degrades instead of throwing", () => {

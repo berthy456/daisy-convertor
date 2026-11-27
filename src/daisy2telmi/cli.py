@@ -24,6 +24,7 @@ from .telmi_builder import (
     StoryError,
     build_story,
     card_language,
+    part_title,
     story_dir_name,
     story_uuid,
     write_story_zip,
@@ -275,8 +276,8 @@ def announce_options(args: argparse.Namespace) -> Announce:
         device=args.tts_device or saved["device"],
         speed=args.tts_speed or saved["speed"],
         expression=args.tts_expression or saved["expression"],
-        read_voice=args.read_voice or saved["read_voice"],
-        read_clip=args.read_clip or saved["read_clip"],
+        read_voice=args.read_voice,
+        read_clip=args.read_clip,
         read_speed=args.read_speed or saved["read_speed"],
     )
 
@@ -498,7 +499,7 @@ def convert(
                             "so nothing here has been read back off a real device"
                         )
                         card = target.parent / f"{target.name}_merlin"
-                        names = merlin.export(target, card, [c.title for c in book.chapters], merge)
+                        names = merlin.export(target, card, [part_title(c.title, announce.language) for c in book.chapters], merge)
                         archive = shutil.make_archive(str(card), "zip", card)
                         log.info("wrote %d card file(s) and a %s to %s", len(names), merlin.PLAYLIST, card)
                     else:
@@ -512,6 +513,14 @@ def convert(
         return 1
     except LuniiError as exc:
         log.error("the Telmi story is written, but the Lunii one is not: %s", exc)
+        return 1
+    except OSError as exc:
+        # A file the machine would not give up — read-only, open in another program, a
+        # full disk — is an overwrite that failed, and the log has to say that plainly.
+        log.error("%s: %s", type(exc).__name__, exc)
+        if target is not None and str(exc.filename or "").startswith(str(target)):
+            log.error("nothing was written: %s could not be overwritten", target)
+        _unfinished(target)
         return 1
     except Exception as exc:
         # A converter bug has to reach the log frame like any other failure: a

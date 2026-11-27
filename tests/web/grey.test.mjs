@@ -85,3 +85,44 @@ test("the Lunii cover is flattened too", async () => {
   await coverPng(cover, 512, 512, "top");
   assert.deepEqual(FLATTENS, []);
 });
+
+// The Display page's contrast slider, which moves every shade off the middle the way
+// the desktop build's ffmpeg `eq=contrast` does.
+test("the contrast slider moves the cover's shades away from the middle", async () => {
+  installCanvasStub();
+  const cover = { width: 600, height: 400, close: () => {} };
+
+  FLATTENS.length = 0;
+  await coverPng(cover, 160, 120, "center", "colour");
+  assert.deepEqual(FLATTENS, [], "the slider's middle leaves the picture alone");
+
+  FLATTENS.length = 0;
+  await coverPng(cover, 160, 120, "center", "colour", false, 1.5);
+  assert.equal(FLATTENS.length, 1, "the cover is written back once");
+  const row = FLATTENS[0][3];
+  assert.equal(row[80], 128, "the middle shade does not move");
+  assert.ok(row[40] < 64, "a shade below it moves down");
+  assert.ok(row[120] > 192, "and a shade above it moves up");
+
+  FLATTENS.length = 0;
+  await coverPng(cover, 160, 120, "center", "colour", false, 4);
+  assert.deepEqual(FLATTENS[0][3], row, "the drawing stops at the slider's ceiling");
+
+  FLATTENS.length = 0;
+  await coverPng(cover, 160, 120, "center", "colour", false, 0.2);
+  assert.ok(FLATTENS[0][3][40] > 40, "and at its floor, which pulls the shades back");
+});
+
+test("a card is contrasted on its cover, before its number and its greys", async () => {
+  installCanvasStub();
+  const cover = { width: 600, height: 400, close: () => {} };
+
+  FLATTENS.length = 0;
+  await cardPng("3", "il etait une fois", cover, "center", 160, 120, "bw", false, "", 1.5);
+  assert.equal(FLATTENS.length, 2, "the crop is written back, then the card is flattened");
+  assert.deepEqual(FLATTENS[1][2].sort((a, b) => a - b), LEVELS, "the levels are set last");
+
+  FLATTENS.length = 0;
+  await cardPng("3", "il etait une fois", null, {}, 160, 120, "bw", false, "", 1.5);
+  assert.equal(FLATTENS.length, 1, "a card with no cover has nothing to contrast");
+});

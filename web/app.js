@@ -2,6 +2,7 @@ import { CUT_LEVELS, cutChoices, extractBook, languageSample } from "./daisy.js"
 import {
   CROP_FOCUS,
   MAX_ZOOM,
+  CONTRAST_LIMITS,
   MIN_ZOOM,
   cropRect,
   drawPreview,
@@ -13,8 +14,8 @@ import {
   squareJpeg,
 } from "./cover.js";
 import { findCover } from "./covers.js";
-import { CAPTION_FORMATS, CARD_SNIPPET_SECONDS, buildStoryZip } from "./convert.js";
-import { LANGUAGES, NAMES, apply, pickLanguage, storyLanguage, text } from "./i18n.js";
+import { CAPTION_FORMATS, CARD_SNIPPET_SECONDS, buildStoryZip, partTitle } from "./convert.js";
+import { LANGUAGES, NAMES, apply, chapterWords, pickLanguage, storyLanguage, text } from "./i18n.js";
 import { buildPlainPk, buildStudioZip, packName } from "./lunii.js";
 import { buildMerlinFiles } from "./merlin.js";
 import { buildPlaylistZip } from "./playlist.js";
@@ -46,6 +47,7 @@ const cutInputs = [...document.querySelectorAll('input[name="cut"]')];
 const cropCanvas = document.getElementById("crop-canvas");
 const cropInputs = [...document.querySelectorAll('input[name="crop"]')];
 const cropZoom = document.getElementById("crop-zoom");
+const cropContrast = document.getElementById("crop-contrast");
 const cropReset = document.getElementById("crop-reset");
 // One box per field, on the line that asks for it: the four a card can carry, and
 // the two a card can say around its number.
@@ -74,6 +76,7 @@ const partsNote = document.getElementById("parts-note");
 const partsAll = document.getElementById("parts-all");
 const packLabel = document.getElementById("pack-name");
 const captionsNote = document.getElementById("captions-note");
+const negativeNote = document.getElementById("negative-note");
 const testPlayer = document.getElementById("test-player");
 const testFrame = document.getElementById("test-frame");
 
@@ -86,6 +89,7 @@ const STORED_CARDS = "daisy2telmi.cards";
 const STORED_CARD_LANGUAGE = "daisy2telmi.cardLanguage";
 const STORED_NEGATIVE = "daisy2telmi.negative";
 const STORED_CAPTIONS = "daisy2telmi.captions";
+const STORED_CONTRAST = "daisy2telmi.contrast";
 // What a card plays: one of the recorded clips, the part's own opening, or nothing.
 const CARD_SOURCES = ["voice", "snippet", "off"];
 const CARD_SECONDS_LIMITS = [0.5, 30];
@@ -116,6 +120,8 @@ let format = "telmi";
 // user moves the frame themselves.
 let focus = null;
 let zoom = 1;
+// How far the cover's lights and shadows are pulled apart before it is drawn.
+let contrast = 1;
 // What the card between two parts shows and says. `title`, `chapter`, `number` and
 // `total` are the words drawn on the picture; `word` and `count` are the ones spoken
 // around the part's number; `audio` is what the card plays — a recorded phrase, the
@@ -140,6 +146,9 @@ let negative = false;
 let captions = false;
 // The cut levels the pack being read can be cut at, empty until it has been read.
 let cutLevels = [];
+// What the pack's own reading gave the crop preview: how many parts the chosen level
+// has, and the name the first one carries. null until the pack has been read.
+let previewCard = null;
 // Part numbers left out of the story, in the numbering of the chosen cut level.
 let dropped = new Set();
 // Counts the lookups in flight, so an answer about a pack that has been replaced
@@ -234,6 +243,7 @@ function startCards() {
       cards[name] = on;
       if (name === "number") showCardTotal();
       remember(STORED_CARDS, JSON.stringify(cards));
+      drawCrop();
     });
   }
   for (const [name, box] of Object.entries(cardSayBoxes)) {
@@ -248,8 +258,10 @@ function startCards() {
   cardAudioSelect.value = cards.audio;
   cardAudioSelect.addEventListener("change", () => {
     cards.audio = cardAudioSelect.value;
+    showCardSeconds();
     remember(STORED_CARDS, JSON.stringify(cards));
   });
+  showCardSeconds();
   cards.seconds = cardSeconds(stored?.seconds);
   cardSecondsInput.value = cards.seconds;
   cardSecondsInput.addEventListener("change", () => {
@@ -275,6 +287,11 @@ function startCardChoice(box, answers, value, choose) {
 /** The total is the number's tail: a card that draws no number has no total to draw. */
 function showCardTotal() {
   cardTextBoxes.total.disabled = !cards.number;
+}
+
+/** The extract length belongs to the one card audio that plays the part's own opening. */
+function showCardSeconds() {
+  cardSecondsInput.disabled = cards.audio !== "snippet";
 }
 
 /** The card audio length as typed: a blank or unreadable box keeps the default. */
@@ -308,6 +325,7 @@ function startCardLanguage() {
     if (cardLang === null) cardLanguageSelect.value = "";
     remember(STORED_CARD_LANGUAGE, cardLang ?? "");
     showCardLanguage();
+    drawCrop();
   });
 }
 
@@ -344,6 +362,7 @@ function showFormat() {
   // Only the plain Lunii screen has no colour, so only its cards can be read the
   // other way round; the choice stays put while another player is chosen.
   negativeRow.hidden = format !== "lunii";
+  negativeNote.hidden = negativeRow.hidden;
   // A plain player is handed no pictures at all, so there is no cover to frame and
   // no story for the drawn machine to play.
   coverSection.hidden = format === "mp3";
@@ -395,6 +414,35 @@ function cropView() {
  * The frame is drawn with no cover too: the shape a cover has to be fitted into is
  * worth seeing before one exists.
  */
+/** The words a card carries: its number, its total, and the word for the part when
+    the book was cut by chapter. */
+function cardLabel(number, total, worded) {
+  if (!cards.number) return "";
+  const key = cards.total
+    ? worded && cards.chapter
+      ? "card_label"
+      : "card_number"
+    : worded && cards.chapter
+      ? "card_label_one"
+      : "card_number_one";
+  return text(cardLanguage(), key, { n: number, total });
+}
+
+/**
+ * The words the book's first card will carry, drawn on the crop frame.
+ *
+ * Only a chapter-level cut has chapter names and a chapter count to letter a card
+ * with, and only the pack's own reading says what they are: until the pack has been
+ * read, the card carries its number alone.
+ */
+function previewLabel() {
+  if (format === "lunii") return "1";
+  const label = cardLabel(1, previewCard?.count ?? 1, cut === "chapter");
+  if (!cards.title || cut !== "chapter" || !previewCard) return label;
+  const title = partTitle(previewCard.title, chapterWords(cardLanguage()));
+  return title ? (label ? `${label}, ${title}` : title) : label;
+}
+
 function drawCrop() {
   if (format === "mp3") return;
   const [scene] = screen(format);
@@ -412,6 +460,8 @@ function drawCrop() {
     cropView(),
     format === "lunii" ? "bw" : "colour",
     negative,
+    contrast,
+    previewLabel(),
   );
 }
 
@@ -479,6 +529,15 @@ function startCrop() {
   cropZoom.max = String(MAX_ZOOM);
   cropZoom.addEventListener("input", () => setZoom(Number(cropZoom.value)));
   cropReset.addEventListener("click", resetCrop);
+
+  contrast = Number(saved(STORED_CONTRAST)) || 1;
+  contrast = clamp(contrast, CONTRAST_LIMITS[0], CONTRAST_LIMITS[1]);
+  cropContrast.value = String(contrast);
+  cropContrast.addEventListener("input", () => {
+    contrast = clamp(Number(cropContrast.value), CONTRAST_LIMITS[0], CONTRAST_LIMITS[1]);
+    remember(STORED_CONTRAST, String(contrast));
+    drawCrop();
+  });
 
   let drag = null;
   cropCanvas.addEventListener("pointerdown", (event) => {
@@ -675,6 +734,8 @@ async function showParts() {
   partsList.textContent = "";
   try {
     const { chapters } = extractBook(await packEntries(), cut);
+    previewCard = { count: chapters.length, title: chapters[0]?.title ?? "" };
+    drawCrop();
     const rows =
       cut === "sentence"
         ? chapterRows(chapters)
@@ -707,6 +768,7 @@ async function showParts() {
     });
     partsBox.hidden = false;
   } catch {
+    previewCard = null;
     partsBox.hidden = true;
   }
 }
@@ -771,6 +833,7 @@ function settingsKey() {
     zoom,
     focus,
     negative,
+    contrast,
     captionsOn(),
     lang,
     cards.title,
@@ -827,26 +890,15 @@ async function buildPack() {
           // greys. A commercial `.pk` keeps each picture's own sixteen colours.
           style: format === "lunii" ? "bw" : "colour",
           negative,
+          contrast,
           captions: captionsOn(),
           cardTitle: cards.title,
           t: (key) => t(key),
-          cardLabel: (number, total, worded) =>
-            cards.number
-              ? text(
-                  cardLanguage(),
-                  cards.total
-                    ? worded && cards.chapter
-                      ? "card_label"
-                      : "card_number"
-                    : worded && cards.chapter
-                      ? "card_label_one"
-                      : "card_number_one",
-                  { n: number, total },
-                )
-              : "",
+          cardLabel,
           cardAudio: spoken,
           cardAudioSource: cards.audio,
           cardSeconds: cards.seconds,
+          chapterWords: chapterWords(cardLanguage()),
         });
 
   // One archive, for the player chosen: a Lunii takes the STUdio form of the same
@@ -863,7 +915,7 @@ async function buildPack() {
     bytes = await buildPlainPk(story, { picture: rle4Bitmap });
   } else if (format === "merlin") {
     name = `${story.dirName}_merlin.zip`;
-    bytes = await writeZip(await buildMerlinFiles(story, { picture: squareJpeg }));
+    bytes = await writeZip(await buildMerlinFiles(story, { picture: squareJpeg, titles: story.titles }));
     log(t("log_merlin_beta"));
   }
 
@@ -1074,6 +1126,7 @@ function setSource(name, loader) {
   // live again before the new pack's list has been read: clear them here, not in
   // the redraw that follows.
   dropped.clear();
+  previewCard = null;
   partsBox.hidden = true;
   logView.textContent = "";
   packLabel.textContent = t("pack_loaded", { name });

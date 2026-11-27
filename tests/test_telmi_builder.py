@@ -20,6 +20,7 @@ from daisy2telmi.telmi_builder import (
     build_notes,
     build_story,
     narrate,
+    part_title,
     story_dir_name,
     story_uuid,
 )
@@ -324,11 +325,29 @@ def test_a_card_can_read_the_part_it_introduces() -> None:
     assert Announce(mode="number_of", language="fr").phrase(2, 7) == "2 sur 7"
 
 
-def test_a_pack_whose_parts_have_no_names_falls_back_to_the_number() -> None:
+def test_a_pack_whose_parts_have_no_names_falls_back_to_the_number_and_the_total() -> None:
     """Sentence-level cuts and packs without synced text have nothing to read out."""
-    assert Announce(mode="title").phrase(4, 9, "") == "Chapter 4"
-    assert Announce(mode="number_title").phrase(4, 9, "") == "Chapter 4"
+    assert Announce(mode="title").phrase(4, 9, "") == "Chapter 4 of 9"
+    assert Announce(mode="number_title", language="fr").phrase(4, 9, "") == "Chapitre 4 sur 9"
+    assert Announce(mode="chapter").phrase(4, 9, "La fee") == "Chapter 4"
     assert Announce(mode="number_of").phrase(4) == "Chapter 4"
+
+
+def test_a_label_that_only_repeats_the_chapter_word_is_not_a_title() -> None:
+    """An outline that names its parts "Chapter 1" gives the card nothing to add."""
+    assert part_title("Chapitre 1", "fr") == ""
+    assert part_title("CHAPITRE IV", "fr") == ""
+    assert part_title("Chapitre 1er", "fr") == ""
+    assert part_title("Part 2", "en") == ""
+    assert part_title("第 1 章", "zh") == ""
+    assert part_title("الفصل 2", "ar") == ""
+    assert part_title("Kapitel 3", "de") == ""
+
+
+def test_a_label_with_a_word_beside_the_number_is_the_part_s_name() -> None:
+    assert part_title("Chapitre 1 : Le lapin", "fr") == "Chapitre 1 : Le lapin"
+    assert part_title("La fee des bois", "fr") == "La fee des bois"
+    assert part_title("Kapitel 3 - Der Wald", "de") == "Kapitel 3 - Der Wald"
 
 
 def test_the_titles_reach_the_speech_engine(tmp_path, monkeypatch) -> None:

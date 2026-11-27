@@ -17,6 +17,37 @@ export const CARD_SNIPPET_SECONDS = 3;
 // and a Merlin card has no screen at all.
 export const CAPTION_FORMATS = ["telmi", "flam"];
 
+/**
+ * The part's own name, or nothing when its label only numbers it.
+ *
+ * A DAISY outline labels its parts "Chapter 1", "Chapitre II", "第 1 章": the chapter
+ * word and a number, which is what a card says by itself. A label with a word beside
+ * them - "Chapitre 1 : Le lapin" - names the part, and is worth reading out.
+ */
+export function partTitle(title, words) {
+  const known = new Set(words);
+  let tokens = fold(title)
+    .split(/[^\p{L}\p{N}_]+/u)
+    .filter(Boolean);
+  const numbered = tokens.some((token) => known.has(token));
+  tokens = tokens.filter((token) => !known.has(token));
+  if (!tokens.length) return "";
+  const numbering = numbered ? /^\d\w*$|^[ivxlcdm]{1,7}$/iu : /^\d+$/u;
+  return tokens.some((token) => !numbering.test(token)) ? title : "";
+}
+
+/** Lowercase and without accents: a label's spelling is not what matters here. */
+function fold(text) {
+  return text
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .split(/\s+/u)
+    .filter(Boolean)
+    .join(" ")
+    .replace(/(?<=\w)(?=\d)/gu, " ");
+}
+
 /** The first seconds of a part, cut at MP3 frame boundaries. */
 function firstSeconds(segments, bytesOf, seconds) {
   let budget = seconds;
@@ -42,6 +73,7 @@ function firstSeconds(segments, bytesOf, seconds) {
  *   the band once the user has moved it. options.zoom: 1..MAX_ZOOM.
  * options.style: "colour", or "bw" for a plain Lunii's sixteen greys.
  * options.negative: with "bw", swap light and dark, as an old film's negative reads.
+ * options.contrast: how far the cover's lights and shadows are pulled apart.
  * options.player: "telmi", "lunii", "lunii-pk", "merlin" or "flam" — whose screen
  *   sizes every picture is drawn at.
  * options.cardLabel(number, total, worded): the words drawn on a card.
@@ -84,6 +116,7 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
   // The negative belongs to the greys of a Lunii behind its plastic window; a
   // colour card has nothing to invert.
   const negative = Boolean(options.negative) && style === "bw";
+  const contrast = options.contrast ?? 1;
   const [scene, coverSize] = screen(options.player ?? "telmi");
   const cardLabel = options.cardLabel ?? ((number, count) => `Chapter ${number}/${count}`);
   const say = options.t ?? ((key) => key);
@@ -96,6 +129,8 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
   // A part cut below chapter level has no name of its own: the outline names the
   // chapter, and the part is a piece of it.
   const titled = Boolean(options.cardTitle) && cut === "chapter";
+  const words = options.chapterWords ?? [];
+  const titles = book.chapters.map((chapter) => partTitle(chapter.title, words));
   const cards = [];
   const scenes = [];
   let done = 0;
@@ -119,14 +154,15 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
         ...scene,
         style,
         negative,
-        titled ? chapter.title : "",
+        titled ? titles[k] : "",
+        contrast,
       ),
     });
 
     // A part whose words cannot be drawn at all keeps the card it was read from.
-    const words = captioned ? await captionPng(chapter.text, ...scene, style, negative) : null;
-    if (words) {
-      files.push({ name: `${dirName}/images/s${k}.png`, data: words });
+    const caption = captioned ? await captionPng(chapter.text, ...scene, style, negative) : null;
+    if (caption) {
+      files.push({ name: `${dirName}/images/s${k}.png`, data: caption });
       scenes[k] = `s${k}.png`;
     }
 
@@ -160,13 +196,13 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
   files.push({
     name: `${dirName}/title.png`,
     data: cover
-      ? await coverPng(cover, ...scene, view, style, negative)
+      ? await coverPng(cover, ...scene, view, style, negative, contrast)
       : await placeholderPng(...scene, style, negative),
   });
   files.push({
     name: `${dirName}/cover.png`,
     data: cover
-      ? await coverPng(cover, ...coverSize, view, style, negative)
+      ? await coverPng(cover, ...coverSize, view, style, negative, contrast)
       : await placeholderPng(...coverSize, style, negative),
   });
   step(say("prog_title_images"));
@@ -178,7 +214,7 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
   files.push({ name: `${dirName}/notes.json`, data: json(buildNotes(book)) });
   step(say("prog_metadata"));
 
-  return { dirName, uuid, book, files, metadata, nodes };
+  return { dirName, uuid, book, files, metadata, nodes, titles };
 }
 
 export async function buildStoryZip(entries, silentMp3, onProgress, options) {

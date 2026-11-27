@@ -14,7 +14,7 @@ from typing import Sequence
 
 from . import audio, images, tts
 from .extractor import AudioSegment, Book, Chapter, language_sample
-from .i18n import language, story_language
+from .i18n import Language, language, story_language
 
 log = logging.getLogger(__name__)
 
@@ -92,6 +92,9 @@ class Announce:
     show_total: bool = True
     # Whether the drawn card letters the part's own name beside its number.
     show_title: bool = False
+    # How far apart the cover's lights and shadows are drawn: a teller's screen shows
+    # far fewer greys than the one a cover was picked out on.
+    contrast: float = 1.0
     engine: str = tts.AUTO
     voice: str | None = None
     command: str | None = None
@@ -116,20 +119,23 @@ class Announce:
 
         The DAISY outline names its parts, so a card can read that name instead of
         a bare number. A pack whose parts carry no text has nothing to read, so
-        every title pattern falls back to the numbered one.
+        every title pattern falls back to the chapter and its number out of the total.
         """
         if self.mode == "off":
             return None
         lang = language(self.language)
         chapter = lang.chapter.format(n=number)
+        title = part_title(title, self.language)
         if self.mode == "prompt":
             return f"{chapter} {lang.next_prompt}"
         if self.mode == "number":
             return str(number)
         if self.mode == "number_of":
             return lang.number_of.format(n=number, total=total) if total else chapter
-        if not title:
+        if self.mode == "chapter":
             return chapter
+        if not title:
+            return lang.chapter_of.format(n=number, total=total) if total else chapter
         if self.mode == "title":
             return title
         if self.mode == "number_title":
@@ -137,6 +143,39 @@ class Announce:
         if self.mode == "title_number":
             return lang.title_number.format(n=number, title=title)
         return chapter
+
+
+def part_title(title: str, code: str) -> str:
+    """The part's own name, or nothing when its label only numbers it.
+
+    A DAISY outline labels its parts "Chapter 1", "Chapitre II", "第 1 章": the chapter
+    word and a number, which is what a card says by itself. A label with a word beside
+    them - "Chapitre 1 : Le lapin" - names the part, and is worth reading out.
+    """
+    folded = _folded(title)
+    numbered = False
+    for word in _chapter_words(language(code)):
+        if re.search(rf"\b{re.escape(word)}\b", folded):
+            numbered = True
+            folded = folded.replace(word, " ")
+    tokens = [token for token in re.split(r"[^\w]+", folded) if token]
+    if not tokens:
+        return ""
+    numbering = r"\d\w*|[ivxlcdm]{1,7}" if numbered else r"\d+"
+    return title if any(not re.fullmatch(numbering, token) for token in tokens) else ""
+
+
+def _chapter_words(lang: Language) -> tuple[str, ...]:
+    """What this language calls a chapter, as the outline writes it."""
+    words = set(_folded(lang.card).split()) | set(_folded(lang.chapter.replace("{n}", "")).split())
+    return tuple(sorted(words | {"part"} - {""}, key=len, reverse=True))
+
+
+def _folded(text: str) -> str:
+    """Lowercase and without accents: a label's spelling is not what matters here."""
+    flat = unicodedata.normalize("NFKD", text.casefold())
+    words = ["".join(c for c in word if not unicodedata.combining(c)) for word in flat.split()]
+    return re.sub(r"(?<=\w)(?=\d)", " ", " ".join(words))
 
 
 def card_language(announce: Announce | None, book: Book) -> tuple[str, str]:
@@ -480,7 +519,7 @@ def build_story(
     show_total = announce.show_total if announce is not None else True
     # A part cut below chapter level has no name of its own: the outline names the
     # chapter, and the part is a piece of it.
-    titles = [c.title for c in book.chapters] if cut == "chapter" else [""] * count
+    titles = [part_title(c.title, code) for c in book.chapters] if cut == "chapter" else [""] * count
     show_title = bool(announce.show_title) if announce is not None else False
     scene_size = images.screen(player)[0]
     labels = [
@@ -506,7 +545,19 @@ def build_story(
         grey = negative and style == "bw"
         if cover is not None:
             try:
-                images.write_cover(cover, target, cards, texts, crop, style, scene, cover_size, view, grey)
+                images.write_cover(
+                    cover,
+                    target,
+                    cards,
+                    texts,
+                    crop,
+                    style,
+                    scene,
+                    cover_size,
+                    view,
+                    grey,
+                    announce.contrast if announce is not None else 1.0,
+                )
                 return
             except images.ImageError as exc:
                 # The audio is already rendered by now, and a picture the machine

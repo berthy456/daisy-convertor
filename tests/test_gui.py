@@ -275,27 +275,18 @@ def test_a_frameless_window_draws_the_controls_it_replaced(app: gui.App, monkeyp
         app.set_frameless(False)
 
 
-def test_the_bar_choice_is_only_offered_where_it_can_be_honoured(app: gui.App, monkeypatch) -> None:
-    page = gui.Options(app)
-    try:
-        boxes = {item.cget("text") for item in page.grid.grid_slaves() if isinstance(item, ttk.Checkbutton)}
-        assert app.t("opt_frameless") not in boxes, "nothing to ask where there is no choice"
-    finally:
-        page.top.destroy()
-
-    _frameless(app, monkeypatch)
-    page = gui.Options(app)
-    try:
-        boxes = {item.cget("text") for item in page.grid.grid_slaves() if isinstance(item, ttk.Checkbutton)}
-        assert app.t("opt_frameless") in boxes
-        page.frameless_var.set(True)
-        page._close()
-    finally:
-        with contextlib.suppress(tk.TclError):
+def test_the_options_page_never_asks_about_the_system_bar(app: gui.App, monkeypatch) -> None:
+    """The bar is what the system allows rather than a preference: Tk loses it only by
+    handing the window back to the app, so there is nothing to ask either way."""
+    for kept in (True, False):
+        monkeypatch.setattr(gui, "system_bar_kept", lambda value=kept: value)
+        page = gui.Options(app)
+        try:
+            boxes = {item.cget("text") for item in page.grid.grid_slaves() if isinstance(item, ttk.Checkbutton)}
+            assert app.t("opt_autoplay") in boxes
+            assert "frameless" not in " ".join(boxes).lower(), "the page does not ask about the bar"
+        finally:
             page.top.destroy()
-    assert app.options["frameless"] is True
-    assert app.frameless is True
-    app.set_frameless(False)
 
 
 def test_the_window_opens_at_a_size_of_its_own(app: gui.App) -> None:
@@ -336,9 +327,9 @@ def test_a_pack_does_not_choose_where_its_story_goes(app: gui.App, monkeypatch) 
     assert len(line) <= gui.PATH_READ + 1 + 3 + len("/stories"), "and the line does not widen the window"
 
 
-def test_the_book_and_the_output_are_picked_with_buttons(app: gui.App) -> None:
-    """Four buttons, no boxes: a pack is dropped on the window or picked from a list."""
-    picked = [app._labels[key] for key in ("browse_zip", "browse_folder", "output_label", "browse_stories")]
+def test_the_book_is_picked_with_buttons(app: gui.App) -> None:
+    """Two buttons, no boxes: a pack is dropped on the window or picked from a list."""
+    picked = [app._labels[key] for key in ("browse_zip", "browse_folder")]
     assert all(isinstance(button, ttk.Button) for button in picked)
     row = picked[0].master
     assert all(button.master is row for button in picked)
@@ -350,22 +341,24 @@ def test_the_book_and_the_output_are_picked_with_buttons(app: gui.App) -> None:
 
 
 def test_each_pick_button_carries_the_mark_of_what_it_picks(app: gui.App) -> None:
-    """The book, a folder of them, the folder a story is written into, the machine that
-    plays it: four marks, so the four buttons are read without their words."""
-    asked = zip(("browse_zip", "browse_folder", "output_label", "browse_stories"), gui.PICK_MARKS)
+    """The book and a folder of them: two marks, so the two buttons are read without their words."""
+    asked = zip(("browse_zip", "browse_folder"), gui.PICK_MARKS)
     for key, glyph in asked:
         mark = app._pick_marks[glyph]
         assert (mark.width(), mark.height()) == (gui.PICK_MARK, gui.PICK_MARK)
         assert app._labels[key].cget("image") == (str(mark),), f"{key} carries the {glyph} mark"
 
 
-def test_the_output_folder_picked_is_the_default_afterwards(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+def test_the_output_folder_is_set_with_the_other_options(app: gui.App, tmp_path: Path, monkeypatch) -> None:
     stories = tmp_path / "stories"
     stories.mkdir()
     monkeypatch.setattr(app, "_browse", lambda *_: str(stories))
-    app._pick_out_dir()
-    assert app.options["output_dir"] == str(stories)
+    page = gui.Options(app)
+    _probed(page)
+    page._pick_folder(page.output_box)
+    page._close()
 
+    assert app.out_var.get() == str(stories)
     reopened = gui.App(gui.make_root(), options=settings.load())
     try:
         assert reopened.out_var.get() == str(stories)
@@ -379,7 +372,7 @@ def test_an_output_folder_that_was_never_picked_is_home(app: gui.App, tmp_path, 
     assert app._out_dir() == tmp_path
 
 
-def test_the_telmi_button_points_at_the_folder_telmi_sync_lists(app: gui.App, tmp_path, monkeypatch) -> None:
+def test_the_options_page_can_point_the_output_at_telmi_sync(app: gui.App, tmp_path, monkeypatch) -> None:
     """Telmi-Sync reads ~/.telmi/stories each time it starts, so a story written there
     is on its shelf without an import."""
     stories = tmp_path / ".telmi" / "stories"
@@ -387,20 +380,27 @@ def test_the_telmi_button_points_at_the_folder_telmi_sync_lists(app: gui.App, tm
     monkeypatch.setattr(gui.Path, "home", lambda: tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
 
-    app._pick_telmi_stories()
+    page = gui.Options(app)
+    _probed(page)
+    page._telmi_stories()
+    page._close()
 
     assert app.out_var.get() == str(stories)
     assert app.options["output_dir"] == str(stories)
-    assert json.loads((tmp_path / "config" / "daisy2telmi" / "config.json").read_text(encoding="utf-8"))["output_dir"] == str(stories)
+    written = json.loads((tmp_path / "config" / "daisy2telmi" / "config.json").read_text(encoding="utf-8"))
+    assert written["output_dir"] == str(stories)
 
 
-def test_the_telmi_button_says_when_telmi_sync_never_ran_here(app: gui.App, tmp_path, monkeypatch) -> None:
+def test_the_options_page_says_when_telmi_sync_never_ran_here(app: gui.App, tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(gui.Path, "home", lambda: tmp_path)
-    app._pick_telmi_stories()
+    page = gui.Options(app)
+    _probed(page)
+    page._telmi_stories()
 
     assert "no Telmi-Sync stories folder" in app.log_view.get("1.0", "end")
-    assert app.out_var.get() == ""
+    assert page.output_box.get() == ""
     assert not (tmp_path / ".telmi").exists(), "the folder is Telmi-Sync's to make"
+    page.top.destroy()
 
 
 def test_a_second_pack_loses_the_cover_the_app_found(app: gui.App, tmp_path: Path, monkeypatch) -> None:
@@ -783,11 +783,11 @@ def test_the_folder_button_hands_back_the_folder_being_shown(app: gui.App, tmp_p
 
 
 def test_the_player_is_chosen_before_the_cover(app: gui.App) -> None:
-    """The player decides the size of every picture, so it is asked before the cover."""
-    player = app.format_box.grid_info()
-    cover = app._labels["cover_label"].grid_info()
-    assert player["in"] is cover["in"], "the two stand in the same column of fields"
-    assert int(player["row"]) < int(cover["row"])
+    """The player decides the size of every picture, so it is asked on the line above
+    the button that writes the story, beside the chapters it is chosen for."""
+    chosen = app.chapters_button.master
+    assert app.format_box.master is chosen, "the format sits beside the chapter choice"
+    assert chosen.grid_info()["row"] < app.save_button.master.grid_info()["row"]
 
 
 def test_conversion_log_lines_reach_the_window(app: gui.App) -> None:
@@ -957,12 +957,12 @@ def test_the_options_page_saves_what_it_shows(app: gui.App, tmp_path, monkeypatc
 
 def test_every_option_sits_inside_the_page_frame(app: gui.App) -> None:
     """A box parented to the window instead of its frame is drawn outside the window."""
-    pages = [(gui.Options(app), "language_box input_box python_box".split())]
+    pages = [(gui.Options(app), "language_box input_box output_box python_box".split())]
     pages.append(
         (
             gui.Speech(app),
-            "engine_box announce_box seconds_box language_box voice_box speed_box expression_box "
-            "device_box clip_box read_voice_box read_speed_box read_clip_box".split(),
+            "engine_box language_box voice_box speed_box expression_box "
+            "device_box clip_box read_speed_box".split(),
         )
     )
     for page, names in pages:
@@ -1079,6 +1079,24 @@ def test_the_window_names_the_folder_it_would_write_into(app: gui.App, tmp_path)
         reopened.root.destroy()
 
 
+def test_a_story_folder_that_will_not_be_given_up_says_so(app: gui.App, tmp_path, monkeypatch) -> None:
+    """The reuse path copies the tested story straight into the output folder: a folder
+    the machine holds is an overwrite that failed, and the window has to say it."""
+    story = tmp_path / "story"
+    story.mkdir()
+    (story / "title.mp3").write_bytes(b"\xff\xfb")
+    app._test_folder = story
+
+    def refuse(*args, **kwargs):
+        raise PermissionError(13, "Permission denied", str(tmp_path / "story" / "title.mp3"))
+
+    monkeypatch.setattr(gui.shutil, "copy2", refuse)
+    assert app._copy_tested(tmp_path / "out") is False
+    line = app.log_view.get("1.0", "end")
+    assert "Permission denied" in line
+    assert "could not be overwritten" in line, "the failure is named as an overwrite"
+
+
 def _settled(app: gui.App, button: ttk.Button) -> None:
     """A background job hands its button back through the page's queue."""
     for _ in range(300):
@@ -1128,50 +1146,36 @@ def test_the_speech_page_asks_its_engine_off_the_window_thread(app: gui.App, mon
     page.top.destroy()
 
 
-def test_the_options_page_installs_the_engine_the_app_uses(app: gui.App, monkeypatch) -> None:
-    installed: list[tuple[str, str | None, str]] = []
+def _settled_window(app: gui.App, wanted, what: str) -> None:
+    """The window drains its queue on its own timer: wait for the answer it is for."""
+    for _ in range(300):
+        app.root.update()
+        if wanted():
+            return
+        time.sleep(0.01)
+    pytest.fail(what)
+
+
+def test_the_options_page_says_what_the_python_field_is_for(app: gui.App, monkeypatch) -> None:
+    """The box is not a bare "Python": it is the one the speech engines are built in,
+    and leaving it alone is the normal way."""
+    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: True)
+    page = gui.Options(app)
+    _probed(page)
+    words = [w.cget("text") for w in _walk(page.top) if isinstance(w, ttk.Label)]
+    assert app.t("opt_python") in words, "the field says what it holds"
+    assert app.t("speech_hint") in words, "and the page says what leaving it empty does"
+    page.top.destroy()
+
+
+def test_the_options_page_has_no_install_button(app: gui.App, monkeypatch) -> None:
+    """An engine is installed where it is chosen, not from a settings page."""
     monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
-    monkeypatch.setattr(
-        gui.tts,
-        "install_engine",
-        lambda engine, python=None, lang=None: installed.append((engine, python, lang)) or "/opt/venv/bin/python",
-    )
     app.options["tts"] = "piper"
     page = gui.Options(app)
     _probed(page)
-    page.python_box.insert(0, "/opt/python")
     assert page.engine_state.cget("text") == app.t("speech_missing").format(engine="Piper")
-
-    page._install_engine()
-    assert page.install_button.instate(["disabled"])
-    _settled(app, page.install_button)
-    assert installed[0][:2] == ("piper", "/opt/python")
-    assert installed[0][2], "the language in use is named, so its voice downloads first"
-    page.top.destroy()
-
-
-def test_an_install_with_no_python_named_shows_the_one_the_app_built(app: gui.App, monkeypatch) -> None:
-    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
-    monkeypatch.setattr(gui.tts, "install_engine", lambda engine, python=None, lang=None: "/opt/venv/bin/python")
-    app.options["tts"] = "piper"
-    page = gui.Options(app)
-    page._install_engine()
-    _settled(app, page.install_button)
-    assert page.python_box.get() == "/opt/venv/bin/python"
-    page.top.destroy()
-
-
-def test_a_failing_install_is_reported_and_the_button_comes_back(app: gui.App, monkeypatch, caplog) -> None:
-    def refuse(engine, python=None, lang=None):
-        raise gui.tts.TtsError("no network")
-
-    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
-    monkeypatch.setattr(gui.tts, "install_engine", refuse)
-    app.options["tts"] = "coqui"
-    page = gui.Options(app)
-    page._install_engine()
-    _settled(app, page.install_button)
-    assert "no network" in caplog.text
+    assert not any(w.cget("text") == app.t("speech_install") for w in _walk(page.top) if isinstance(w, ttk.Button))
     page.top.destroy()
 
 
@@ -1181,7 +1185,6 @@ def test_the_options_page_has_nothing_to_install_for_a_system_engine(app: gui.Ap
     page = gui.Options(app)
     _probed(page)
     assert page.engine_state.cget("text") == app.t("speech_builtin")
-    assert page.install_button.instate(["disabled"])
     page.top.destroy()
 
 
@@ -1196,7 +1199,7 @@ def test_an_engine_with_no_python_on_the_machine_says_where_to_get_one(app: gui.
     page.top.destroy()
 
 
-def test_a_machine_with_a_python_keeps_the_install_button_alone(app: gui.App, monkeypatch) -> None:
+def test_a_machine_with_a_python_keeps_the_get_python_button_out(app: gui.App, monkeypatch) -> None:
     monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
     monkeypatch.setattr(gui.tts, "has_python", lambda python=None: True)
     app.options["tts"] = "piper"
@@ -1204,6 +1207,112 @@ def test_a_machine_with_a_python_keeps_the_install_button_alone(app: gui.App, mo
     _probed(page)
     assert page.engine_state.cget("text") == app.t("speech_missing").format(engine="Piper")
     assert not page.python_button.winfo_viewable()
+    page.top.destroy()
+
+
+def test_picking_an_engine_the_machine_lacks_asks_to_install_it(app: gui.App, monkeypatch) -> None:
+    installed: list[tuple[str, str | None, str]] = []
+    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
+    monkeypatch.setattr(
+        gui.tts,
+        "install_engine",
+        lambda engine, python=None, lang=None: installed.append((engine, python, lang)) or "/opt/venv/bin/python",
+    )
+    asked: list[str] = []
+    monkeypatch.setattr(gui.messagebox, "askokcancel", lambda title, text: asked.append(text) or True)
+    app.options["tts"] = "auto"
+    app.options["python"] = "/opt/python"
+    app._show_engines()
+    app.speech_box.set(app.engine_name(gui.tts.PIPER))
+    app._choose_engine()
+
+    _settled_window(app, lambda: asked, "the window never asked about the engine")
+    assert gui.tts.LABELS[gui.tts.PIPER] in asked[0]
+    _settled_window(app, lambda: installed, "the install never ran")
+    assert installed[0][:2] == ("piper", "/opt/python")
+    assert installed[0][2], "the language in use is named, so its voice downloads first"
+
+
+def test_an_install_with_no_python_named_records_the_one_the_app_built(app: gui.App, monkeypatch) -> None:
+    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
+    monkeypatch.setattr(gui.tts, "install_engine", lambda engine, python=None, lang=None: "/opt/venv/bin/python")
+    monkeypatch.setattr(gui.messagebox, "askokcancel", lambda title, text: True)
+    app.options["tts"] = "auto"
+    app.options["python"] = None
+    app._show_engines()
+    app.speech_box.set(app.engine_name(gui.tts.PIPER))
+    app._choose_engine()
+
+    _settled_window(app, lambda: app.options.get("python"), "the install never reported its Python")
+    assert app.options["python"] == "/opt/venv/bin/python"
+
+
+def test_declining_the_install_leaves_the_engine_chosen(app: gui.App, monkeypatch) -> None:
+    installed: list = []
+    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
+    monkeypatch.setattr(gui.tts, "install_engine", lambda *args, **kwargs: installed.append(args))
+    monkeypatch.setattr(gui.messagebox, "askokcancel", lambda title, text: False)
+    app.options["tts"] = "auto"
+    app._show_engines()
+    app.speech_box.set(app.engine_name(gui.tts.CHATTERBOX))
+    app._choose_engine()
+
+    _settled_window(app, lambda: "not installed" in app.log_view.get("1.0", "end"), "the window said nothing")
+    assert app.options["tts"] == gui.tts.CHATTERBOX
+    assert installed == []
+
+
+def test_a_failing_install_is_reported(app: gui.App, monkeypatch, caplog) -> None:
+    def refuse(engine, python=None, lang=None):
+        raise gui.tts.TtsError("no network")
+
+    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
+    monkeypatch.setattr(gui.tts, "install_engine", refuse)
+    monkeypatch.setattr(gui.messagebox, "askokcancel", lambda title, text: True)
+    app.options["tts"] = "auto"
+    app._show_engines()
+    app.speech_box.set(app.engine_name(gui.tts.COQUI))
+    app._choose_engine()
+
+    for _ in range(300):
+        app.root.update()
+        if "no network" in caplog.text:
+            return
+        time.sleep(0.01)
+    pytest.fail("the failed install was never reported")
+
+
+def test_the_speech_page_offers_the_install_for_an_engine_just_chosen(app: gui.App, monkeypatch) -> None:
+    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
+    monkeypatch.setattr(gui.tts, "install_engine", lambda engine, python=None, lang=None: None)
+    asked: list[str] = []
+    monkeypatch.setattr(gui.messagebox, "askokcancel", lambda title, text: asked.append(text) or True)
+    app.options["tts"] = "auto"
+    page = gui.Speech(app)
+    _probed(page)
+    page.engine_box.set(page._label_text(gui.tts.CHATTERBOX))
+    page._show_engine()
+
+    for _ in range(300):
+        page.top.update()
+        if asked:
+            break
+        time.sleep(0.01)
+    assert asked, "the page asked about the engine it was just given"
+    assert gui.tts.LABELS[gui.tts.CHATTERBOX] in asked[0]
+    page.top.destroy()
+
+
+def test_the_speech_page_does_not_ask_about_the_engine_it_opened_with(app: gui.App, monkeypatch) -> None:
+    """The engine was chosen earlier; only a new choice gets an offer."""
+    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
+    asked: list[str] = []
+    monkeypatch.setattr(gui.messagebox, "askokcancel", lambda title, text: asked.append(text) or True)
+    app.options["tts"] = gui.tts.CHATTERBOX
+    page = gui.Speech(app)
+    _probed(page)
+    page.top.update()
+    assert asked == []
     page.top.destroy()
 
 
@@ -1266,37 +1375,30 @@ def test_the_speech_page_has_one_page_for_the_cards_and_one_for_the_book(app: gu
     page.top.destroy()
 
 
-def test_the_reading_page_starts_by_taking_the_card_settings(app: gui.App) -> None:
+def test_the_book_is_read_with_the_cards_voice(app: gui.App) -> None:
+    """One voice reads the cards and the book: the reading page asks for a pace, nothing else."""
     app.options["tts"] = "piper"
     page = gui.Speech(app)
-    assert page.read_voice_box.get() == app.t("speech_same_as_cards")
+    assert not hasattr(page, "read_voice_box"), "the book has no voice of its own"
+    assert not hasattr(page, "read_clip_box"), "the book has no recording of its own"
     assert page.read_speed_box.get() == app.t("speech_same_as_cards")
 
     page._close()
-    assert app.options["read_voice"] is None
     assert app.options["read_speed"] is None
 
 
-def test_the_reading_page_saves_its_own_voice_and_speed(app: gui.App, tmp_path, monkeypatch) -> None:
+def test_the_reading_page_saves_its_own_speed(app: gui.App, tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    voices = tmp_path / "voices"
-    voices.mkdir()
-    (voices / "fr_FR-siwis-medium.onnx").write_text("")
-    monkeypatch.setattr(gui.tts.settings, "speech_voices", lambda: voices)
-    app.options["language"] = "fr"
     app.options["tts"] = "piper"
 
     page = gui.Speech(app)
-    page.read_voice_box.set("fr_FR-siwis-medium")
     page.read_speed_box.set(app.t("speed_fast"))
     page._close()
 
-    assert app.options["read_voice"] == "fr_FR-siwis-medium"
     assert app.options["read_speed"] == "fast"
-    assert app.options["voice"] is None, "the cards keep their own voice"
     saved = (tmp_path / "daisy2telmi" / "config.json").read_text(encoding="utf-8")
-    assert '"read_voice": "fr_FR-siwis-medium"' in saved
     assert '"read_speed": "fast"' in saved
+    assert "read_voice" not in saved and "read_clip" not in saved
 
 
 def test_the_voice_lists_hold_the_voices_installed_for_another_language(app: gui.App, tmp_path, monkeypatch) -> None:
@@ -1309,21 +1411,16 @@ def test_the_voice_lists_hold_the_voices_installed_for_another_language(app: gui
 
     page = gui.Speech(app)
     assert "en_US-lessac-medium" in page.voice_keys
-    assert "en_US-lessac-medium" in page.read_voice_keys
 
 
-def test_the_reading_rows_follow_the_engine_too(app: gui.App) -> None:
+def test_the_reading_speed_row_follows_the_engine(app: gui.App) -> None:
     app.options["tts"] = "piper"
     page = gui.Speech(app)
     assert str(page.read_speed_box.cget("state")) == "readonly"
-    assert str(page.read_clip_box.cget("state")) == "disabled"
 
-    page.engine_box.set(app.engine_name("chatterbox"))
+    page.engine_box.set(app.engine_name("command"))
     page._show_engine()
-    assert str(page.read_clip_box.cget("state")) == "normal"
-    page.read_clip_box.insert(0, "/tmp/reader.wav")
-    page._close()
-    assert app.options["read_clip"] == "/tmp/reader.wav"
+    assert str(page.read_speed_box.cget("state")) == "disabled"
 
 
 def test_the_expressiveness_row_follows_the_engine(app: gui.App) -> None:
@@ -1374,7 +1471,7 @@ def test_the_voice_box_lists_the_voices_the_language_still_lacks(app: gui.App, t
 def test_installing_a_voice_adds_it_to_the_voice_list(app: gui.App, tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(gui.tts.settings, "speech_voices", lambda: tmp_path)
 
-    def fake(voice: str, python: str | None = None) -> Path:
+    def fake(voice: str, python: str | None = None, engine: str = gui.tts.PIPER) -> Path:
         path = tmp_path / f"{voice}.onnx"
         path.write_bytes(b"")
         return path
@@ -1386,6 +1483,31 @@ def test_installing_a_voice_adds_it_to_the_voice_list(app: gui.App, tmp_path, mo
     page._download_voice()
     _settled(app, page.download_button)
     assert "en_US-amy-medium" in [page._label_text(k) for k in page.voice_keys]
+
+
+def test_the_neural_engines_have_a_model_to_install(app: gui.App) -> None:
+    """Coqui and Chatterbox carry their weights outside the app: the page has to name
+    the one to fetch, or the download only happens in the middle of a conversion."""
+    for engine in (gui.tts.COQUI, gui.tts.CHATTERBOX):
+        app.options["tts"] = engine
+        page = gui.Speech(app)
+        assert str(page.download_box.cget("state")) == "readonly", engine
+        assert list(page.download_box.cget("values")), f"{engine} offers nothing to install"
+        page.top.destroy()
+
+
+def test_installing_a_model_names_the_engine_it_is_for(app: gui.App, monkeypatch) -> None:
+    asked: list[tuple[str, str]] = []
+
+    def fake(voice: str, python: str | None = None, engine: str = gui.tts.PIPER) -> None:
+        asked.append((voice, engine))
+
+    monkeypatch.setattr(gui.tts, "download_voice", fake)
+    app.options["tts"] = gui.tts.CHATTERBOX
+    page = gui.Speech(app)
+    page._download_voice()
+    _settled(app, page.download_button)
+    assert asked == [(gui.tts.CHATTERBOX_MODEL, gui.tts.CHATTERBOX)]
 
 
 def test_the_try_box_speaks_its_text_and_plays_it_back(app: gui.App, monkeypatch) -> None:
@@ -1418,22 +1540,36 @@ def test_every_card_pattern_is_offered_in_the_language_of_the_window(
     app: gui.App, tmp_path, monkeypatch
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    page = gui.Speech(app)
-    shown = list(page.announce_box.cget("values"))
+    shown = list(app.announce_box.cget("values"))
     assert shown == [app.t(gui.ANNOUNCE_KEYS[mode]) for mode in gui.ANNOUNCE_MODES]
 
-    page.announce_box.set(shown[gui.ANNOUNCE_MODES.index("number_title")])
-    page._close()
+    app.announce_box.set(shown[gui.ANNOUNCE_MODES.index("number_title")])
+    app._choose_announce()
     assert app.options["announce"] == "number_title"
     assert app.announce().phrase(1, 3, "Le lapin") == "1. Le lapin"
 
 
+def test_the_extract_length_is_greyed_when_no_card_plays_an_extract(app: gui.App, tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    assert str(app.seconds_box.cget("state")) == "disabled"
+    assert str(app._labels["opt_card_seconds"].cget("foreground")) == gui.MUTED
+
+    shown = list(app.announce_box.cget("values"))
+    app.announce_box.set(shown[gui.ANNOUNCE_MODES.index("snippet")])
+    app._choose_announce()
+    assert str(app.seconds_box.cget("state")) == "normal"
+    assert str(app._labels["opt_card_seconds"].cget("foreground")) == gui.INK
+    assert app.options["announce"] == "snippet"
+
+
 def test_the_card_audio_length_is_typed_in_seconds(app: gui.App, tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    page = gui.Speech(app)
-    page.seconds_box.delete(0, "end")
-    page.seconds_box.insert(0, "2,5")
-    page._close()
+    shown = list(app.announce_box.cget("values"))
+    app.announce_box.set(shown[gui.ANNOUNCE_MODES.index("snippet")])
+    app._choose_announce()
+    app.seconds_box.delete(0, "end")
+    app.seconds_box.insert(0, "2,5")
+    app._type_seconds()
     assert app.options["card_seconds"] == 2.5
     assert app.announce().seconds == 2.5
 
@@ -1442,16 +1578,17 @@ def test_a_card_audio_length_that_cannot_be_read_keeps_the_default(
     app: gui.App, tmp_path, monkeypatch
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    page = gui.Speech(app)
-    page.seconds_box.delete(0, "end")
-    page.seconds_box.insert(0, "as fast as you can")
-    page._close()
+    shown = list(app.announce_box.cget("values"))
+    app.announce_box.set(shown[gui.ANNOUNCE_MODES.index("snippet")])
+    app._choose_announce()
+    app.seconds_box.delete(0, "end")
+    app.seconds_box.insert(0, "as fast as you can")
+    app._type_seconds()
     assert app.options["card_seconds"] == gui.settings.DEFAULTS["card_seconds"]
 
-    page = gui.Speech(app)
-    page.seconds_box.delete(0, "end")
-    page.seconds_box.insert(0, "900")
-    page._close()
+    app.seconds_box.delete(0, "end")
+    app.seconds_box.insert(0, "900")
+    app._type_seconds()
     assert app.options["card_seconds"] == gui.CARD_SECONDS_LIMITS[1]
 
 
@@ -1878,14 +2015,57 @@ def test_the_negative_is_offered_for_the_grey_screen_only(app: gui.App) -> None:
 def test_the_crop_knobs_stand_beside_the_frame(app: gui.App) -> None:
     """The choice is made on the picture, so what changes it sits next to it."""
     app.root.update()
-    frame, side = app.crop_frame, app.negative_box.master
+    frame, side = app.crop_frame, app.crop_side
     gap = side.winfo_x() - (frame.winfo_x() + frame.winfo_width())
     assert 0 <= gap <= 24, "the knobs stand next to the frame, not in the next column over"
     assert side.winfo_y() == frame.winfo_y(), "the top of the frame is where they start"
     assert all(box.master is app.crop_pad for box in app.crop_arrows.values()), "the four arrows too"
     assert app.crop_zoom_in.master.master is app.crop_pad.master is side, "the pad and the zoom stand on it"
-    assert app.captions_box.master is side, "and the words on screen"
-    assert side is not app.format_box.master, "the negative belongs to the picture, not to the format"
+    assert app.contrast_box.master is side, "and the contrast too"
+    assert app.negative_box.master is not side, "the negative belongs to the cover, not to the knobs"
+
+
+def test_the_window_asks_about_the_audio_on_one_page_and_the_screen_on_the_other(app: gui.App) -> None:
+    """Two pages, because the two questions are different: what a card says, and what
+    the teller's screen shows."""
+    assert [app.pages.tab(index, "text") for index in (0, 1)] == [app.t("page_audio"), app.t("page_display")]
+    audio, display = (app.root.nametowidget(name) for name in app.pages.tabs())
+
+    def page_of(widget) -> str:
+        while widget is not app.root:
+            if widget is audio:
+                return "audio"
+            if widget is display:
+                return "display"
+            widget = widget.master
+        return "outside"
+
+    for name in ("speech_box", "announce_box", "seconds_box"):
+        assert page_of(getattr(app, name)) == "audio", f"{name} is an audio choice"
+    for name in ("crop_frame", "contrast_box", "card_text_box", "card_title_box", "negative_box", "captions_box"):
+        assert page_of(getattr(app, name)) == "display", f"{name} is a display choice"
+
+
+def test_the_card_is_lettered_on_two_lines(app: gui.App) -> None:
+    """The line the card shows first, then the line under it: the number out of the
+    total, and the part's own name when it has one."""
+    assert app.card_text_box.get() == app.card_text_names()[1], "the first line counts the parts"
+    assert app.card_title_box.get() == app.card_title_names()[1], "the second line is the title"
+
+    app.card_text_box.set(app.card_text_names()[0])
+    app._choose_card_text()
+    app.card_title_box.set(app.card_title_names()[0])
+    app._choose_card_title()
+    assert app.options["card_total"] is False
+    assert app.options["card_title"] is False
+
+
+def test_the_contrast_reaches_the_conversion(app: gui.App) -> None:
+    """A cover picked out on a monitor is not the same picture on a teller's screen."""
+    app.contrast_box.set(130)
+    app._pick_contrast()
+    assert app.options["card_contrast"] == 1.3
+    assert app.announce().contrast == 1.3
 
 
 def test_the_negative_reaches_the_conversion(app: gui.App, tmp_path, monkeypatch) -> None:
@@ -2091,6 +2271,69 @@ def test_the_negative_turns_the_preview_inside_out(app: gui.App) -> None:
     app.format_var.set("merlin")
     app._pick_format()
     assert app.crop_frame.cget("background") == images.band_colour("colour"), "a colour card has nothing to invert"
+
+
+def test_the_crop_advice_sits_under_the_preview(app: gui.App) -> None:
+    """The advice describes the frame it is read against, so it follows that frame's own
+    bottom rather than the tallest thing in the row beside it."""
+    frame, hint = app.crop_frame, app._labels["crop_hint"]
+    app.root.update_idletasks()
+    assert hint.master is frame.master, "the words are in the picture's own column"
+    assert hint.winfo_y() >= frame.winfo_y() + int(frame.cget("height"))
+
+    app.format_var.set("lunii")
+    app._pick_format()
+    app.root.update_idletasks()
+    assert hint.winfo_y() >= frame.winfo_y() + int(frame.cget("height"))
+
+
+def test_the_preview_carries_the_cards_own_words(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    """A card is seen on the picture it will be drawn on: the preview shows the very
+    lettering the exported cards will carry."""
+    monkeypatch.setattr(
+        app,
+        "_cover_lookup",
+        lambda *args: app.events.put(("pack", args[1], 23, "L'Aiguille creuse", "fr")),
+    )
+    (tmp_path / "aiguille.zip").write_bytes(b"PK")
+    app.pack_var.set(str(tmp_path / "aiguille.zip"))
+    app._find_cover()
+    app._drain()
+
+    size = (int(app.crop_frame.cget("width")), int(app.crop_frame.cget("height")))
+    assert app.crop_frame.itemcget(app._osd_item, "image"), "the preview carries the card's words"
+    assert app._crop_osd[0] == images.card_label(
+        "fr", 1, 23, True, True, "L'Aiguille creuse", size
+    ), "the default card: number of total, and the part's own name"
+
+    app.card_text_box.set(app.card_text_names()[0])
+    app._choose_card_text()
+    assert app._crop_osd[0] == images.card_label("fr", 1, 23, True, False, "L'Aiguille creuse", size)
+
+
+def test_the_preview_letters_no_total_for_a_cut_that_has_none(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    """The part count and the names come from a chapter-level reading. A paragraph or
+    sentence cut has neither, so its card carries its number rather than a wrong total."""
+    monkeypatch.setattr(
+        app,
+        "_cover_lookup",
+        lambda *args: app.events.put(("pack", args[1], 23, "L'Aiguille creuse", "fr")),
+    )
+    (tmp_path / "aiguille.zip").write_bytes(b"PK")
+    app.pack_var.set(str(tmp_path / "aiguille.zip"))
+    app.cut = app.options["cut"] = "sentence"
+    app._find_cover()
+    app._drain()
+
+    size = (int(app.crop_frame.cget("width")), int(app.crop_frame.cget("height")))
+    assert app._crop_osd[0] == images.card_label("fr", 1, 1, False, False, "", size)
+
+
+def test_the_grey_preview_carries_a_number_alone(app: gui.App) -> None:
+    """Every card of the grey player carries its number alone, so the preview does too."""
+    app.format_var.set("lunii")
+    app._pick_format()
+    assert app._crop_osd[0] == "1"
 
 
 def test_the_zoom_and_a_moved_frame_reach_the_conversion(app: gui.App, monkeypatch, tmp_path) -> None:

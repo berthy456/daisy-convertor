@@ -33,7 +33,7 @@ from .detector import DaisyPackError, open_pack
 from .extractor import CUT_LEVELS, extract
 from .i18n import LANGUAGES, Language, text
 from .proc import NO_WINDOW
-from .telmi_builder import ANNOUNCE_MODES, Announce, card_language, slugify
+from .telmi_builder import ANNOUNCE_MODES, Announce, card_language, part_title, slugify
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -48,13 +48,11 @@ ANNOUNCE_KEYS = {mode: f"announce_{mode}" for mode in ANNOUNCE_MODES}
 # How short and how long a card playing its own part may play it for.
 CARD_SECONDS_LIMITS = (0.5, 30.0)
 # The four card letterings the combo offers, as the two settings they stand for.
-CARD_TEXTS = ((False, False), (True, False), (False, True), (True, True))
 SPEED_KEYS = {speed: f"speed_{speed}" for speed in tts.SPEEDS}
 EXPRESSION_KEYS = {name: f"expression_{name}" for name in tts.EXPRESSIONS}
 # Nothing chosen on the speech page means the book's own language is read off the pack.
 SPEECH_LANGUAGE_KEYS = {None: "speech_auto"}
-# Nothing chosen on the reading page means the book is read with the card's setting.
-SAME = {None: "speech_same_as_cards"}
+# Nothing chosen on the reading page means the book is read at the card's speed.
 READ_SPEED_KEYS = {**SPEED_KEYS, None: "speech_same_as_cards"}
 
 
@@ -138,7 +136,7 @@ def theme(root: tk.Misc) -> None:
         style.map(
             name,
             bordercolor=[("focus", ACCENT)],
-            fieldbackground=[("readonly", FIELD)],
+            fieldbackground=[("readonly", FIELD), ("disabled", SUNK)],
             foreground=[("disabled", MUTED)],
         )
     # A readonly combo selects its text in the accent colour, which reads as a
@@ -273,7 +271,7 @@ BAR_CLOSE_HOVER = "#8f3b34"
 # that starts the work: bigger than the one that says a cover is being looked up,
 # because it is the one that says the book is being converted.
 PICK_MARK = 18
-PICK_MARKS = ("book", "folder", "export", "player")
+PICK_MARKS = ("book", "folder")
 WORK_WHEEL = 34
 
 # The window opens at a size of its own: Tk asks each widget how big it wants to be,
@@ -775,12 +773,21 @@ class App:
         self._cover_then = None
         self._spinning = False
         self._pack_title: str | None = None
+        # What the pack's own reading gave the preview: how many parts it has at
+        # chapter level, the first one's name, and the language its cards are lettered in.
+        self._part_count: int | None = None
+        self._part_title = ""
+        self._part_code = ""
         self.crop_var = tk.StringVar(value=self.options["cover_crop"])
         self.format_var = tk.StringVar(value=self.options["format"])
         # The cover drawn at the frame's ratio: the file it came from, the player it
         # was drawn for, the zoom it was drawn at, then the picture and its size.
-        self._crop_cover: tuple[str, str, float, bool, tuple[bytes, tuple[int, int]]] | None = None
+        self._crop_cover: tuple[str, str, float, bool, float, tuple[bytes, tuple[int, int]]] | None = None
         self._crop_photo: tk.PhotoImage | None = None
+        # The card's lettering over that picture: the words it was drawn for, then the
+        # picture itself.
+        self._crop_osd: tuple[str, tuple[int, int], str, bool] | None = None
+        self._osd_photo: tk.PhotoImage | None = None
         self._crop_zoom_value = 1.0
         self._crop_focus: tuple[float, float] | None = None
         self._crop_drag: tuple[int, int, tuple[float, float]] | None = None
@@ -842,11 +849,12 @@ class App:
         self.root.rowconfigure(1, weight=1)
 
         # The window's own title block stands at the top left - the mark, the name with
-        # its version, and what the window is for on the line under it. The buttons that
-        # pick the book and where its story goes stand at the top right, each carrying
-        # the mark of the thing it picks. The line under them has the whole width of the
-        # window to be read in - a path is the one thing here that is never short.
-        # Nothing is typed: a pack is dropped on the window or picked from a list.
+        # its version, and what the window is for on the line under it. The two buttons
+        # that pick the book stand at the top right, each carrying the mark of the thing
+        # it picks. Where a story is written is an app setting, so it is set with the
+        # others. The line under them has the whole width of the window to be read in -
+        # a path is the one thing here that is never short. Nothing is typed: a pack is
+        # dropped on the window or picked from a list.
         head = ttk.Frame(self.root, padding=(12, 12, 12, 0))
         head.grid(row=0, column=0, sticky="ew")
         head.columnconfigure(1, weight=1)
@@ -857,55 +865,81 @@ class App:
         for key, command, glyph in (
             ("browse_zip", self._pick_pack_file, "book"),
             ("browse_folder", self._pick_pack_dir, "folder"),
-            ("output_label", self._pick_out_dir, "export"),
-            ("browse_stories", self._pick_telmi_stories, "player"),
         ):
             self._pick_button(picks, key, command, glyph).pack(side="left", padx=(6, 0))
         self._paths_line = ttk.Label(head, text="", style="Brand.TLabel")
         self._paths_line.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
-        # Two columns: the fields down the left, the picture and its knobs down the
-        # right. The log is not in here - it runs along the bottom of the window, as
-        # wide as the window is, because a log read one column at a time is not read.
+        # Two pages: one for what the cards say and how long they play, one for
+        # everything the screen shows. The log is in neither - it runs along the bottom
+        # of the window, as wide as the window is, because a log read one column at a
+        # time is not read.
         grid = ttk.Frame(self.root, padding=(12, 8))
         grid.grid(row=1, column=0, sticky="nsew")
-        grid.columnconfigure(1, weight=1)
+        grid.rowconfigure(0, weight=1)
+
+        pages = ttk.Notebook(grid)
+        pages.grid(row=0, column=0, sticky="nsew")
+        self.pages = pages
+        audio = ttk.Frame(pages, padding=(10, 8))
+        audio.columnconfigure(1, weight=1)
+        display = ttk.Frame(pages, padding=(10, 8))
+        pages.add(audio, text=self.t("page_audio"))
+        pages.add(display, text=self.t("page_display"))
 
         # Every field on one grid: the label above its box, every box the same width,
         # every button in the same column, so the whole page reads down one edge.
-        fields = ttk.Frame(grid)
+        fields = ttk.Frame(audio)
         fields.grid(row=0, column=0, sticky="nw")
-
-        # The player comes first: its screen decides the size every picture is drawn at.
-        # Five names do not fit on one line in every language, so they share a box.
-        self._label(fields, "format_label").grid(row=0, column=0, sticky="w")
-        self.format_box = ttk.Combobox(fields, values=self.format_names(), state="readonly", width=FIELD_WIDTH)
-        self.format_box.grid(row=1, column=0, sticky="w")
-        self.format_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_format())
-        self._show_formats()
 
         # The voice the cards get is picked here, next to the machine they are read
         # on; everything that goes with it - voices, installs, a sample to clone -
         # sits behind its own button, on a page of its own.
-        self._label(fields, "speech_label").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        self._label(fields, "speech_label").grid(row=0, column=0, sticky="w")
         self.speech_box = ttk.Combobox(fields, values=self.engine_names(), state="readonly", width=FIELD_WIDTH)
-        self.speech_box.grid(row=3, column=0, sticky="w")
+        self.speech_box.grid(row=1, column=0, sticky="w")
         self.speech_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_engine())
-        self._button(fields, "speech_configure", self._open_speech).grid(row=3, column=1, sticky="w", padx=(6, 0))
+        self._button(fields, "speech_configure", self._open_speech).grid(row=1, column=1, sticky="w", padx=(6, 0))
         self._show_engines()
 
-        self._label(fields, "cover_label").grid(row=4, column=0, sticky="w", pady=(6, 0))
-        cover_entry = ttk.Entry(fields, textvariable=self.cover_var, width=FIELD_WIDTH)
-        cover_entry.grid(row=5, column=0, sticky="w")
+        # What a card says out loud, and how long it plays when it has nothing of its
+        # own to say: the two answers that decide the audio of every chapter.
+        self._label(fields, "opt_announce").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        self.announce_keys = list(ANNOUNCE_MODES)
+        self.announce_box = ttk.Combobox(fields, values=self.announce_names(), state="readonly", width=FIELD_WIDTH)
+        self.announce_box.grid(row=3, column=0, sticky="w")
+        self.announce_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_announce())
+        self._label(fields, "opt_card_seconds").grid(row=4, column=0, sticky="w", pady=(6, 0))
+        self.seconds_box = ttk.Entry(fields, width=6)
+        self.seconds_box.insert(0, f"{self.options['card_seconds']:g}")
+        self.seconds_box.grid(row=5, column=0, sticky="w")
+        for event in ("<Return>", "<FocusOut>"):
+            self.seconds_box.bind(event, lambda _e: self._type_seconds())
+        self._label(fields, "card_seconds_hint", style="Brand.TLabel", wraplength=420).grid(
+            row=6, column=0, columnspan=2, sticky="w", pady=(4, 0)
+        )
+        self._show_announce()
+
+        # The cover and the card's lettering stand in the column beside the picture:
+        # stacked under it they make the page taller than any screen they open on.
+        right = ttk.Frame(display)
+        right.grid(row=0, column=1, sticky="n", padx=(12, 0))
+        cover_card = ttk.Labelframe(right, text=self.t("cover_section"), padding=(10, 8))
+        cover_card.grid(row=0, column=0, sticky="w")
+        cover_card.columnconfigure(1, weight=1)
+        self._labels["cover_section"] = cover_card
+        self._label(cover_card, "cover_label").grid(row=0, column=0, sticky="w")
+        cover_entry = ttk.Entry(cover_card, textvariable=self.cover_var, width=FIELD_WIDTH)
+        cover_entry.grid(row=1, column=0, sticky="w")
         cover_entry.bind("<Return>", self._cover_typed)
         cover_entry.bind("<FocusOut>", self._cover_typed)
-        self._button(fields, "browse_cover", self._pick_cover).grid(row=5, column=1, sticky="w", padx=(6, 0))
+        self._button(cover_card, "browse_cover", self._pick_cover).grid(row=1, column=1, sticky="w", padx=(6, 0))
         # A lookup takes a second or two on its own thread, and four services are
         # asked before the answer says there is nothing: the window has to say it is
         # waiting, and let the user call it off. It gets the line under the box -
         # the wheel, its sentence and the Stop button are wider than the box is.
-        cover_wait = ttk.Frame(fields)
-        cover_wait.grid(row=6, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        cover_wait = ttk.Frame(cover_card)
+        cover_wait.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
         self.cover_spin = Wheel(cover_wait)
         self.cover_note = self._label(cover_wait, "cover_searching")
         self.cover_stop = self._button(cover_wait, "cover_stop", self._stop_cover)
@@ -914,19 +948,16 @@ class App:
         # are the search: the app's own catalogues first, then an image search on
         # either of the two engines that answer without an account - those two
         # only open a browser, so their answer is a picture the user saves. The
-        # app's own search stands on the line above the two boxes it reads, so the
-        # boxes and the button that uses them read as one thing.
-        self._button(fields, "cover_search_app", self._search_words).grid(
-            row=7, column=0, sticky="w", pady=(8, 0)
-        )
-        search = ttk.Frame(fields)
-        search.grid(row=8, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        # button comes after the two boxes it reads, on their line.
+        search = ttk.Frame(cover_card)
+        search.grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
         words = ttk.Frame(search)
         words.pack(anchor="w")
         self._label(words, "cover_author").pack(side="left")
         ttk.Entry(words, textvariable=self.author_var, width=12).pack(side="left", padx=(6, 12))
         self._label(words, "cover_book_title").pack(side="left")
-        ttk.Entry(words, textvariable=self.title_var, width=16).pack(side="left", padx=(6, 0))
+        ttk.Entry(words, textvariable=self.title_var, width=16).pack(side="left", padx=(6, 12))
+        self._button(words, "cover_search_app", self._search_words).pack(side="left")
         # The two engines that only open a browser are a second line rather than a
         # wider one: a row this wide would push the log off the window.
         engines = ttk.Frame(search)
@@ -936,25 +967,43 @@ class App:
         self._button(engines, "cover_search_google", lambda: self._search_cover("google")).pack(
             side="left", padx=(4, 0)
         )
+        # Turning the picture inside out is a thing a grey screen does, so the box is
+        # only live next to the format that has one.
+        self.negative_var = tk.BooleanVar(value=bool(self.options["card_negative"]))
+        self.negative_box = ttk.Checkbutton(
+            cover_card, text=self.t("card_negative"), variable=self.negative_var, command=self._pick_negative
+        )
+        self._labels["card_negative"] = self.negative_box
+        self.negative_box.grid(row=4, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        self._label(cover_card, "card_negative_hint", wraplength=440).grid(
+            row=5, column=0, columnspan=2, sticky="w", pady=(2, 0)
+        )
 
         # The frame and its knobs are one card: what changes the picture stands next to
         # it, not in the next column over. It takes the column the log used to have,
         # and the words that explain the knobs go under the picture, where they are
         # read after the thing they describe rather than beside it.
-        preview = ttk.Frame(grid)
-        preview.grid(row=0, column=1, sticky="nw", padx=(16, 0))
+        preview = ttk.Frame(display)
+        preview.grid(row=0, column=0, sticky="nw")
         self.crop_preview = preview
         crop_top = ttk.Frame(preview)
         crop_top.pack(anchor="n")
+        # The picture and the words under it are one column: the advice is read against
+        # the frame it describes, so it follows the frame's own bottom rather than the
+        # tallest thing in the row.
+        crop_left = ttk.Frame(crop_top)
+        crop_left.pack(side="left", anchor="n")
 
         # The frame the chosen player shows, drawn from the cover: drag it to move,
         # the wheel or the arrows to enlarge. What is inside here is what the story
         # carries, so the choice is made on the picture instead of described to it.
         self.crop_frame = tk.Canvas(
-            crop_top, highlightthickness=0, cursor="fleur", takefocus=1, background=SUNK
+            crop_left, highlightthickness=0, cursor="fleur", takefocus=1, background=SUNK
         )
-        self.crop_frame.pack(side="left", anchor="n")
+        self.crop_frame.pack(anchor="n")
         self._crop_item = self.crop_frame.create_image(0, 0, anchor="nw")
+        # The card's own lettering, laid over the picture it will be drawn on.
+        self._osd_item = self.crop_frame.create_image(0, 0, anchor="nw")
         self.crop_frame.bind("<ButtonPress-1>", self._grab_crop)
         self.crop_frame.bind("<B1-Motion>", self._drag_crop)
         self.crop_frame.bind("<ButtonRelease-1>", lambda _e: setattr(self, "_crop_drag", None))
@@ -1011,37 +1060,69 @@ class App:
         self._show_crop_zoom()
         self._button(side, "crop_reset", self._reset_crop).pack(anchor="w", pady=(8, 0))
 
-        # What the card is lettered with, read as the card will read.
-        self._label(side, "card_text_label").pack(anchor="w", pady=(10, 0))
-        self.card_text_box = ttk.Combobox(side, state="readonly", width=22)
-        self.card_text_box.pack(anchor="w", pady=(2, 0))
-        self.card_text_box.bind("<<ComboboxSelected>>", lambda _e: self._choose_card_text())
-        self._show_card_text()
-        # Turning the picture inside out is a thing a grey screen does, so the box is
-        # only live next to the format that has one.
-        self.negative_var = tk.BooleanVar(value=bool(self.options["card_negative"]))
-        self.negative_box = ttk.Checkbutton(
-            side, text=self.t("card_negative"), variable=self.negative_var, command=self._pick_negative
+        # How far apart the picture's lights and shadows are pulled. The player's
+        # screen is small and its greys are not a monitor's, so a cover that reads on
+        # this one can be mud on that one.
+        self._label(side, "contrast").pack(anchor="w", pady=(10, 0))
+        self.contrast_var = tk.IntVar(value=int(round(100 * float(self.options["card_contrast"]))))
+        self.contrast_box = ttk.Scale(
+            side,
+            from_=50,
+            to=150,
+            orient="horizontal",
+            length=150,
+            variable=self.contrast_var,
+            command=lambda _value: self._pick_contrast(),
         )
-        self._labels["card_negative"] = self.negative_box
-        self.negative_box.pack(anchor="w", pady=(10, 0))
+        self.contrast_box.pack(anchor="w", pady=(2, 0))
+        self.cover_var.trace_add("write", lambda *_: self._show_crop())
+
+        # The words that explain the knobs read after the picture they describe, so they
+        # sit under it, as wide as it is, rather than beside it.
+        self._label(crop_left, "crop_hint", wraplength=self._crop_width - 24, justify="center").pack(
+            anchor="center", pady=(8, 0)
+        )
+
+        # What the card is lettered with, read as the card will read: the line first,
+        # then the line under it.
+        osd = ttk.Labelframe(right, text=self.t("card_text_section"), padding=(10, 8))
+        osd.grid(row=1, column=0, sticky="w", pady=(12, 0))
+        self._labels["card_text_section"] = osd
+        self._label(osd, "card_text_label").grid(row=0, column=0, sticky="w")
+        self.card_text_box = ttk.Combobox(osd, state="readonly", width=22)
+        self.card_text_box.grid(row=1, column=0, sticky="w")
+        self.card_text_box.bind("<<ComboboxSelected>>", lambda _e: self._choose_card_text())
+        self._label(osd, "card_text_next").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        self.card_title_box = ttk.Combobox(osd, state="readonly", width=22)
+        self.card_title_box.grid(row=3, column=0, sticky="w")
+        self.card_title_box.bind("<<ComboboxSelected>>", lambda _e: self._choose_card_title())
+        self._show_card_text()
         # A part's own words on screen is a thing a big screen does, so this box is
         # only live next to the two formats whose screen can hold a sentence.
         self.captions_var = tk.BooleanVar(value=bool(self.options["captions"]))
         self.captions_box = ttk.Checkbutton(
-            side, text=self.t("captions"), variable=self.captions_var, command=self._pick_captions
+            osd, text=self.t("captions"), variable=self.captions_var, command=self._pick_captions
         )
         self._labels["captions"] = self.captions_box
-        self.captions_box.pack(anchor="w", pady=(6, 0))
-        self._label(side, "captions_warning", style="Warn.TLabel", wraplength=240).pack(anchor="w", pady=(2, 0))
-        self.cover_var.trace_add("write", lambda *_: self._show_crop())
+        self.captions_box.grid(row=4, column=0, sticky="w", pady=(10, 0))
+        self._label(osd, "captions_warning", style="Warn.TLabel", wraplength=440).grid(
+            row=5, column=0, sticky="w", pady=(2, 0)
+        )
 
-        # The words that explain the knobs read after the picture they describe, so
-        # they sit under it rather than beside it.
-        self._label(preview, "crop_hint", wraplength=340).pack(anchor="w", pady=(8, 0))
+        # Which parts, and in which player's shape: the two choices that decide what
+        # gets written, standing together on the line above the button that writes it.
+        choose = ttk.Frame(self.root)
+        choose.grid(row=2, column=0, sticky="ew", padx=12, pady=(6, 0))
+        self.chapters_button = self._button(choose, "chapters", self._open_chapters)
+        self.chapters_button.pack(side="left")
+        self._label(choose, "format_label").pack(side="left", padx=(12, 6))
+        self.format_box = ttk.Combobox(choose, values=self.format_names(), state="readonly", width=FIELD_WIDTH)
+        self.format_box.pack(side="left")
+        self.format_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_format())
+        self._show_formats()
 
         controls = ttk.Frame(self.root)
-        controls.grid(row=2, column=0, sticky="ew", padx=12, pady=(8, 0))
+        controls.grid(row=3, column=0, sticky="ew", padx=12, pady=(6, 0))
         self.save_button = self._button(controls, "save", self._start, style="Work.TButton")
         self.save_button.pack(side="left")
         # The wheel that says the work is running stands on the button's right, and
@@ -1050,7 +1131,6 @@ class App:
         self.progress = Wheel(controls, WORK_WHEEL)
         self.progress.pack(side="left", padx=(12, 0))
         self._button(controls, "options", self._open_options).pack(side="left", padx=12)
-        self._button(controls, "chapters", self._open_chapters).pack(side="left")
         self.test_button = self._button(controls, "test_story", self._test_story)
         self.test_button.pack(side="left", padx=12)
         self.force_box = ttk.Checkbutton(
@@ -1069,12 +1149,12 @@ class App:
         # conversion says one line per part, and a line broken into three reads as
         # three things that went wrong.
         log_frame = ttk.Frame(self.root)
-        log_frame.grid(row=3, column=0, sticky="nsew", padx=12, pady=(8, 10))
+        log_frame.grid(row=4, column=0, sticky="nsew", padx=12, pady=(6, 8))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
         self.log_view = tk.Text(
             log_frame,
-            height=7,
+            height=5,
             width=96,
             state="disabled",
             wrap="word",
@@ -1118,9 +1198,13 @@ class App:
         for key, widget in self._labels.items():
             widget.configure(text=self.t(key))
         self.bar.relabel()
+        for index, key in enumerate(("page_audio", "page_display")):
+            self.pages.tab(index, text=self.t(key))
         self._show_formats()
         self._show_engines()
+        self._show_announce()
         self._show_card_text()
+        self._show_crop()
         if not DND_FILES:
             self._append(self.t("drop_unavailable"))
 
@@ -1231,8 +1315,9 @@ class App:
     def _fit_window(self) -> None:
         self.root.update_idletasks()
         screen = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        width = min(self.root.winfo_reqwidth(), screen[0] - 2 * WINDOW_MARGIN)
-        height = min(self.root.winfo_reqheight(), screen[1] - 2 * WINDOW_MARGIN)
+        room = (screen[0] - 2 * WINDOW_MARGIN, screen[1] - 2 * WINDOW_MARGIN)
+        width = min(max(self.root.winfo_reqwidth(), min(MIN_WIDTH, room[0])), room[0])
+        height = min(max(self.root.winfo_reqheight(), min(MIN_HEIGHT, room[1])), room[1])
         if (width, height) == (self.root.winfo_width(), self.root.winfo_height()):
             return
         x = max(0, (screen[0] - width) // 2)
@@ -1298,6 +1383,8 @@ class App:
             announce.clip,
             announce.device,
             announce.speed,
+            announce.show_title,
+            float(self.options["card_contrast"]),
         )
 
     def _test_story(self) -> None:
@@ -1333,18 +1420,22 @@ class App:
 
     def _copy_tested(self, out_dir: Path) -> bool:
         """Write the pack the player just showed into the output folder as it stands."""
-        for entry in sorted(self._test_folder.iterdir()):
-            target = out_dir / entry.name
-            if entry.is_dir():
-                if target.is_dir() and any(target.iterdir()) and not self.force_var.get():
-                    self._append(
-                        f"ERROR: a file of the same name already exists: {target} holds a story. "
-                        "Tick the overwrite box to replace it"
-                    )
-                    return False
-                shutil.copytree(entry, target, dirs_exist_ok=True)
-            else:
-                shutil.copy2(entry, target)
+        try:
+            for entry in sorted(self._test_folder.iterdir()):
+                target = out_dir / entry.name
+                if entry.is_dir():
+                    if target.is_dir() and any(target.iterdir()) and not self.force_var.get():
+                        self._append(
+                            f"ERROR: a file of the same name already exists: {target} holds a story. "
+                            "Tick the overwrite box to replace it"
+                        )
+                        return False
+                    shutil.copytree(entry, target, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(entry, target)
+        except OSError as exc:
+            self._append(f"ERROR: {exc.filename or out_dir} could not be overwritten: {exc.strerror or exc}")
+            return False
         return True
 
     def speech_language(self) -> str:
@@ -1360,6 +1451,7 @@ class App:
             autoplay=self.options["autoplay"],
             show_total=self.options["card_total"],
             show_title=self.options["card_title"],
+            contrast=float(self.options["card_contrast"]),
             engine=self.options["tts"],
             voice=self.options["voice"],
             command=self.options["command"],
@@ -1368,8 +1460,6 @@ class App:
             device=self.options["device"],
             speed=self.options["speed"],
             expression=self.options["expression"],
-            read_voice=self.options["read_voice"],
-            read_clip=self.options["read_clip"],
             read_speed=self.options["read_speed"],
         )
 
@@ -1438,29 +1528,34 @@ class App:
             self._find_cover()
 
     def _find_cover(self) -> None:
-        """Offer the cover of the print book the pack was read from.
+        """Read the pack, and offer the cover of the print book it was read from.
 
         A 2.02 audio pack carries no picture, but its metadata names the book's
         ISBN, and four services hold the cover for it between them. The answer
         arrives on its own thread: a lookup that takes a second should not stop
         the window from drawing. A cover the user already typed is never
         replaced, and the cover the last pack's lookup found is dropped before
-        this one asks.
+        this one asks. The pack is read on that thread whatever the Image box
+        holds, because the card the preview draws is drawn from the pack.
         """
         pack = self._typed_path(self.pack_var)
         self._cover_job += 1
         self._pack_title = None
+        self._part_count, self._part_title, self._part_code = None, "", ""
         self._spin_off()
         self._drop_lookup()
-        if pack is None or not pack.exists() or self.cover_var.get().strip():
+        if pack is None or not pack.exists():
             return
+        typed = bool(self.cover_var.get().strip())
         self._cover_asked = "pack"
-        self._spin_on()
+        if not typed:
+            self._spin_on()
         threading.Thread(
             target=self._cover_lookup,
-            args=(pack, self._cover_job, self._cover_dest(self._cover_job)),
+            args=(pack, self._cover_job, self._cover_dest(self._cover_job), typed),
             daemon=True,
         ).start()
+        self._show_crop()
 
     def _drop_lookup(self) -> None:
         """Clear what the previous pack's lookup filled in.
@@ -1504,12 +1599,27 @@ class App:
         self._spin_off()
         self._append(self.t("cover_stopped"))
 
-    def _cover_lookup(self, pack: Path, job: int, dest: Path) -> None:
-        """Read the pack's own metadata off the worker thread, then post the picture back."""
+    def _cover_lookup(self, pack: Path, job: int, dest: Path, typed: bool) -> None:
+        """Read the pack's own metadata off the worker thread, then post the picture back.
+
+        The pack is read once and answers two questions: what the book is called,
+        which the cover services search for, and how many parts it has and what the
+        first one is named, which is what the preview's card is lettered with.
+        """
         try:
             with open_pack(pack) as opened:
                 book = extract(opened, "chapter")
-            found = covers.find(book, dest)
+            code = card_language(self.announce(), book)[0]
+            self.events.put(
+                (
+                    "pack",
+                    job,
+                    len(book.chapters),
+                    part_title(book.chapters[0].title, code) if book.chapters else "",
+                    code,
+                )
+            )
+            found = None if typed else covers.find(book, dest)
             title, author = book.title, book.author or ""
         except Exception as exc:  # a suggestion is worth nothing here: it must never break the window
             log.warning("no cover lookup for %s: %s", pack.name, exc)
@@ -1618,55 +1728,77 @@ class App:
         when nothing was picked. Nothing picked is not an error worth stopping a run for."""
         return self._typed_path(self.out_var) or Path.home()
 
-    def _pick_out_dir(self) -> None:
-        """The folder every story is written into, until another one is picked.
-
-        It is kept as the app's own default, so the next run starts with it already
-        chosen.
-        """
-        path = self._browse("browse_output", self.out_var.get(), "folder")
-        if path:
-            self.out_var.set(path)
-            self.options["output_dir"] = path
-            settings.save(self.options)
-
-    def _pick_telmi_stories(self) -> None:
-        """Point the output at the folder Telmi-Sync reads its stories from.
-
-        Telmi-Sync lists `~/.telmi/stories` each time it starts, so a story written
-        there is on its shelf without an import. The folder is Telmi-Sync's to make:
-        a machine it has never run on has none, and nothing here creates one.
-        """
-        stories = Path.home() / ".telmi" / "stories"
-        if not stories.is_dir():
-            self._append(f"no Telmi-Sync stories folder at {stories}: run Telmi-Sync once, or pick a folder yourself")
-            return
-        self.out_var.set(str(stories))
-        self.options["output_dir"] = str(stories)
-        settings.save(self.options)
-
     def _pick_cover(self) -> None:
         path = self._browse("browse_cover", self.cover_var.get(), "file")
         if path:
             self.cover_var.set(path)
 
     def card_text_names(self) -> list[str]:
-        """The four ways a chapter card is lettered, each written the way a card writes it."""
+        """The card's first line, written the way a card writes it."""
         card = LANGUAGES.get(self.language_var.get(), LANGUAGES["en"]).card.upper()
-        title = self.t("card_text_title").upper()
-        return [f"{card} 1", f"{card} 1/20", f"{card} 1, {title}", f"{card} 1/20, {title}"]
+        return [f"{card} 1", f"{card} 1/20"]
+
+    def card_title_names(self) -> list[str]:
+        """What the line under the number holds."""
+        return [self.t("card_text_none"), self.t("card_text_title")]
 
     def _show_card_text(self) -> None:
         names = self.card_text_names()
         self.card_text_box.configure(values=names)
-        pair = (bool(self.options["card_total"]), bool(self.options["card_title"]))
-        self.card_text_box.set(names[CARD_TEXTS.index(pair)])
+        self.card_text_box.set(names[1 if self.options["card_total"] else 0])
+        titles = self.card_title_names()
+        self.card_title_box.configure(values=titles)
+        self.card_title_box.set(titles[1 if self.options["card_title"] else 0])
 
     def _choose_card_text(self) -> None:
-        self.options["card_total"], self.options["card_title"] = CARD_TEXTS[
-            self.card_text_names().index(self.card_text_box.get())
-        ]
+        self.options["card_total"] = self.card_text_names().index(self.card_text_box.get()) == 1
         settings.save(self.options)
+        self._show_crop()
+
+    def _choose_card_title(self) -> None:
+        self.options["card_title"] = self.card_title_names().index(self.card_title_box.get()) == 1
+        settings.save(self.options)
+        self._show_crop()
+
+    def announce_names(self) -> list[str]:
+        """Every thing a card can say, by the name this window's language gives it."""
+        return [self.t(ANNOUNCE_KEYS[mode]) for mode in self.announce_keys]
+
+    def _show_announce(self) -> None:
+        """Refill the box in this language, and grey the extract length out for every
+        pattern that plays no extract."""
+        names = self.announce_names()
+        self.announce_box.configure(values=names)
+        chosen = self.options["announce"]
+        self.announce_box.set(names[self.announce_keys.index(chosen) if chosen in self.announce_keys else 0])
+        plays = chosen == "snippet"
+        self.seconds_box.configure(state="normal" if plays else "disabled")
+        self._labels["opt_card_seconds"].configure(foreground=INK if plays else MUTED)
+
+    def _choose_announce(self) -> None:
+        self.options["announce"] = self.announce_keys[self.announce_names().index(self.announce_box.get())]
+        settings.save(self.options)
+        self._show_announce()
+
+    def _card_seconds(self) -> float:
+        try:
+            value = float(self.seconds_box.get().strip().replace(",", "."))
+        except ValueError:
+            return float(settings.DEFAULTS["card_seconds"])
+        low, high = CARD_SECONDS_LIMITS
+        return min(max(value, low), high)
+
+    def _type_seconds(self) -> None:
+        self.options["card_seconds"] = self._card_seconds()
+        self.seconds_box.delete(0, "end")
+        self.seconds_box.insert(0, f"{self.options['card_seconds']:g}")
+        settings.save(self.options)
+
+    def _pick_contrast(self) -> None:
+        self.options["card_contrast"] = self.contrast_var.get() / 100
+        settings.save(self.options)
+        self._crop_cover = None
+        self._show_crop()
 
     def format_names(self) -> list[str]:
         """Every output, by the name this window's language gives it."""
@@ -1757,6 +1889,27 @@ class App:
         keys = engine_keys()
         self.options["tts"] = keys[self.engine_names().index(self.speech_box.get())]
         settings.save(self.options)
+        if self.options["tts"] in tts.PACKAGES:
+            threading.Thread(target=self._engine_probe, args=(self.options["tts"],), daemon=True).start()
+
+    def _engine_probe(self, engine: str) -> None:
+        """Whether a Python on this machine already has the engine just picked.
+
+        That costs a Python per candidate interpreter, so it is asked off the window;
+        an engine the machine has needs nothing more said about it.
+        """
+        if not tts.available(engine, self.options.get("python") or None):
+            self.events.put(("install_engine", engine))
+
+    def _offer_install(self, engine: str) -> None:
+        """The install is asked where the engine was chosen, and nowhere else."""
+        if self.options["tts"] != engine:
+            return  # the box moved on while the machine was being asked
+        label = tts.LABELS[engine]
+        if messagebox.askokcancel(self.t("speech_title"), self.t("engine_needed").format(engine=label)):
+            self._install_now(engine)
+        else:
+            self._append(f"{label} is not installed: it will be asked for again when the story is saved")
 
     def _open_speech(self) -> None:
         Speech(self)
@@ -1779,17 +1932,19 @@ class App:
         style = "bw" if self.format_var.get() == "lunii" else "colour"
         # A colour card has nothing to invert, so the preview inverts with the card.
         negative = self.negative_var.get() and style == "bw"
+        contrast = float(self.options["card_contrast"])
         self.crop_frame.configure(width=size[0], height=size[1], background=images.band_colour(style, negative))
+        self._draw_osd(size, style, negative)
         source = self._typed_path(self.cover_var)
         if source is None or not source.is_file():
             self._clear_crop()
             return
-        key = (str(source), self.format_var.get(), self._crop_zoom_value, negative)
-        if self._crop_cover is None or self._crop_cover[:4] != key:
+        key = (str(source), self.format_var.get(), self._crop_zoom_value, negative, contrast)
+        if self._crop_cover is None or self._crop_cover[:5] != key:
             try:
                 self._crop_cover = (
                     *key,
-                    images.cover_fit(source, size, self._crop_zoom_value, style, negative),
+                    images.cover_fit(source, size, self._crop_zoom_value, style, negative, contrast),
                 )
             except images.ImageError as exc:
                 self._append(f"ERROR: {exc}")
@@ -1797,11 +1952,46 @@ class App:
                 return
         self._draw_crop()
 
+    def _card_words(self, size: tuple[int, int]) -> str:
+        """The words the book's first card will carry, at the preview's size.
+
+        Only a chapter-level cut has chapter names and a chapter count to letter a
+        card with, and only the pack's own reading says what they are: until it has
+        been read, the card carries its number alone.
+        """
+        chapters = self.cut == "chapter" and self._part_count is not None
+        return images.card_label(
+            self._part_code or self.speech_language(),
+            1,
+            self._part_count or 1,
+            self.cut == "chapter",
+            chapters and bool(self.options["card_total"]),
+            self._part_title if chapters and self.options["card_title"] else "",
+            size,
+        )
+
+    def _draw_osd(self, size: tuple[int, int], style: str, negative: bool) -> None:
+        """Lay the card's own lettering over the preview, so the words it will carry
+        are seen on the picture they will be carried on.
+
+        A grey card carries its number alone, as every card of that player does.
+        It is drawn once per card, not once per move: the cover slides under it.
+        """
+        label = "1" if style == "bw" else self._card_words(size)
+        key = (label, size, style, negative)
+        if self._crop_osd == key:
+            return
+        self._crop_osd = key
+        self._osd_photo = tk.PhotoImage(
+            master=self.root, data=images.card_layer_png(label, "", *size, style=style, negative=negative)
+        )
+        self.crop_frame.itemconfigure(self._osd_item, image=self._osd_photo)
+
     def _draw_crop(self) -> None:
         """Slide the drawn cover under the frame until the frame sits at its focus."""
         if self._crop_cover is None:
             return
-        png, picture = self._crop_cover[4]
+        png, picture = self._crop_cover[5]
         frame = images.preview_size(self.format_var.get(), self._crop_width)
         focus = self._crop_focus or images.CROP_FOCUS.get(self.crop_var.get(), images.CROP_FOCUS["center"])
         self._crop_photo = tk.PhotoImage(master=self.root, data=png)
@@ -1845,7 +2035,7 @@ class App:
         if self._crop_cover is None:
             return
         frame = images.preview_size(self.format_var.get(), self._crop_width)
-        picture = self._crop_cover[4][1]
+        picture = self._crop_cover[5][1]
         focus = start or self._current_focus()
         room = (picture[0] - frame[0], picture[1] - frame[1])
         self._crop_focus = (
@@ -2049,15 +2239,26 @@ class App:
         """
         engine = self.options["tts"]
         if engine in tts.PACKAGES:
-            threading.Thread(target=self._install_answers, args=(engine,), daemon=True).start()
+            self._install_now(engine)
 
-    def _install_answers(self, engine: str) -> None:
+    def _install_now(self, engine: str) -> None:
+        threading.Thread(target=self._install_answers, args=self._install_job(engine), daemon=True).start()
+
+    def _install_job(self, engine: str) -> tuple[str, str, str]:
+        """The worker's arguments, every one of them read on the window's thread.
+
+        A thread that asks Tk for a word dies with "main thread is not in main loop",
+        so nothing the install has to say may be read inside it.
+        """
+        return engine, self.speech_language(), self.t("engine_installing").format(engine=tts.LABELS[engine])
+
+    def _install_answers(self, engine: str, language: str, notice: str) -> None:
         python = self.options.get("python") or None
         if tts.available(engine, python):
             return
-        log.info(self.t("engine_installing").format(engine=tts.LABELS[engine]))
+        log.info(notice)
         try:
-            built = tts.install_engine(engine, python, self.speech_language())
+            built = tts.install_engine(engine, python, language)
         except tts.TtsError as exc:
             log.error("%s", exc)
             return
@@ -2149,10 +2350,21 @@ class App:
                     done(item[1])
             elif item[0] == "cover":
                 self._took_cover(*item[1:])
+            elif item[0] == "pack":
+                self._took_pack(*item[1:])
+            elif item[0] == "install_engine":
+                self._offer_install(item[1])
             else:
                 self._append(item)
 
         self.root.after(100, self._drain)
+
+    def _took_pack(self, job: int, parts: int, named: str, code: str) -> None:
+        """Letter the preview's card with what the pack itself said."""
+        if job != self._cover_job:
+            return
+        self._part_count, self._part_title, self._part_code = parts, named, code
+        self._show_crop()
 
     def _took_cover(self, job: int, path: str, title: str, author: str) -> None:
         """Put a looked-up cover in the Image box.
@@ -2414,6 +2626,7 @@ class ChapterList:
         self.cut_var.set(level)
         self.app.cut = level
         self.app.dropped = set()
+        self.app._show_crop()
         self._build()
         threading.Thread(target=self._measure, daemon=True).start()
 
@@ -2657,33 +2870,24 @@ class Options(Settings):
 
         self.language_box = self._combo(self.grid, self.language_keys, app.options["language"])
         self.autoplay_var = tk.BooleanVar(value=bool(app.options["autoplay"]))
-        self.frameless_var = tk.BooleanVar(value=bool(app.options["frameless"]))
 
         self._row(self.grid, "opt_language", 0, self.language_box)
         self._check(self.grid, "opt_autoplay", 1, self.autoplay_var)
-        # The bar is drawn either way; what the tick changes is whether the system's
-        # own bar is left above it, and what that bar was doing for the window. Where
-        # the window has to keep that bar, there is nothing to ask.
-        row = 2
-        if not system_bar_kept():
-            self._check(self.grid, "opt_frameless", row, self.frameless_var)
-            ttk.Label(self.grid, text=app.t("opt_frameless_hint"), style="Brand.TLabel").grid(
-                row=row + 1, column=0, columnspan=2, sticky="w"
-            )
-            row += 2
+        # The bar is not asked for here: the system's own bar is kept everywhere Tk can
+        # only lose it by handing the window back to the app, and macOS is the one
+        # system where it can be hidden and leave the window managed.
 
         engine = ttk.Labelframe(self.grid, text=app.t("speech_section"), padding=(10, 6))
-        engine.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        engine.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(14, 0))
         engine.columnconfigure(1, weight=1)
         self.python_box = ttk.Entry(engine, width=28)
         self.python_box.insert(0, app.options["python"] or "")
         self._row(engine, "opt_python", 0, self.python_box)
         self.engine_state = ttk.Label(engine, text="")
-        self.engine_state.grid(row=1, column=0, sticky="w", pady=(6, 0))
-        self.install_button = ttk.Button(engine, text=app.t("speech_install"), command=self._install_engine)
-        self.install_button.grid(row=1, column=1, sticky="e", padx=(8, 0), pady=(6, 0))
+        self.engine_state.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
         # An engine cannot be installed on a machine with no Python to build it with,
         # so the page says where to get one rather than leave the install to fail.
+        # Installing is not asked here: it is asked where an engine is chosen.
         self.python_button = ttk.Button(engine, text=app.t("speech_get_python"), command=self._get_python)
         self.python_button.grid(row=2, column=1, sticky="e", pady=(6, 0))
         self.python_button.grid_remove()
@@ -2692,21 +2896,32 @@ class Options(Settings):
         )
         self.python_box.bind("<FocusOut>", lambda _e: self._show_engine())
         self._show_engine()
-        row += 1
 
-        # One folder here now: the output folder is picked on the main window, next to
-        # the book it is written for, and kept from that choice.
         folders = ttk.Labelframe(self.grid, text=app.t("opt_section_folders"), padding=(10, 6))
-        folders.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        folders.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(14, 0))
         folders.columnconfigure(1, weight=1)
         self.input_box = self._folder(folders, "opt_input_dir", 0, app.options["input_dir"])
+        self.output_box = self._folder(folders, "output_label", 1, app.options["output_dir"])
+        # Telmi-Sync lists its own stories folder every time it starts, so a story
+        # written there is on its shelf without an import. The folder is Telmi-Sync's
+        # to make: a machine it has never run on has none, and nothing here makes one.
+        self.telmi_button = ttk.Button(folders, text=app.t("browse_stories"), command=self._telmi_stories)
+        self.telmi_button.grid(row=2, column=1, sticky="e", pady=(6, 0))
         asked = "opt_input_hint" if app.options.get("input_dir") else "opt_input_unset"
         self.folders_hint = ttk.Label(folders, text=app.t(asked), style="Brand.TLabel")
-        self.folders_hint.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self.folders_hint.grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         ttk.Button(self.grid, text=app.t("opt_close"), command=self._close).grid(
-            row=row + 1, column=0, columnspan=2, sticky="e", pady=(12, 0)
+            row=4, column=0, columnspan=2, sticky="e", pady=(12, 0)
         )
+
+    def _telmi_stories(self) -> None:
+        stories = Path.home() / ".telmi" / "stories"
+        if not stories.is_dir():
+            self.app._append(f"no Telmi-Sync stories folder at {stories}: run Telmi-Sync once, or pick a folder yourself")
+            return
+        self.output_box.delete(0, "end")
+        self.output_box.insert(0, str(stories))
 
     def engine(self) -> str:
         """The engine the speech page left saved: this window installs that one."""
@@ -2742,52 +2957,25 @@ class Options(Settings):
             return self.app.t("speech_no_python")
         return self.app.t("speech_missing").format(engine=tts.LABELS[engine])
 
-    def _show_install(self, installing: bool = False) -> None:
-        engine = self.engine()
-        self.install_button.configure(text=self.app.t("speech_installing" if installing else "speech_install"))
-        wanted = engine in tts.PACKAGES and not installing
-        self.install_button.state(["!disabled"] if wanted else ["disabled"])
-        if not installing and not wanted:
-            self.engine_state.configure(text=self.app.t("speech_builtin"))
-
-    def _install_engine(self) -> None:
-        """pip runs in the background: a neural engine is a gigabyte or more."""
-        self._show_install(installing=True)
-        threading.Thread(
-            target=self._job, args=(self.engine(), self.python_box.get().strip() or None), daemon=True
-        ).start()
-
     def _get_python(self) -> None:
         open_url(PYTHON_URL)
 
-    def _job(self, engine: str, python: str | None) -> None:
-        try:
-            self.events.put(("install", tts.install_engine(engine, python, self.app.speech_language())))
-        except tts.TtsError as exc:
-            log.error("%s", exc)
-            self.events.put(("install", None))
-
     def finished(self, kind: str, result: object) -> None:
-        if kind == "engine":
-            token, found, has_python = result
-            self._answered = token
-            if token != self._probe:
-                return  # an answer about a Python the user has already typed over
-            self.engine_state.configure(text=self._engine_text(found, has_python))
-            self._show_install()
-            if has_python:
-                self.python_button.grid_remove()
-            else:
-                self.python_button.grid()
-        elif kind == "install":
-            if result and not self.python_box.get().strip():
-                # The app built its own Python: show the user which one now speaks.
-                self.python_box.insert(0, str(result))
-            self._show_install()
-            self._show_engine()
+        if kind != "engine":
+            return
+        token, found, has_python = result
+        self._answered = token
+        if token != self._probe:
+            return  # an answer about a Python the user has already typed over
+        self.engine_state.configure(text=self._engine_text(found, has_python))
+        if has_python:
+            self.python_button.grid_remove()
+        else:
+            self.python_button.grid()
 
     def _close(self) -> None:
         input_dir = self.input_box.get().strip() or None
+        output_dir = self.output_box.get().strip() or None
         moved_input = input_dir != self.app.options.get("input_dir")
         self._save(
             {
@@ -2795,10 +2983,7 @@ class Options(Settings):
                 "autoplay": self.autoplay_var.get(),
                 "python": self.python_box.get().strip() or None,
                 "input_dir": input_dir,
-                "frameless": self.frameless_var.get(),
-                # Asking the box once makes the answer a choice, and a choice is not
-                # re-derived from the default the next time the file is read.
-                "frameless_chosen": not system_bar_kept(),
+                "output_dir": output_dir,
             }
         )
         if moved_input:
@@ -2806,21 +2991,23 @@ class Options(Settings):
             self.app.options["last_dir"] = None
             settings.save(self.app.options)
         self.app.language_var.set(self.app.options["language"])
-        self.app.set_frameless(self.app.options["frameless"])
+        self.app.out_var.set(output_dir or "")
+        self.app._show_paths()
         self.app._relabel()
         self.top.destroy()
 
 
 class Speech(Settings):
-    """The voice the chapter cards get, and everything that goes with it.
+    """Everything about the audio that is not said on the window's own Audio page.
 
     Two pages, because a card and a chapter are read differently: one says a few
     words, the other is a page of prose, and each gets its own voice, reference
     clip and speed. The engine and its installer are one choice for both, so they
     sit outside the pages, above and below them.
 
-    The Piper voices these pages read with are downloaded from here; the engine they
-    belong to is installed from the options, where the Python it runs on is written.
+    The voices these pages read with are downloaded from here - a Piper voice, a
+    Coqui model, Chatterbox's model; the engine they belong to is installed from the
+    options, where the Python it runs on is written.
     A box the chosen engine has nothing to do with is greyed out rather than taken
     away, so the page keeps its shape when the engine changes.
     """
@@ -2834,8 +3021,8 @@ class Speech(Settings):
         tts.ESPEAK: ("voice", "speed"),
         tts.SAY: ("voice", "speed"),
         tts.SAPI: ("voice", "speed"),
-        tts.COQUI: ("voice", "clip", "device"),
-        tts.CHATTERBOX: ("voice", "clip", "device", "expression"),
+        tts.COQUI: ("voice", "clip", "device", "download"),
+        tts.CHATTERBOX: ("voice", "clip", "device", "expression", "download"),
         tts.COMMAND: (),
         "off": (),
     }
@@ -2850,6 +3037,9 @@ class Speech(Settings):
         self._playing: subprocess.Popen | None = None
         self._probe = 0
         self._answered = 0
+        # The engine the page opened with: an install is offered for a new choice, not
+        # for the one the page was already showing.
+        self._asked = app.options["tts"]
 
         self.engine_box = self._combo(self.grid, self.engine_keys, app.options["tts"])
         self._row(self.grid, "opt_engine", 0, self.engine_box)
@@ -2865,11 +3055,6 @@ class Speech(Settings):
 
         self.language_keys: list[str | None] = [None, *LANGUAGES]
         self.voice_keys: list[str | None] = [None]
-        self.read_voice_keys: list[str | None] = [None]
-        self.announce_keys = list(ANNOUNCE_MODES)
-        self.announce_box = self._combo(cards, self.announce_keys, app.options["announce"], ANNOUNCE_KEYS)
-        self.seconds_box = ttk.Entry(cards, width=6)
-        self.seconds_box.insert(0, f"{app.options['card_seconds']:g}")
         self.language_box = self._combo(
             cards, self.language_keys, app.options["speech_language"], SPEECH_LANGUAGE_KEYS
         )
@@ -2890,15 +3075,13 @@ class Speech(Settings):
         self.try_button = ttk.Button(try_row, text=app.t("speech_try"), command=self._try_voice)
         self.try_button.pack(side="left", padx=(6, 0))
 
-        self._row(cards, "opt_announce", 0, self.announce_box)
-        self._row(cards, "opt_card_seconds", 1, self.seconds_box)
-        self._row(cards, "opt_speech_language", 2, self.language_box)
-        self._row(cards, "opt_voice", 3, self.voice_box)
-        self._row(cards, "opt_speed", 4, self.speed_box)
-        self._row(cards, "opt_expression", 5, self.expression_box)
-        self._row(cards, "opt_device", 6, self.device_box)
-        self._row(cards, "opt_clip", 7, clip_row)
-        self._row(cards, "speech_try_label", 8, try_row)
+        self._row(cards, "opt_speech_language", 0, self.language_box)
+        self._row(cards, "opt_voice", 1, self.voice_box)
+        self._row(cards, "opt_speed", 2, self.speed_box)
+        self._row(cards, "opt_expression", 3, self.expression_box)
+        self._row(cards, "opt_device", 4, self.device_box)
+        self._row(cards, "opt_clip", 5, clip_row)
+        self._row(cards, "speech_try_label", 6, try_row)
 
         install = ttk.Labelframe(self.grid, text=app.t("speech_section"), padding=(10, 6))
         install.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(14, 0))
@@ -2916,18 +3099,8 @@ class Speech(Settings):
             row=0, column=0, columnspan=2, sticky="w", pady=(0, 8)
         )
         self.read_speed_keys: list[str | None] = [None, *self.speed_keys]
-        self.read_voice_box = self._combo(reading, self.read_voice_keys, app.options["read_voice"], SAME)
         self.read_speed_box = self._combo(reading, self.read_speed_keys, app.options["read_speed"], READ_SPEED_KEYS)
-        read_clip_row = ttk.Frame(reading)
-        self.read_clip_box = ttk.Entry(read_clip_row, width=22)
-        self.read_clip_box.insert(0, app.options["read_clip"] or "")
-        self.read_clip_box.pack(side="left")
-        ttk.Button(read_clip_row, text=app.t("browse_output"), command=self._pick_read_clip).pack(
-            side="left", padx=(6, 0)
-        )
-        self._row(reading, "opt_voice", 1, self.read_voice_box)
-        self._row(reading, "opt_speed", 2, self.read_speed_box)
-        self._row(reading, "opt_clip", 3, read_clip_row)
+        self._row(reading, "opt_speed", 1, self.read_speed_box)
 
         ttk.Button(self.grid, text=app.t("opt_close"), command=self._close).grid(
             row=3, column=0, columnspan=2, sticky="e", pady=(12, 0)
@@ -2943,17 +3116,6 @@ class Speech(Settings):
     def _sample_text(self) -> str:
         """What the try box holds before the user types anything: the card's own words."""
         return self.language().chapter.format(n=1)
-
-    def _seconds(self) -> float:
-        """How long a card plays its own part, as typed: a comma reads as a decimal
-        point, and anything the box cannot be read as falls back to the default.
-        """
-        try:
-            value = float(self.seconds_box.get().strip().replace(",", "."))
-        except ValueError:
-            value = settings.DEFAULTS["card_seconds"]
-        low, high = CARD_SECONDS_LIMITS
-        return min(max(value, low), high)
 
     def _show_engine(self) -> None:
         """Grey out the rows this engine cannot answer for, then ask it what it has.
@@ -2986,41 +3148,45 @@ class Speech(Settings):
         # None means the window already answered that half on its own thread.
         listed = engine not in (None, "auto", "off", tts.PIPER, tts.COQUI)
         names = tts.voices(engine, language, any_language=True) if listed else None
-        self.events.put(("engine", (token, names)))
+        installed = engine not in tts.PACKAGES or tts.available(engine, self.app.options.get("python") or None)
+        self.events.put(("engine", (token, names, installed, engine)))
+
+    def _offer_install(self, engine: str) -> None:
+        """An engine picked from this box that the machine does not have: the install
+        is asked here, where the choice was just made, and not on another page."""
+        if messagebox.askokcancel(self.app.t("speech_title"), self.app.t("engine_needed").format(engine=tts.LABELS[engine])):
+            threading.Thread(target=self._install_now, args=self.app._install_job(engine), daemon=True).start()
+
+    def _install_now(self, engine: str, language: str, notice: str) -> None:
+        """pip runs in the background: a neural engine is a gigabyte or more."""
+        self.app._install_answers(engine, language, notice)
+        self.events.put(("installed", engine))
 
     def _show_live(self) -> None:
         engine = self._chosen(self.engine_box, self.engine_keys)
         live = self.LIVE.get(engine, ())
         combos = (
             ("voice", self.voice_box), ("speed", self.speed_box), ("device", self.device_box),
-            ("expression", self.expression_box),
-            ("voice", self.read_voice_box), ("speed", self.read_speed_box),
+            ("expression", self.expression_box), ("speed", self.read_speed_box),
         )
         for key, box in combos:
             box.configure(state="readonly" if key in live else "disabled")
-        for key, box in (("clip", self.clip_box), ("clip", self.read_clip_box)):
-            box.configure(state="normal" if key in live else "disabled")
+        self.clip_box.configure(state="normal" if "clip" in live else "disabled")
         self.download_box.configure(state="readonly" if "download" in live else "disabled")
         self.download_button.state(["!disabled"] if "download" in live and self.download_keys else ["disabled"])
 
     def _fill_voices(self, names: list[str]) -> None:
-        """Both voice boxes, filled with the voices the engine answered with."""
+        """The voice box, filled with the voices the engine answered with."""
         keys: list[str | None] = [None, *names]
         self.voice_keys = keys
-        self.read_voice_keys = keys
         self.voice_box.configure(values=[self._label_text(k) for k in keys])
-        self.read_voice_box.configure(values=[self._label_text(k, SAME) for k in keys])
-        for box, option, labels in ((self.voice_box, "voice", None), (self.read_voice_box, "read_voice", SAME)):
-            saved = self.app.options[option]
-            box.set(self._label_text(saved if saved in keys else None, labels))
+        saved = self.app.options["voice"]
+        self.voice_box.set(self._label_text(saved if saved in keys else None))
 
     def _fill_downloads(self) -> None:
-        """The Piper voices this language has that are not on the machine yet."""
+        """What this engine can fetch for this language and is not set up yet."""
         engine = self._chosen(self.engine_box, self.engine_keys)
-        code = self.language().code
-        have = set(tts.piper_voices(code))
-        wanted = tts.PIPER_VOICES.get(code, []) if engine in ("auto", tts.PIPER) else []
-        self.download_keys = [name for name in wanted if name not in have]
+        self.download_keys = tts.downloadable(engine, self.language().code)
         self.download_box.configure(values=self.download_keys)
         self.download_box.set(self.download_keys[0] if self.download_keys else "")
 
@@ -3029,12 +3195,6 @@ class Speech(Settings):
         if path:
             self.clip_box.delete(0, "end")
             self.clip_box.insert(0, path)
-
-    def _pick_read_clip(self) -> None:
-        path = self.app._browse("opt_clip", self.read_clip_box.get(), "file")
-        if path:
-            self.read_clip_box.delete(0, "end")
-            self.read_clip_box.insert(0, path)
 
     def _settings(self) -> dict:
         """The engine settings as they stand in the boxes. Only this thread reads a widget."""
@@ -3068,7 +3228,7 @@ class Speech(Settings):
         code = self.language().code
         try:
             if kind == "voice":
-                self.events.put(("voice", tts.download_voice(argument, options["python"])))
+                self.events.put(("voice", tts.download_voice(argument, options["python"], options["engine"])))
                 return
             if self._try_folder is None:
                 self._try_folder = Path(tempfile.mkdtemp(prefix="daisy2telmi-try-"))
@@ -3087,12 +3247,17 @@ class Speech(Settings):
 
     def finished(self, kind: str, result: object) -> None:
         if kind == "engine":
-            token, names = result
+            token, names, installed, engine = result
             self._answered = token
             if token != self._probe:
                 return  # an answer about an engine the user has already moved on from
             if names is not None:
                 self._fill_voices(names)
+            if not installed and engine != self._asked:
+                self._asked = engine
+                self._offer_install(engine)
+        elif kind == "installed":
+            self._show_engine()
         elif kind == "voice":
             self.download_button.state(["!disabled"])
             self.download_button.configure(text=self.app.t("speech_download"))
@@ -3108,17 +3273,13 @@ class Speech(Settings):
         self._save(
             {
                 "tts": self._chosen(self.engine_box, self.engine_keys),
-                "announce": self._chosen(self.announce_box, self.announce_keys, ANNOUNCE_KEYS),
-                "card_seconds": self._seconds(),
                 "speech_language": self._chosen(self.language_box, self.language_keys, SPEECH_LANGUAGE_KEYS),
                 "voice": self._chosen(self.voice_box, self.voice_keys),
                 "speed": self._chosen(self.speed_box, self.speed_keys, SPEED_KEYS),
                 "expression": self._chosen(self.expression_box, self.expression_keys, EXPRESSION_KEYS),
                 "clip": self.clip_box.get().strip() or None,
                 "device": self._chosen(self.device_box, self.device_keys),
-                "read_voice": self._chosen(self.read_voice_box, self.read_voice_keys, SAME),
                 "read_speed": self._chosen(self.read_speed_box, self.read_speed_keys, READ_SPEED_KEYS),
-                "read_clip": self.read_clip_box.get().strip() or None,
             }
         )
         self.app._show_engines()

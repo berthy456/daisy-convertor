@@ -169,6 +169,24 @@ def test_an_existing_story_folder_is_refused_without_force(tmp_path: Path, caplo
     assert "a file of the same name already exists" in caplog.text, "the log names the clash"
 
 
+@requires_pack
+def test_a_file_that_will_not_be_given_up_says_so(tmp_path: Path, monkeypatch, caplog) -> None:
+    """A story folder the machine holds — read-only, open elsewhere, on a full disk —
+    is an overwrite that failed, and the log has to name it as the reason."""
+    out = tmp_path / "out"
+    assert main([str(PACK), str(out)]) == 0
+    story = next(entry for entry in out.iterdir() if entry.is_dir())
+
+    def refuse(*args, **kwargs):
+        raise PermissionError(13, "Permission denied", str(story))
+
+    monkeypatch.setattr(cli, "build_story", refuse)
+    with caplog.at_level(logging.ERROR):
+        assert main([str(PACK), str(out), "--force"]) == 1
+    assert "Permission denied" in caplog.text
+    assert "could not be overwritten" in caplog.text, "the failure is named as an overwrite"
+
+
 def test_a_non_daisy_folder_fails_cleanly(tmp_path: Path) -> None:
     empty = tmp_path / "empty"
     empty.mkdir()

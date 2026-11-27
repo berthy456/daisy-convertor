@@ -12,10 +12,11 @@ const PACK = join(ROOT, "gon-ruby-mp3.zip");
 
 const { readZip, writeZip } = await import("../../web/zip.js");
 const { extractBook } = await import("../../web/daisy.js");
-const { buildStoryFiles, buildStoryZip } = await import("../../web/convert.js");
+const { buildStoryFiles, buildStoryZip, partTitle } = await import("../../web/convert.js");
 const { buildNodes, normalizeFileName, slugify, storyDirName, storyUuid } = await import("../../web/telmi.js");
 const { mp3Frames, trimFrames } = await import("../../web/mp3.js");
 const { cardWords } = await import("../../web/cover.js");
+const { chapterWords } = await import("../../web/i18n.js");
 
 const { installCanvasStub } = await import("./canvas-stub.mjs");
 
@@ -287,6 +288,32 @@ test("the written zip reads back identically", async () => {
     assert.equal(entry.data.length, story.files[index].data.length);
   });
   assert.ok(dir);
+});
+
+test("a label that only numbers the part is not a title", () => {
+  for (const [label, code] of [
+    ["Chapitre 1", "fr"],
+    ["CHAPITRE IV", "fr"],
+    ["Chapitre 1er", "fr"],
+    ["Part 2", "en"],
+    ["第 1 章", "zh"],
+    ["الفصل 2", "ar"],
+    ["Kapitel 3", "de"],
+    ["1", "en"],
+  ]) {
+    assert.equal(partTitle(label, chapterWords(code)), "", `${code}: ${label}`);
+  }
+});
+
+test("a label with a name beside the number is the part's title", () => {
+  for (const [label, code] of [
+    ["Chapitre 1 : Le lapin", "fr"],
+    ["La fee des bois", "fr"],
+    ["Kapitel 3 - Der Wald", "de"],
+    ["Chapter 2: The invisible dog", "en"],
+  ]) {
+    assert.equal(partTitle(label, chapterWords(code)), label, `${code}: ${label}`);
+  }
 });
 
 export { PACK };

@@ -226,3 +226,24 @@ test("a colour card keeps its corner number, its thumbnail and no strips", async
     "a colour card draws no strip behind its lettering",
   );
 });
+
+test("the crop preview carries the card's own lettering", async () => {
+  const { drawPreview } = await import("../../web/cover.js");
+  const frame = (width, height) => new StubCanvas(width, height).getContext();
+
+  TEXTS.length = 0;
+  drawPreview(frame(640, 480), cover, 640, 480, { crop: "center" }, "colour", false, 1, "Chapter 1/6");
+  assert.deepEqual(TEXTS.map((line) => line[0]), ["Chapter 1/6"], "the preview writes the card's words");
+  assert.equal(TEXTS[0][1], 640 - 24, "in the corner the card keeps them");
+
+  TEXTS.length = 0;
+  drawPreview(frame(640, 480), cover, 640, 480, { crop: "center" }, "colour");
+  assert.deepEqual(TEXTS, [], "with no label the preview is the cover alone");
+
+  TEXTS.length = 0;
+  FILLS.length = 0;
+  drawPreview(frame(320, 240), cover, 320, 240, { crop: "center" }, "bw", false, 1, "3");
+  assert.deepEqual(TEXTS.map(([line, x, y]) => [line, x, y]), [["3", 160, 120]], "a Lunii preview centres its number");
+  const strips = FILLS.filter(([, , width, height, card]) => card === 320 && width === 320 && height < 240);
+  assert.equal(strips.length, 1, "on the strip the card draws behind it");
+});

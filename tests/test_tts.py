@@ -816,6 +816,62 @@ def test_a_voice_download_needs_the_engine_installed_first(tmp_path, monkeypatch
         tts.download_voice("fr_FR-siwis-medium")
 
 
+def _fake_load(monkeypatch) -> tuple[list[list[str]], list[dict]]:
+    """A stand-in for the engine run: keep what was started and what it was told."""
+    started: list[list[str]] = []
+    manifests: list[dict] = []
+
+    def stream(exe: str, args: list[str], label: str) -> None:
+        started.append([exe, *args])
+        manifests.append(json.loads(Path(args[2]).read_text(encoding="utf-8")))
+
+    monkeypatch.setattr(tts, "_pythons", lambda python=None: ["/opt/python"])
+    monkeypatch.setattr(tts, "_has_package", lambda name, exe: True)
+    monkeypatch.setattr(tts, "_stream", stream)
+    return started, manifests
+
+
+def test_a_coqui_voice_download_loads_the_model_it_names(monkeypatch) -> None:
+    started, manifests = _fake_load(monkeypatch)
+
+    assert tts.download_voice("tts_models/fr/css10/vits", None, tts.COQUI) is None
+    assert started[0][0] == "/opt/python"
+    assert started[0][2].endswith("coqui_speak.py")
+    assert manifests[0]["model"] == "tts_models/fr/css10/vits"
+    assert manifests[0]["phrases"] == [], "the load is the download: nothing is spoken"
+
+
+def test_a_chatterbox_voice_download_loads_the_one_model_it_has(monkeypatch) -> None:
+    started, manifests = _fake_load(monkeypatch)
+
+    assert tts.download_voice(tts.CHATTERBOX_MODEL, None, tts.CHATTERBOX) is None
+    assert started[0][2].endswith("chatterbox_speak.py")
+    assert "model" not in manifests[0], "Chatterbox has one model for every language"
+
+
+def test_the_voice_button_lists_what_each_engine_can_fetch(tmp_path, monkeypatch) -> None:
+    voices = tmp_path / "voices"
+    voices.mkdir()
+    (voices / "fr_FR-upmc-medium.onnx").write_text("")
+    monkeypatch.setattr(tts.settings, "speech_voices", lambda: voices)
+
+    assert tts.downloadable(tts.PIPER, "fr") == [n for n in tts.PIPER_VOICES["fr"] if n != "fr_FR-upmc-medium"]
+    assert tts.downloadable("auto", "fr") == tts.downloadable(tts.PIPER, "fr")
+    assert tts.downloadable(tts.COQUI, "fr") == [
+        "tts_models/fr/css10/vits",
+        "tts_models/fr/mai/tacotron2-DDC",
+        tts.COQUI_MULTILINGUAL,
+    ]
+    assert tts.downloadable(tts.COQUI, "ar") == [tts.COQUI_MULTILINGUAL]
+    assert tts.downloadable(tts.CHATTERBOX, "fr") == [tts.CHATTERBOX_MODEL]
+    assert tts.downloadable(tts.SAY, "fr") == []
+
+
+def test_the_coqui_models_a_language_can_speak_with_are_the_ones_the_page_lists() -> None:
+    for code in tts.COQUI_MODELS:
+        assert tts.coqui_models(code) == tts.voices(tts.COQUI, LANGUAGES[code])
+
+
 @requires_ffmpeg
 def test_a_piper_card_carries_the_voice_and_the_speed(tmp_path, monkeypatch) -> None:
     manifests: list[dict] = []
@@ -923,13 +979,14 @@ def test_the_card_total_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -
     assert hidden.show_total is False
 
 
-def test_the_reading_voice_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -> None:
+def test_the_reading_speed_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     settings.save({**settings.DEFAULTS, "read_voice": "saved-reader", "read_speed": "slow"})
 
     saved = cli.announce_options(cli._parse_args(["pack.zip", "out"]))
     forced = cli.announce_options(cli._parse_args(["pack.zip", "out", "--read-voice", "flag", "--read-speed", "fast"]))
-    assert (saved.read_voice, saved.read_speed) == ("saved-reader", "slow")
+    assert saved.read_voice is None, "the app saves no reading voice: one voice reads the cards and the book"
+    assert saved.read_speed == "slow"
     assert (forced.read_voice, forced.read_speed) == ("flag", "fast")
 
 

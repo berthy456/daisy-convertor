@@ -32,12 +32,13 @@ DEFAULTS: dict = {
     # The language of the cards and the voice. Nothing saved means the book's own,
     # read off the pack; what is saved is what the user pinned over it.
     "speech_language": None,
-    "announce": "prompt",
+    "announce": "title",
     "autoplay": False,
     # How long a card that plays the part's own opening plays it for.
     "card_seconds": 3.0,
     "card_total": True,
-    "card_title": False,
+    "card_title": True,
+    "card_contrast": 1.0,
     "card_negative": False,
     # Whether anyone ever ticked the bar box. A settings file written by a version
     # that had its own default for it carries that default, not a choice, so an
@@ -53,10 +54,8 @@ DEFAULTS: dict = {
     "python": None,
     "clip": None,
     "device": "auto",
-    # A whole chapter is not read the way a card's few words are. Empty takes the
-    # card's engine, voice, clip and speed.
-    "read_voice": None,
-    "read_clip": None,
+    # A whole chapter is not read at the pace a card's few words are. Empty reads it at
+    # the card's speed, with the card's engine, voice and clip.
     "read_speed": None,
     "input_dir": None,
     "output_dir": None,

@@ -219,6 +219,13 @@ input[type="file"] {
   width: 5rem;
 }
 
+/* A card that says a title or a number plays no extract, so the length it would
+   play it for is left on the line and greyed out. */
+.cards-seconds input:disabled {
+  color: var(--muted);
+  background: var(--bg);
+}
+
 .cover-head {
   display: flex;
   gap: 0.75rem;
@@ -356,6 +363,15 @@ input[type="file"] {
   gap: 0.75rem;
   align-items: center;
   margin-top: 0.5rem;
+}
+
+/* The words that explain the knobs read after the picture they describe: under the
+   frame, centred on it, a little narrower than it. */
+.crop-box .crop-note {
+  max-width: 33rem;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
 }
 
 /* On a wide screen the knobs that change what the frame shows stand beside it, the

@@ -76,6 +76,28 @@ export function greyLevel(luminance, negative = false) {
   return Math.round((value * (GREY_LEVELS - 1)) / 255) * GREY_STEP;
 }
 
+export const CONTRAST_LIMITS = [0.5, 1.5];
+
+/**
+ * Pull the lights and the shadows further apart, the way ffmpeg's eq=contrast does:
+ * every value moves off the middle by `value`, so 1 leaves the picture alone.
+ *
+ * It runs on the cover alone, before the lettering goes on, as the desktop build
+ * runs it on the crop before the card is written.
+ */
+export function applyContrast(ctx, width, height, value = 1) {
+  const factor = Math.min(CONTRAST_LIMITS[1], Math.max(CONTRAST_LIMITS[0], value));
+  if (factor === 1) return;
+  const image = ctx.getImageData(0, 0, width, height);
+  for (let at = 0; at < image.data.length; at += 4) {
+    for (const channel of [0, 1, 2]) {
+      const light = Math.round((image.data[at + channel] - 128) * factor + 128);
+      image.data[at + channel] = Math.min(255, Math.max(0, light));
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+}
+
 /** Flatten a finished picture to the sixteen levels a plain Lunii shows. */
 export function toGreys(ctx, width, height, negative = false) {
   const image = ctx.getImageData(0, 0, width, height);
@@ -196,14 +218,19 @@ function drawCover(ctx, cover, left, top, width, height, view = {}, style = "col
  * card's band, and a grey card's picture flattened to the greys its screen has.
  *
  * Drawn the way `coverPng` draws the picture this becomes, so what the crop frame
- * shows is what the story will carry.
+ * shows is what the story will carry. `label` letters it as the card will be lettered,
+ * so the words it will carry are seen on the picture they will be carried on.
  */
-export function drawPreview(ctx, cover, width, height, view = {}, style = "colour", negative = false) {
+export function drawPreview(ctx, cover, width, height, view = {}, style = "colour", negative = false, contrast = 1, label = "") {
   // The frame is painted over each time it is drawn, so the room the cover leaves
   // takes the band and a cover with transparency has something of its own to sit on.
   ctx.fillStyle = PALETTE[style].band;
   ctx.fillRect(0, 0, width, height);
-  if (cover) drawCover(ctx, cover, 0, 0, width, height, view, style);
+  if (cover) {
+    drawCover(ctx, cover, 0, 0, width, height, view, style);
+    applyContrast(ctx, width, height, contrast);
+  }
+  if (label) cardLettering(ctx, label, width, height, style);
   if (style === "bw") toGreys(ctx, width, height, negative);
 }
 
@@ -248,6 +275,62 @@ export function cardWords(ctx, text, width) {
 }
 
 /**
+ * The card's own lettering, laid over whatever is already drawn on the canvas.
+ *
+ * A grey card carries its number alone, as large as its screen allows; a colour card
+ * numbers itself top right. `cardPng` draws it over the cover it composed, and the
+ * crop preview draws it over the frame, so the words a card will carry are seen on
+ * the picture they will be carried on.
+ */
+export function cardLettering(ctx, label, width, height, style) {
+  const { margin } = layout(width);
+  const room = width - 2 * margin;
+  ctx.lineJoin = "round";
+  ctx.miterLimit = 2;
+  if (style === "bw") {
+    // The Lunii screen sits behind a plastic window, so nothing drawn small is
+    // readable there: the card carries the number alone. It is sized as a
+    // three-digit number, so every card of a story carries a number of the same
+    // height and a hundred-part story fills the width.
+    const base = Math.round(height / 11);
+    ctx.font = `bold ${base}px system-ui, sans-serif`;
+    const widest = Math.max(ctx.measureText(label).width, ctx.measureText("888").width);
+    const size = Math.min((base * room) / widest, (height - 2 * margin) / DIGIT_INK);
+    const middle = Math.round(height / 2);
+    const ink = Math.round(size * DIGIT_INK);
+    ctx.fillStyle = PALETTE[style].background;
+    ctx.fillRect(0, middle - ink / 2 - margin, width, ink + 2 * margin);
+    ctx.font = `bold ${size}px system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = Math.max(4, Math.round(size / 12));
+    ctx.strokeStyle = PALETTE[style].border;
+    ctx.fillStyle = PALETTE[style].ink;
+    ctx.strokeText(label, width / 2, middle);
+    ctx.fillText(label, width / 2, middle);
+    return;
+  }
+  ctx.textBaseline = "top";
+  // A card asked to carry no words of its own keeps the picture and its opening
+  // lines: the number is what a card adds, and it was asked not to.
+  if (!label) return;
+  const numberSize = Math.round(height / 11);
+  ctx.font = `bold ${numberSize}px system-ui, sans-serif`;
+  const wide = ctx.measureText(label).width;
+  // A titled line is drawn smaller than a bare number, never smaller than the
+  // card's own opening words: below that the number stops being the thing a
+  // listener reads on a card.
+  const drawn = wide <= room ? numberSize : Math.max(Math.round(height / 17), Math.round((numberSize * room) / wide));
+  ctx.font = `bold ${drawn}px system-ui, sans-serif`;
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = PALETTE[style].border;
+  ctx.fillStyle = PALETTE[style].ink;
+  ctx.textAlign = "right";
+  ctx.strokeText(label, width - margin, margin);
+  ctx.fillText(label, width - margin, margin);
+}
+
+/**
  * One card: the part's number, its opening words, and the cover behind them.
  *
  * Every card carries the cover across the whole screen. A sixteen-grey card is the
@@ -270,6 +353,7 @@ export async function cardPng(
   style = "colour",
   negative = false,
   title = "",
+  contrast = 1,
 ) {
   const canvas = surface(width, height);
   const ctx = canvas.getContext("2d");
@@ -280,36 +364,19 @@ export async function cardPng(
   ctx.lineJoin = "round";
   ctx.miterLimit = 2;
   ctx.textBaseline = "top";
-  if (cover) drawCover(ctx, cover, 0, 0, width, height, view, style);
+  if (cover) {
+    drawCover(ctx, cover, 0, 0, width, height, view, style);
+    applyContrast(ctx, width, height, contrast);
+  }
 
   if (band) {
-    // The Lunii screen sits behind a plastic window, so nothing drawn small is
-    // readable there: the card carries the number alone, as large as the screen
-    // allows. It is sized as a three-digit number, so every card of a story
-    // carries a number of the same height and a hundred-part story fills the width.
-    const base = Math.round(height / 11);
-    ctx.font = `bold ${base}px system-ui, sans-serif`;
-    const room = width - 2 * margin;
-    const widest = Math.max(ctx.measureText(label).width, ctx.measureText("888").width);
-    const size = Math.min((base * room) / widest, (height - 2 * margin) / DIGIT_INK);
-    const middle = Math.round(height / 2);
-    const ink = Math.round(size * DIGIT_INK);
-    ctx.fillRect(0, middle - ink / 2 - margin, width, ink + 2 * margin);
-    ctx.font = `bold ${size}px system-ui, sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.lineWidth = Math.max(4, Math.round(size / 12));
-    ctx.strokeStyle = PALETTE[style].border;
-    ctx.fillStyle = PALETTE[style].ink;
-    ctx.strokeText(label, width / 2, middle);
-    ctx.fillText(label, width / 2, middle);
+    cardLettering(ctx, label, width, height, style);
     // Flattened last, once the cover and the number are down, so a card cannot
     // pick up a grey the screen lacks where two layers meet.
     if (style === "bw") toGreys(ctx, width, height, negative);
     return toPng(canvas);
   }
 
-  const numberSize = Math.round(height / 11);
   const size = Math.round(height / 17);
   const pitch = Math.round(size * 1.3);
   const room = width - 2 * margin;
@@ -321,23 +388,7 @@ export async function cardPng(
   // A title is kept when the card has room for it at the size of its own words.
   const named = title ? (label ? `${label}, ${title}` : title) : label;
   const lettering = ctx.measureText(named).width <= room ? named : label;
-  // A titled line is drawn smaller than a bare number, never smaller than the
-  // card's own opening words: below that the number stops being the thing a
-  // listener reads on a card.
-  ctx.font = `bold ${numberSize}px system-ui, sans-serif`;
-  const wide = ctx.measureText(lettering).width;
-  const drawn = wide <= room ? numberSize : Math.max(size, Math.round((numberSize * room) / wide));
-  // A card asked to carry no words of its own keeps the picture and its opening
-  // lines: the number is what a card adds, and it was asked not to.
-  if (lettering) {
-    ctx.font = `bold ${drawn}px system-ui, sans-serif`;
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = PALETTE[style].border;
-    ctx.fillStyle = PALETTE[style].ink;
-    ctx.textAlign = "right";
-    ctx.strokeText(lettering, width - margin, margin);
-    ctx.fillText(lettering, width - margin, margin);
-  }
+  cardLettering(ctx, lettering, width, height, style);
 
   ctx.font = `${size}px system-ui, sans-serif`;
   ctx.textAlign = "left";
@@ -452,10 +503,11 @@ export async function captionPng(text, width = IMAGE_SIZE[0], height = IMAGE_SIZ
 }
 
 /** The cover, cropped to width x height. */
-export async function coverPng(cover, width, height, view = {}, style = "colour", negative = false) {
+export async function coverPng(cover, width, height, view = {}, style = "colour", negative = false, contrast = 1) {
   const canvas = surface(width, height);
   const ctx = canvas.getContext("2d");
   drawCover(ctx, cover, 0, 0, width, height, view, style);
+  applyContrast(ctx, width, height, contrast);
   if (style === "bw") toGreys(ctx, width, height, negative);
   return toPng(canvas);
 }

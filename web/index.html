@@ -130,6 +130,10 @@
                 <span data-i18n="crop_zoom"></span>
                 <input id="crop-zoom" type="range" min="0" max="4" step="0.05" value="1" />
               </label>
+              <label class="crop-zoom">
+                <span data-i18n="contrast"></span>
+                <input id="crop-contrast" type="range" min="0.5" max="1.5" step="0.05" value="1" />
+              </label>
               <button id="crop-reset" type="button" data-i18n="crop_reset"></button>
               <!-- Only the plain Lunii screen is black and white, so only its cards can
                    be read the other way round. -->
@@ -137,6 +141,7 @@
                 <input id="card-negative" type="checkbox" />
                 <span data-i18n="card_negative"></span>
               </label>
+              <p id="negative-note" class="captions-note" data-i18n="card_negative_hint" hidden></p>
               <!-- Only a Telmi or a Flam screen is big enough to read a sentence on,
                    and only a book cut at sentences gives one sentence per part. -->
               <label id="captions-row" class="crop" hidden>

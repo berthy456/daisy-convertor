@@ -146,6 +146,14 @@ COQUI_CLONE_LANGUAGES = {
     "en", "es", "fr", "de", "it", "pt", "nl", "tr", "ar", "zh", "pl", "ru", "cs", "ja", "hu", "ko", "hi",
 }
 
+# Chatterbox speaks every language from one model, and the app has no name for its
+# voices: the model carries one per language, and a recording clones another.
+CHATTERBOX_MODEL = "resemble-ai/chatterbox"
+
+# The engines whose weights the app cannot see: they land in the engine's own cache,
+# and the engine is the only thing that knows whether a model is already there.
+MODEL_ENGINES = (COQUI, CHATTERBOX)
+
 
 def card_target(story: float | None) -> float:
     """The LUFS a card is levelled to: a little under the story it interrupts.
@@ -611,15 +619,60 @@ def _download_voice(exe: str, voice: str, folder: Path) -> Path:
     return path
 
 
-def download_voice(voice: str, python: str | None = None) -> Path:
-    """Download one Piper voice into the app's voice folder, and answer where it landed.
+def _download_model(exe: str, engine: str, model: str | None) -> None:
+    """Load the model with nothing to say: for the torch engines, the load is the download.
 
-    The weights are the one part of a speech engine the app never ships: a voice is
-    tens of megabytes, and the machine that speaks the cards should fetch its own.
+    Their weights otherwise arrive in the middle of a conversion, a gigabyte at a time,
+    while the user waits on a run that has not started speaking.
     """
+    manifest: dict = {"phrases": [], "outs": [], "device": "auto"}
+    if model:
+        manifest["model"] = model
+    with tempfile.TemporaryDirectory(prefix=f"daisy2telmi-{engine}-") as tmp:
+        path = Path(tmp) / "manifest.json"
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+        _stream(exe, ["-I", str(_speak_script(engine)), str(path)], LABELS[engine])
+
+
+def download_voice(voice: str, python: str | None = None, engine: str = PIPER) -> Path | None:
+    """Download one voice's weights, and answer where the app can point at them.
+
+    The weights are the one part of a speech engine the app never ships: a Piper voice
+    is tens of megabytes and a torch model a gigabyte, and the machine that speaks the
+    cards should fetch its own. Piper's land in the app's voice folder; the torch
+    engines keep theirs in a cache of their own, so they answer with nothing.
+    """
+    if engine in MODEL_ENGINES:
+        _download_model(engine_python(engine, python), engine, voice if engine == COQUI else None)
+        return None
     folder = settings.speech_voices()
     folder.mkdir(parents=True, exist_ok=True)
     return _download_voice(engine_python(PIPER, python), voice, folder)
+
+
+def coqui_models(code: str) -> list[str]:
+    """The Coqui models this app can speak `code` with."""
+    models = list(COQUI_MODELS.get(code, []))
+    if code in COQUI_CLONE_LANGUAGES and COQUI_MULTILINGUAL not in models:
+        models.append(COQUI_MULTILINGUAL)
+    return models
+
+
+def downloadable(engine: str, code: str) -> list[str]:
+    """What the voice button can fetch for this engine and language.
+
+    Piper's voices are files the app can see, so the ones already on disk are left off
+    the list. The torch engines keep theirs where the app cannot look, so their models
+    are listed as they are: one already downloaded is answered by the engine in a second.
+    """
+    if engine in (AUTO, PIPER):
+        have = set(piper_voices(code))
+        return [name for name in PIPER_VOICES.get(code, []) if name not in have]
+    if engine == COQUI:
+        return coqui_models(code)
+    if engine == CHATTERBOX:
+        return [CHATTERBOX_MODEL]
+    return []
 
 
 def default_voice(code: str) -> str | None:
@@ -737,10 +790,7 @@ def voices(engine: str, lang: Language, any_language: bool = False) -> list[str]
     if engine == PIPER:
         return piper_voices(lang, any_language)
     if engine == COQUI:
-        models = list(COQUI_MODELS.get(lang.code, []))
-        if lang.code in COQUI_CLONE_LANGUAGES and COQUI_MULTILINGUAL not in models:
-            models.append(COQUI_MULTILINGUAL)
-        return models
+        return coqui_models(lang.code)
     if engine == ESPEAK and (exe := _which("espeak-ng") or _which("espeak")):
         return _lines(exe, ["--voices=" + lang.espeak], _espeak_env(), skip_header=True)
     if engine == SAY and (exe := _which("say")):

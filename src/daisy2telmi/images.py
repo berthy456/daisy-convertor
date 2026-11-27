@@ -580,6 +580,11 @@ def _scale_chain(width: int, height: int, zoom: float = 1.0) -> str:
     return f"scale=w='ceil(iw*{factor}/2)*2':h='ceil(ih*{factor}/2)*2'"
 
 
+def _contrast(value: float) -> str:
+    """A filter that pulls the picture's lights and shadows further apart."""
+    return f",eq=contrast={min(max(float(value), 0.5), 2.0):.3f}" if value != 1.0 else ""
+
+
 def _crop(
     ffmpeg: str,
     source: Path,
@@ -588,6 +593,7 @@ def _crop(
     mode: str = "center",
     view: dict | None = None,
     band: tuple[int, int, int] = BAND,
+    contrast: float = 1.0,
 ) -> None:
     width, height = size
     zoom = clamp_zoom((view or {}).get("zoom", 1.0))
@@ -599,6 +605,7 @@ def _crop(
         f"{_scale_chain(width, height, zoom)},"
         f"pad='max(iw,{width})':'max(ih,{height})':(ow-iw)/2:(oh-ih)/2:color={_hex(band)},"
         f"crop={width}:{height}:(iw-{width})*{focus[0]}:(ih-{height})*{focus[1]}"
+        f"{_contrast(contrast)}"
     )
     _run(
         [ffmpeg, "-y", "-i", str(source), "-vf", chain, "-frames:v", "1", str(dest)],
@@ -631,6 +638,7 @@ def cover_fit(
     zoom: float = 1.0,
     style: str = "colour",
     negative: bool = False,
+    contrast: float = 1.0,
 ) -> tuple[bytes, tuple[int, int]]:
     """The cover scaled to fill `size` and enlarged by `zoom`, and the picture's size.
 
@@ -642,7 +650,7 @@ def cover_fit(
     cover already flattened, so what the frame shows is what that card will carry.
     """
     ffmpeg = require_ffmpeg()
-    chain = _scale_chain(*size, clamp_zoom(zoom))
+    chain = _scale_chain(*size, clamp_zoom(zoom)) + _contrast(contrast)
     if style == "bw":
         chain += f",{_grey_chain(negative)}"
     with tempfile.TemporaryDirectory(prefix="daisy2telmi-") as tmp:
@@ -700,6 +708,7 @@ def write_cover(
     cover_size: tuple[int, int] = COVER_SIZE,
     view: dict | None = None,
     negative: bool = False,
+    contrast: float = 1.0,
 ) -> None:
     """`title.png`, `cover.png` and one card per part, all from `source`.
 
@@ -725,8 +734,8 @@ def write_cover(
         base = scratch / "base.png"
         square = scratch / "square.png"
         card_base = scratch / "card.png"
-        _crop(ffmpeg, source, scene, base, crop, view, band)
-        _crop(ffmpeg, source, cover_size, square, crop, view, band)
+        _crop(ffmpeg, source, scene, base, crop, view, band, contrast)
+        _crop(ffmpeg, source, cover_size, square, crop, view, band, contrast)
         # The whole cover behind the lettering. A grey card is flattened with the
         # lettering, once: flattening twice would push every grey up a level.
         shutil.copyfile(base, card_base)

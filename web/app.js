@@ -45,10 +45,8 @@ const coverSearching = document.getElementById("cover-searching");
 const coverStop = document.getElementById("cover-stop");
 const cutInputs = [...document.querySelectorAll('input[name="cut"]')];
 const cropCanvas = document.getElementById("crop-canvas");
-const cropInputs = [...document.querySelectorAll('input[name="crop"]')];
 const cropZoom = document.getElementById("crop-zoom");
 const cropContrast = document.getElementById("crop-contrast");
-const cropReset = document.getElementById("crop-reset");
 // One box per field, on the line that asks for it: the four a card can carry, and
 // the two a card can say around its number.
 const cardTextBoxes = {
@@ -91,7 +89,6 @@ const STORED_CUT = "daisy2telmi.cut";
 const STORED_AUTOPLAY = "daisy2telmi.autoplay";
 const STORED_PAUSE = "daisy2telmi.pause";
 const STORED_FORMAT = "daisy2telmi.format";
-const STORED_CROP = "daisy2telmi.crop";
 const STORED_CARDS = "daisy2telmi.cards";
 const STORED_CARD_LANGUAGE = "daisy2telmi.cardLanguage";
 const STORED_NEGATIVE = "daisy2telmi.negative";
@@ -125,11 +122,10 @@ let cut = "chapter";
 // was picked for it.
 let autoplay = false;
 let pauseAfter = "chapter";
-let crop = "center";
 let format = "telmi";
 // Where the frame sits over the cover and how far it is enlarged. `focus` stays
-// null while one of the three named bands is chosen, and takes over once the
-// user moves the frame themselves.
+// null until the user drags the frame somewhere of their own; until then the frame
+// sits on the middle of the cover.
 let focus = null;
 let zoom = 1;
 // How far the cover's lights and shadows are pulled apart before it is drawn.
@@ -489,13 +485,13 @@ function startNegative() {
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
-/** The frame's place over the cover: the chosen band until the user moves it. */
+/** The frame's place over the cover: the middle, until the user drags it off it. */
 function currentFocus() {
-  return focus ?? CROP_FOCUS[crop];
+  return focus ?? CROP_FOCUS.center;
 }
 
 function cropView() {
-  return { crop, zoom, focus };
+  return { zoom, focus };
 }
 
 /**
@@ -583,10 +579,8 @@ function stepZoom(factor) {
   else if (factor > 1) setZoom(0.25);
 }
 
-/** A moved frame answers to no band, so the three radios let go of it. */
 function setFocus(next) {
   focus = next;
-  for (const input of cropInputs) input.checked = false;
   drawCrop();
 }
 
@@ -594,33 +588,11 @@ function moveFrame(dx, dy) {
   setFocus(moveFocus(currentFocus(), dx, dy));
 }
 
-function resetCrop() {
-  crop = "center";
-  focus = null;
-  zoom = 1;
-  cropZoom.value = "1";
-  for (const input of cropInputs) input.checked = input.value === crop;
-  remember(STORED_CROP, crop);
-  drawCrop();
-}
-
 function startCrop() {
-  const stored = saved(STORED_CROP);
-  crop = cropInputs.some((input) => input.value === stored) ? stored : "center";
-  for (const input of cropInputs) {
-    input.checked = input.value === crop;
-    input.addEventListener("change", () => {
-      crop = input.value;
-      focus = null;
-      remember(STORED_CROP, crop);
-      drawCrop();
-    });
-  }
   drawCrop();
   cropZoom.min = String(MIN_ZOOM);
   cropZoom.max = String(MAX_ZOOM);
   cropZoom.addEventListener("input", () => setZoom(Number(cropZoom.value)));
-  cropReset.addEventListener("click", resetCrop);
 
   contrast = Number(saved(STORED_CONTRAST)) || 1;
   contrast = clamp(contrast, CONTRAST_LIMITS[0], CONTRAST_LIMITS[1]);
@@ -683,7 +655,7 @@ function clearCover() {
   coverClear.hidden = true;
   coverUrl.value = "";
   coverLink = "";
-  // The picture belongs to the cover that went away; the frame and the chosen band do not.
+  // The place the frame was dragged to belongs to the cover that went away.
   focus = null;
   zoom = 1;
   cropZoom.value = "1";
@@ -921,7 +893,6 @@ function settingsKey() {
     coverStamp,
     cut,
     format,
-    crop,
     zoom,
     focus,
     negative,
@@ -972,7 +943,6 @@ async function buildPack() {
       : await buildStoryZip(entries, silentMp3, progress, {
           pack: source.name,
           cover,
-          crop,
           zoom,
           focus,
           cut,

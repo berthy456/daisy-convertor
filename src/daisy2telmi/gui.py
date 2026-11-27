@@ -1046,27 +1046,14 @@ class App:
         self.crop_frame.bind("<KeyPress-equal>", lambda _e: self._zoom_crop(1.2))
         self.crop_frame.bind("<KeyPress-minus>", lambda _e: self._zoom_crop(1 / 1.2))
 
-        # Everything that changes what the frame shows stands beside it. Which band of
-        # a tall cover survives is not asked by name any more - it is the middle, and
-        # the frame is moved off it - so what is offered is the move itself: a cross of
-        # arrows, one per edge, doing what the keyboard arrows already do.
+        # Everything that changes what the frame shows stands beside it. Where the frame
+        # lands on a tall cover is answered on the picture itself, by dragging it, so
+        # this column only carries the two things a drag cannot do: how far in, and how
+        # far apart the lights and shadows are.
         side = ttk.Frame(crop_top)
         side.pack(side="left", anchor="n", padx=(12, 0))
         self.crop_side = side
         self._label(side, "cover_crop_label").pack(anchor="w")
-        pad = ttk.Frame(side)
-        pad.pack(anchor="w", pady=(4, 0))
-        self.crop_pad = pad
-        self.crop_arrows: dict[str, ttk.Button] = {}
-        for key, glyph, row, column, step in (
-            ("up", "↑", 0, 1, (0, 1)),
-            ("left", "←", 1, 0, (1, 0)),
-            ("right", "→", 1, 2, (-1, 0)),
-            ("down", "↓", 2, 1, (0, -1)),
-        ):
-            button = ttk.Button(pad, text=glyph, width=3, command=lambda move=step: self._step_crop(*move))
-            button.grid(row=row, column=column, padx=1, pady=1)
-            self.crop_arrows[key] = button
 
         # How far in is a number worth typing: a cover that has to land on one band is
         # asked for as a percentage, and the two buttons step it the way the wheel does.
@@ -1083,7 +1070,6 @@ class App:
         for event in ("<Return>", "<FocusOut>"):
             self.crop_zoom_box.bind(event, lambda _e: self._type_crop_zoom())
         self._show_crop_zoom()
-        self._button(side, "crop_reset", self._reset_crop).pack(anchor="w", pady=(8, 0))
 
         # How far apart the picture's lights and shadows are pulled. The player's
         # screen is small and its greys are not a monitor's, so a cover that reads on
@@ -2255,15 +2241,6 @@ class App:
         if self._crop_redraw is not None:
             self.root.after_cancel(self._crop_redraw)
         self._crop_redraw = self.root.after(120, self._show_crop)
-
-    def _reset_crop(self) -> None:
-        self.crop_var.set("center")
-        self._crop_focus = None
-        self.options["cover_crop"] = "center"
-        settings.save(self.options)
-        self._crop_zoom_value = 1.0
-        self._show_crop_zoom()
-        self._show_crop()
 
     def _on_drop(self, event: tk.Event) -> None:
         dropped = self.root.tk.splitlist(event.data)

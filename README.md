@@ -47,7 +47,7 @@ Without a cover the cards still work: they get a plain background and the chapte
 
 Under **Image crop to fit** is a picture: that box is exactly what the machine will show, at that machine's shape. A tall book cover does not fit a wide screen, and which part survives is easier to see than to describe.
 
-Drag the picture to move it. The **Zoom** slider, the mouse wheel, or the arrow keys scale it: at **0** the whole cover shows and the card's own colour fills the room a differently-shaped screen leaves, at **1** the cover fills the screen, and past that it grows and the frame cuts it, which also opens room to move sideways. **Top**, **Center** and **Bottom** jump back to the three standard framings; **Reset** starts over.
+Drag the picture to move it, or nudge it with the arrow keys. The **Zoom** slider or the mouse wheel scale it: at **0** the whole cover shows and the card's own colour fills the room a differently-shaped screen leaves, at **1** the cover fills the screen, and past that it grows and the frame cuts it, which also opens room to move sideways.
 
 ### 5. Choose how the book is cut
 

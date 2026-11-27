@@ -2167,16 +2167,18 @@ def test_the_negative_is_offered_for_the_grey_screen_only(app: gui.App) -> None:
 
 
 def test_the_crop_knobs_stand_beside_the_frame(app: gui.App) -> None:
-    """The choice is made on the picture, so what changes it sits next to it."""
+    """The choice is made on the picture, so what changes it sits next to it: the two
+    things a drag cannot do, how far in and how far apart the greys are."""
     app.root.update()
     frame, side = app.crop_frame, app.crop_side
     gap = side.winfo_x() - (frame.winfo_x() + frame.winfo_width())
     assert 0 <= gap <= 24, "the knobs stand next to the frame, not in the next column over"
     assert side.winfo_y() == frame.winfo_y(), "the top of the frame is where they start"
-    assert all(box.master is app.crop_pad for box in app.crop_arrows.values()), "the four arrows too"
-    assert app.crop_zoom_in.master.master is app.crop_pad.master is side, "the pad and the zoom stand on it"
+    assert app.crop_zoom_in.master.master is side, "the zoom stands on it"
     assert app.contrast_box.master is side, "and the contrast too"
     assert app.negative_box.master is not side, "the negative belongs to the cover, not to the knobs"
+    beside = {w for w in _walk(side) if isinstance(w, ttk.Button)}
+    assert beside == {app.crop_zoom_out, app.crop_zoom_in}, "only the two zoom steps stand there"
 
 
 def test_the_window_asks_about_the_audio_on_one_page_and_the_screen_on_the_other(app: gui.App) -> None:
@@ -2433,20 +2435,13 @@ def test_dragging_the_cover_moves_the_frame_it_crops(app: gui.App, tmp_path) -> 
     assert app.crop_var.get() == "", "a moved frame answers to no band"
 
 
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
-def test_the_reset_button_puts_a_moved_frame_back_on_the_middle(app: gui.App, tmp_path) -> None:
-    cover = tmp_path / "cover.png"
-    cover.write_bytes(images.placeholder_png(300, 900))
-    app.cover_var.set(str(cover))
-    app._move_crop(0, 100)
-
-    app._reset_crop()
-
-    frame = (int(app.crop_frame.cget("width")), int(app.crop_frame.cget("height")))
-    drawn = (app._crop_photo.width(), app._crop_photo.height())
-    middle = -round((drawn[1] - frame[1]) * images.CROP_FOCUS["center"][1])
-    assert app.crop_frame.coords(app._crop_item)[1] == middle, "the frame sits back on the middle band"
-    assert app.crop_zoom_var.get() == "100%", "and the cover is its own size again"
+def test_the_picture_itself_is_what_moves_the_frame(app: gui.App) -> None:
+    """The frame is moved where it is seen: the pointer grabs the cover and drags it,
+    so no control beside it has to say which way."""
+    bound = app.crop_frame.bind()
+    assert "<Button-1>" in bound, "the cover is grabbed"
+    assert "<B1-Motion>" in bound, "and dragged"
+    assert "<ButtonRelease-1>" in bound, "letting go ends the move"
 
 
 def test_the_frame_is_drawn_before_a_cover_exists(app: gui.App) -> None:

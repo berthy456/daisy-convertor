@@ -10,8 +10,9 @@ Builds from runs of the `build` workflow, before they are a release. Each build 
 | `beta4` | `6e4685a` | [45790528738](https://github.com/berthy456/daisy-convertor/actions/runs/45790528738) | 162564634 bytes |
 | `beta5` | `abb3750` | [45878975449](https://github.com/berthy456/daisy-convertor/actions/runs/45878975449) | 142644817 bytes |
 | `beta6` | `7cafdf9` | [45956814893](https://github.com/berthy456/daisy-convertor/actions/runs/45956814893) | 142652807 bytes |
+| `beta7` | `057541e` | [45976688144](https://github.com/berthy456/daisy-convertor/actions/runs/45976688144) | 142649492 bytes |
 
-`beta1` to `beta3` hold the Windows build only; the other builds of those commits (macOS, .deb, AppImage) are the artifacts of the run named beside it. `beta4` to `beta6` hold four builds each:
+`beta1` to `beta3` hold the Windows build only; the other builds of those commits (macOS, .deb, AppImage) are the artifacts of the run named beside it. `beta4` to `beta7` hold four builds each:
 
 | File in `beta4` | Size |
 | :--- | :--- |
@@ -34,7 +35,14 @@ Builds from runs of the `build` workflow, before they are a release. Each build 
 | `daisy-convertor-0.0.0-dev-7cafdf9-macos-arm64.dmg` | 53270982 bytes |
 | `daisy-convertor-0.0.0-dev-7cafdf9-macos-x86_64.dmg` | 55609405 bytes |
 
-A build of a commit that is not a release tag carries `0.0.0-dev-<commit>` in its name instead of a version; the app inside still reports the version it was built with. `beta5` is the `v1.6` build, and `beta6`'s Windows setup keeps that name because the app inside still reports 1.6.
+| File in `beta7` | Size |
+| :--- | :--- |
+| `daisy-convertor-1.6-setup.exe` | 142649492 bytes, in two parts |
+| `daisy-convertor-0.0.0-dev-057541e-x86_64.AppImage` | 125805760 bytes, in two parts |
+| `daisy-convertor-0.0.0-dev-057541e-macos-arm64.dmg` | 53266814 bytes |
+| `daisy-convertor-0.0.0-dev-057541e-macos-x86_64.dmg` | 55609404 bytes |
+
+A build of a commit that is not a release tag carries `0.0.0-dev-<commit>` in its name instead of a version; the app inside still reports the version it was built with. `beta5` is the `v1.6` build, and `beta6`'s and `beta7`'s Windows setup keep that name because the app inside still reports 1.6.
 
 A file bigger than GitHub's 100 MB per-file limit is stored in parts, and neither part opens on its own — 7-Zip fails on each until they are joined. Join them with the script in the folder:
 

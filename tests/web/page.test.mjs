@@ -76,3 +76,14 @@ test("the manual search stands before the two fields it searches with", () => {
   assert.ok(at('id="cover-search-app"') < at('id="cover-author"'));
   assert.ok(at('id="cover-search-app"') < at('id="cover-title"'));
 });
+
+test("the card audio has a button to hear one card beside it", () => {
+  const audio = at('id="card-audio"');
+  const button = at('id="card-audio-test"');
+  const seconds = at('id="card-seconds"');
+  assert.ok(audio < button && button < seconds, "the card test is not beside the card audio box");
+  assert.ok(
+    js.includes('cardTestButton.disabled = cards.audio === "off" || !source'),
+    "a silent card, and a pack that was never opened, have no card to hear",
+  );
+});

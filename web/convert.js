@@ -66,7 +66,7 @@ function fold(text) {
 }
 
 /** The first seconds of a part, cut at MP3 frame boundaries. */
-function firstSeconds(segments, bytesOf, seconds) {
+export function firstSeconds(segments, bytesOf, seconds) {
   let budget = seconds;
   const kept = [];
   for (const segment of segments) {

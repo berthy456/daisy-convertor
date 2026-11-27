@@ -1659,6 +1659,78 @@ def test_the_announcement_setting_reaches_the_converter(app: gui.App) -> None:
     assert announce.phrase(2) == "Kapitel 2"
 
 
+def test_the_card_test_stands_beside_the_card_audio_box(app: gui.App) -> None:
+    box = app.announce_box.grid_info()
+    button = app.announce_try_button.grid_info()
+    assert button["row"] == box["row"]
+    assert int(button["column"]) == int(box["column"]) + 1
+
+
+def test_the_card_test_goes_away_for_a_silent_card(app: gui.App, tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    shown = list(app.announce_box.cget("values"))
+    app.announce_box.set(shown[gui.ANNOUNCE_MODES.index("off")])
+    app._choose_announce()
+    assert app.announce_try_button.instate(["disabled"])
+
+    app.announce_box.set(shown[gui.ANNOUNCE_MODES.index("number_of")])
+    app._choose_announce()
+    assert app.announce_try_button.instate(["!disabled"])
+
+
+def test_the_card_test_asks_for_a_pack_first(app: gui.App, tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    said: list[str] = []
+    monkeypatch.setattr(app, "_append", said.append)
+    app._try_announce()
+    assert any("choose a DAISY pack first" in line for line in said)
+    assert app.announce_try_button.instate(["!disabled"])
+
+
+def test_the_card_test_speaks_a_card_of_the_opened_book(app: gui.App, three_chapters, monkeypatch, tmp_path) -> None:
+    spoken: list[tuple[str, str]] = []
+    played: list[Path] = []
+
+    def speak(phrase, code, dest, **kwargs):
+        spoken.append((phrase, code))
+        Path(dest).write_bytes(b"mp3")
+
+    monkeypatch.setattr(gui.tts, "synthesize", speak)
+    monkeypatch.setattr(gui.chapters, "open_preview", lambda path, resume=0.0: played.append(path))
+    app.options.update({"announce": "number_of", "language": "en", "speech_language": "en"})
+    (tmp_path / "pack.zip").write_bytes(b"PK")
+    app.pack_var.set(str(tmp_path / "pack.zip"))
+    app.dropped = {1, 3}
+    app._try_announce()
+
+    _settled_window(app, lambda: played, "the card never played")
+    assert spoken == [("2 of 3", "en")]
+    assert played[0].is_file()
+    assert app.announce_try_button.instate(["!disabled"])
+
+
+def test_the_card_test_plays_the_opening_of_a_chapter(app: gui.App, three_chapters, monkeypatch, tmp_path) -> None:
+    cut: list[tuple[tuple, float]] = []
+    played: list[Path] = []
+
+    def render(segments, dest, limit=None):
+        cut.append((segments, limit))
+        Path(dest).write_bytes(b"mp3")
+        return "encoded"
+
+    monkeypatch.setattr(gui.audio, "render", render)
+    monkeypatch.setattr(gui.chapters, "open_preview", lambda path, resume=0.0: played.append(path))
+    app.options.update({"announce": "snippet", "card_seconds": 2.5})
+    (tmp_path / "pack.zip").write_bytes(b"PK")
+    app.pack_var.set(str(tmp_path / "pack.zip"))
+    app._try_announce()
+
+    _settled_window(app, lambda: played, "the card never played")
+    assert len(cut) == 1
+    assert cut[0][1] == 2.5
+    assert len(cut[0][0]) == 1
+
+
 @pytest.fixture()
 def three_chapters(app: gui.App, monkeypatch, tmp_path) -> Book:
     """A pack whose chapters are already known, so the window needs no real pack."""

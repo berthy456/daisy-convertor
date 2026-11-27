@@ -13,6 +13,7 @@ import contextlib
 import logging
 import os
 import queue
+import random
 import shutil
 import subprocess
 import sys
@@ -807,6 +808,8 @@ class App:
         # Save button can write that same pack without running the converter again.
         self._test_folder: Path | None = None
         self._test_key: tuple | None = None
+        # The player a card test started, so the next test can silence it.
+        self._card_player: subprocess.Popen | None = None
         self._on_done = None
         self._labels: dict[str, tk.Widget] = {}
         self._pick_marks = {name: self._mark_photo(PICK_MARK, f"pick-{name}") for name in PICK_MARKS}
@@ -913,6 +916,8 @@ class App:
         self.announce_box = ttk.Combobox(fields, values=self.announce_names(), state="readonly", width=FIELD_WIDTH)
         self.announce_box.grid(row=3, column=0, sticky="w")
         self.announce_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_announce())
+        self.announce_try_button = self._button(fields, "announce_try", self._try_announce)
+        self.announce_try_button.grid(row=3, column=1, sticky="w", padx=(8, 0))
         self._label(fields, "opt_card_seconds").grid(row=4, column=0, sticky="w", pady=(6, 0))
         self.seconds_box = ttk.Entry(fields, width=6)
         self.seconds_box.insert(0, f"{self.options['card_seconds']:g}")
@@ -1279,6 +1284,7 @@ class App:
                 self.root.attributes("-zoomed", True)
 
     def _close_window(self) -> None:
+        chapters.stop_preview(self._card_player)
         self.root.destroy()
 
     def set_frameless(self, on: bool) -> None:
@@ -1809,6 +1815,8 @@ class App:
         plays = chosen == "snippet" and self.format_var.get() in CARD_FORMATS
         self.seconds_box.configure(state="normal" if plays else "disabled")
         self._labels["opt_card_seconds"].configure(foreground=INK if plays else MUTED)
+        # A silent card has nothing to hear.
+        self.announce_try_button.state(["!disabled"] if chosen != "off" else ["disabled"])
 
     def _choose_announce(self) -> None:
         self.options["announce"] = self.announce_keys[self.announce_names().index(self.announce_box.get())]
@@ -1851,6 +1859,65 @@ class App:
         self.seconds_box.delete(0, "end")
         self.seconds_box.insert(0, f"{self.options['card_seconds']:g}")
         settings.save(self.options)
+
+    def _try_announce(self) -> None:
+        """Hear one card of this book, made the way the story will make it.
+
+        The part is picked at random: a book's first part is usually front matter,
+        and a test that always played it would never be heard.
+        """
+        source = self._typed_path(self.pack_var)
+        if source is None or not source.exists():
+            self._append("ERROR: choose a DAISY pack first")
+            return
+        self.announce_try_button.state(["disabled"])
+        threading.Thread(target=self._card_try, args=(source,), daemon=True).start()
+
+    def _card_try(self, source: Path) -> None:
+        announce = self.announce()
+        try:
+            with open_pack(source) as pack:
+                book = extract(pack, self.cut)
+                kept = [
+                    (number, chapter)
+                    for number, chapter in enumerate(book.chapters, start=1)
+                    if number not in self.dropped
+                ]
+                if not kept:
+                    raise chapters.ChapterError("this pack has no chapter left to listen to")
+                number, chapter = random.choice(kept)
+                announce = replace(announce, language=card_language(announce, book)[0])
+                dest = Path(tempfile.mkdtemp(prefix="daisy2telmi-card-")) / "card.mp3"
+                if announce.mode == "snippet":
+                    audio.render(chapter.segments, dest, limit=announce.seconds)
+                else:
+                    phrase = announce.phrase(number, len(book.chapters), chapter.title)
+                    if phrase is None:
+                        raise chapters.ChapterError("this card says nothing to hear")
+                    tts.synthesize(
+                        phrase,
+                        announce.language,
+                        dest,
+                        engine=announce.engine,
+                        voice=announce.voice,
+                        command=announce.command,
+                        python=announce.python,
+                        clip=announce.clip,
+                        device=announce.device,
+                        speed=announce.speed,
+                        expression=announce.expression,
+                    )
+            self.events.put(("card", dest))
+        except Exception as exc:  # a pack that will not open, or a voice that will not speak
+            log.error("%s", exc)
+            self.events.put(("card", None))
+
+    def _announced(self, path: Path | None) -> None:
+        self.announce_try_button.state(["!disabled"])
+        if path is None:
+            return
+        chapters.stop_preview(self._card_player)
+        self._card_player = chapters.open_preview(path)
 
     def _pick_contrast(self) -> None:
         self.options["card_contrast"] = self.contrast_var.get() / 100
@@ -2419,6 +2486,8 @@ class App:
                 self._took_pack(*item[1:])
             elif item[0] == "install_engine":
                 self._offer_install(item[1])
+            elif item[0] == "card":
+                self._announced(item[1])
             else:
                 self._append(item)
 

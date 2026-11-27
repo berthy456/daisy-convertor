@@ -1,4 +1,4 @@
-import { CUT_LEVELS, cutChoices, extractBook, languageSample } from "./daisy.js";
+import { CUT_LEVELS, cutChoices, extractBook, languageSample, normalizePath } from "./daisy.js";
 import {
   CROP_FOCUS,
   MAX_ZOOM,
@@ -14,7 +14,7 @@ import {
   squareJpeg,
 } from "./cover.js";
 import { findCover } from "./covers.js";
-import { CAPTION_FORMATS, CARD_SNIPPET_SECONDS, PAUSE_LEVELS, buildStoryZip, partTitle } from "./convert.js";
+import { CAPTION_FORMATS, CARD_SNIPPET_SECONDS, PAUSE_LEVELS, buildStoryZip, firstSeconds, partTitle } from "./convert.js";
 import { LANGUAGES, NAMES, apply, chapterWords, pickLanguage, storyLanguage, text } from "./i18n.js";
 import { buildPlainPk, buildStudioZip, packName } from "./lunii.js";
 import { buildMerlinFiles } from "./merlin.js";
@@ -65,6 +65,7 @@ const cardsTextRow = document.getElementById("cards-text-row");
 const cardLanguageSelect = document.getElementById("card-language");
 const cardAudioSelect = document.getElementById("card-audio");
 const cardSecondsInput = document.getElementById("card-seconds");
+const cardTestButton = document.getElementById("card-audio-test");
 const autoplayBox = document.getElementById("autoplay");
 const pauseLabel = document.getElementById("pause-label");
 const pauseSelect = document.getElementById("pause-after");
@@ -179,6 +180,8 @@ let tested = null;
 let downloadUrl = null;
 // The story the player overlay is showing, or null when it is shut.
 let playing = null;
+// The card a card test is playing, so the next test can silence it.
+let cardClip = null;
 // How many covers came and went: a bitmap cannot be compared to its earlier self,
 // so the settings key counts the changes instead.
 let coverStamp = 0;
@@ -310,6 +313,7 @@ function startCards() {
     cardSecondsInput.value = cards.seconds;
     remember(STORED_CARDS, JSON.stringify(cards));
   });
+  cardTestButton.addEventListener("click", testCard);
 }
 
 /** One field's box: the two answers it offers, and the one it was left on. */
@@ -334,6 +338,8 @@ function showCardTotal() {
 function showCardSeconds() {
   // The playlist has no card to play an opening on: its interlude is always spoken.
   cardSecondsInput.disabled = cards.audio !== "snippet" || format === "mp3";
+  // A silent card has nothing to hear, and a card of no pack has nothing to build.
+  cardTestButton.disabled = cards.audio === "off" || !source;
 }
 
 /** The card audio length as typed: a blank or unreadable box keeps the default. */
@@ -342,6 +348,46 @@ function cardSeconds(value) {
   if (!Number.isFinite(typed)) return CARD_SNIPPET_SECONDS;
   const [low, high] = CARD_SECONDS_LIMITS;
   return Math.min(Math.max(typed, low), high);
+}
+
+/**
+ * Hear one card of the opened pack, made the way the story will make it.
+ *
+ * The part is picked at random: a book's first part is usually front matter, and
+ * a test that always played it would never be heard.
+ */
+async function testCard() {
+  if (!source) return;
+  try {
+    const entries = await packEntries();
+    const { chapters } = extractBook(entries, cut);
+    const kept = chapters
+      .map((chapter, index) => ({ chapter, number: index + 1 }))
+      .filter(({ number }) => !dropped.has(number));
+    if (!kept.length) throw new Error("this pack has no chapter left to listen to");
+    const { chapter, number } = kept[Math.floor(Math.random() * kept.length)];
+    const byName = new Map(entries.map((entry) => [normalizePath(entry.name), entry]));
+    const bytes =
+      cards.audio === "snippet"
+        ? firstSeconds(
+            chapter.segments,
+            (segment) => ({ ...segment, data: byName.get(segment.src).data }),
+            cards.seconds,
+          )
+        : await cardAudio(cardLanguage(), number, {
+            word: cards.word,
+            count: cards.count ? chapters.length : null,
+          });
+    if (!bytes || !bytes.length) {
+      log(t("log_card_silent", { n: number }));
+      return;
+    }
+    cardClip?.pause();
+    cardClip = new Audio(URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" })));
+    await cardClip.play();
+  } catch (error) {
+    log(t("log_error", { message: error.message ?? error }));
+  }
 }
 
 /**
@@ -1169,6 +1215,7 @@ function setSource(name, loader) {
   showCardLanguage();
   saveButton.disabled = false;
   testButton.disabled = false;
+  showCardSeconds();
   clearResult();
   // A dropped part is a number in one book's part list, and the Save button is
   // live again before the new pack's list has been read: clear them here, not in

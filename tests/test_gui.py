@@ -127,8 +127,8 @@ def test_the_window_draws_its_own_bar(app: gui.App) -> None:
 
 
 def test_the_title_block_stands_at_the_top_left(app: gui.App) -> None:
-    """The window's title is one block at the corner a title belongs to, and the pick
-    buttons are at the other end of the same line - not a band across the bottom."""
+    """The window's title is one block at the corner a title belongs to, and what the
+    window asks for is at the other end of the same line - not a band across the bottom."""
     app.root.geometry("1300x700")
     app.root.update()
     assert app.bar.winfo_width() <= gui.BAR_WIDTH
@@ -326,26 +326,26 @@ def test_a_pack_does_not_choose_where_its_story_goes(app: gui.App, monkeypatch) 
     assert len(line) <= gui.PATH_READ + 1 + 3 + len("/stories"), "and the line does not widen the window"
 
 
-def test_the_book_is_picked_with_buttons(app: gui.App) -> None:
-    """Two buttons, no boxes: a pack is dropped on the window or picked from a list."""
-    picked = [app._labels[key] for key in ("browse_zip", "browse_folder")]
-    assert all(isinstance(button, ttk.Button) for button in picked)
-    row = picked[0].master
-    assert all(button.master is row for button in picked)
-    assert len({button.winfo_y() for button in picked}) == 1, "one line, not a column"
-    assert row.winfo_rootx() > app.bar.winfo_rootx(), "the buttons stand right of the title block"
+def test_the_book_is_picked_with_a_button(app: gui.App) -> None:
+    """One button, no boxes: a pack is dropped on the window or picked from a list.
+    The language the book is read in is asked beside it, at the top of the window."""
+    button = app._labels["browse_zip"]
+    assert isinstance(button, ttk.Button)
+    row = button.master
+    assert row.winfo_rootx() > app.bar.winfo_rootx(), "the picks stand right of the title block"
     assert row.winfo_rooty() < app.bar.winfo_rooty() + app.bar.winfo_height()
+    assert app.story_language_box.winfo_rootx() > button.winfo_rootx(), "the language beside the pick"
+    assert abs(app.story_language_box.winfo_rooty() - button.winfo_rooty()) <= 4, "one line, not a column"
 
-    assert not any(isinstance(widget, ttk.Entry) for widget in _walk(app.bar.master)), "no path is typed"
+    typed = [w for w in _walk(app.bar.master) if isinstance(w, ttk.Entry) and not isinstance(w, ttk.Combobox)]
+    assert not typed, "no path is typed"
 
 
-def test_each_pick_button_carries_the_mark_of_what_it_picks(app: gui.App) -> None:
-    """The book and a folder of them: two marks, so the two buttons are read without their words."""
-    asked = zip(("browse_zip", "browse_folder"), gui.PICK_MARKS)
-    for key, glyph in asked:
-        mark = app._pick_marks[glyph]
-        assert (mark.width(), mark.height()) == (gui.PICK_MARK, gui.PICK_MARK)
-        assert app._labels[key].cget("image") == (str(mark),), f"{key} carries the {glyph} mark"
+def test_the_pick_button_carries_the_book_s_mark(app: gui.App) -> None:
+    """The book's own mark, so the button is read without its words."""
+    mark = app._pick_marks["book"]
+    assert (mark.width(), mark.height()) == (gui.PICK_MARK, gui.PICK_MARK)
+    assert app._labels["browse_zip"].cget("image") == (str(mark),)
 
 
 def test_the_output_folder_is_set_with_the_other_options(app: gui.App, tmp_path: Path, monkeypatch) -> None:
@@ -958,7 +958,7 @@ def test_every_option_sits_inside_the_page_frame(app: gui.App) -> None:
     pages.append(
         (
             gui.Speech(app),
-            "engine_box language_box voice_box speed_box expression_box "
+            "engine_box voice_box speed_box expression_box "
             "device_box clip_box read_voice_box read_speed_box read_expression_box "
             "read_device_box read_clip_box".split(),
         )
@@ -1007,25 +1007,35 @@ def test_the_speech_page_saves_the_engine_the_device_and_the_speed(
     assert '"speed": "fast"' in saved
 
 
-def test_the_speech_page_starts_on_the_book_s_own_language(app: gui.App) -> None:
-    page = gui.Speech(app)
-    assert page.language_box.get() == app.t("speech_auto")
-    page._close()
+def test_the_window_starts_on_the_book_s_own_language(app: gui.App) -> None:
+    assert app.story_language_box.get() == app.t("speech_auto")
+    app._choose_story_language()
     assert app.options["speech_language"] is None
     assert app.announce().auto_language is True
 
 
-def test_the_speech_page_pins_a_language_over_the_book(app: gui.App, tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    page = gui.Speech(app)
-    page.language_box.set("tr - Türkçe")
-    page._close()
+def test_the_auto_line_names_the_language_the_pack_was_read_as(app: gui.App) -> None:
+    """Auto is not left to be guessed at: it says which language it found."""
+    app._took_pack(app._cover_job, 3, "Chapitre 1", "fr")
+    assert app.story_language_box.get() == f"{app.t('speech_auto')} — Français"
+
+    app._find_cover()
+    assert app.story_language_box.get() == app.t("speech_auto")
+
+
+def test_the_window_pins_a_language_over_the_book(app: gui.App, tmp_path) -> None:
+    app.story_language_box.set("tr - Türkçe")
+    app._choose_story_language()
 
     assert app.options["speech_language"] == "tr"
     assert app.announce().language == "tr"
     assert app.announce().auto_language is False
-    saved = (tmp_path / "daisy2telmi" / "config.json").read_text(encoding="utf-8")
+    saved = (tmp_path / "config" / "daisy2telmi" / "config.json").read_text(encoding="utf-8")
     assert '"speech_language": "tr"' in saved
+
+    app.story_language_box.set(app.t("speech_auto"))
+    app._choose_story_language()
+    assert app.options["speech_language"] is None
 
 
 def test_the_options_page_holds_the_folder_the_file_lists_open_in(app: gui.App, tmp_path, monkeypatch) -> None:

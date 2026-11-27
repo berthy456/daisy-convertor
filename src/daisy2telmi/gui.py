@@ -51,8 +51,7 @@ CARD_SECONDS_LIMITS = (0.5, 30.0)
 # The four card letterings the combo offers, as the two settings they stand for.
 SPEED_KEYS = {speed: f"speed_{speed}" for speed in tts.SPEEDS}
 EXPRESSION_KEYS = {name: f"expression_{name}" for name in tts.EXPRESSIONS}
-# Nothing chosen on the speech page means the book's own language is read off the pack.
-SPEECH_LANGUAGE_KEYS = {None: "speech_auto"}
+# Nothing chosen at the top of the window means the book's own language is read off the pack.
 # Nothing chosen on the reading page means the book is read with the cards' setting.
 READ_SPEED_KEYS = {**SPEED_KEYS, None: "speech_same_as_cards"}
 READ_EXPRESSION_KEYS = {**EXPRESSION_KEYS, None: "speech_same_as_cards"}
@@ -271,11 +270,11 @@ BAR_GAP = 6
 BAR_HOVER = "#565274"
 BAR_CLOSE_HOVER = "#8f3b34"
 
-# The mark each of the four pick buttons carries, and the wheel beside the button
+# The mark the pick button carries, and the wheel beside the button
 # that starts the work: bigger than the one that says a cover is being looked up,
 # because it is the one that says the book is being converted.
 PICK_MARK = 18
-PICK_MARKS = ("book", "folder")
+PICK_MARKS = ("book",)
 WORK_WHEEL = 34
 
 # The window opens at a size of its own: Tk asks each widget how big it wants to be,
@@ -782,6 +781,7 @@ class App:
         self._part_count: int | None = None
         self._part_title = ""
         self._part_code = ""
+        self.story_language_keys: list[str | None] = [None, *LANGUAGES]
         self.crop_var = tk.StringVar(value=self.options["cover_crop"])
         self.format_var = tk.StringVar(value=self.options["format"])
         # The cover drawn at the frame's ratio: the file it came from, the player it
@@ -855,12 +855,12 @@ class App:
         self.root.rowconfigure(1, weight=1)
 
         # The window's own title block stands at the top left - the mark, the name with
-        # its version, and what the window is for on the line under it. The two buttons
-        # that pick the book stand at the top right, each carrying the mark of the thing
-        # it picks. Where a story is written is an app setting, so it is set with the
-        # others. The line under them has the whole width of the window to be read in -
-        # a path is the one thing here that is never short. Nothing is typed: a pack is
-        # dropped on the window or picked from a list.
+        # its version, and what the window is for on the line under it. At the top right
+        # stand the button that picks the book and the language the book is read in. The
+        # two folders - where the packs are and where a story is written - are app
+        # settings, so they are set with the others. The line under them has the whole
+        # width of the window to be read in - a path is the one thing here that is never
+        # short. Nothing is typed: a pack is dropped on the window or picked from a list.
         head = ttk.Frame(self.root, padding=(12, 12, 12, 0))
         head.grid(row=0, column=0, sticky="ew")
         head.columnconfigure(1, weight=1)
@@ -868,11 +868,14 @@ class App:
         self.bar.grid(row=0, column=0, sticky="w")
         picks = ttk.Frame(head)
         picks.grid(row=0, column=1, sticky="e")
-        for key, command, glyph in (
-            ("browse_zip", self._pick_pack_file, "book"),
-            ("browse_folder", self._pick_pack_dir, "folder"),
-        ):
-            self._pick_button(picks, key, command, glyph).pack(side="left", padx=(6, 0))
+        self._pick_button(picks, "browse_zip", self._pick_pack_file, "book").pack(side="left", padx=(6, 0))
+        self._label(picks, "opt_story_language").pack(side="left", padx=(12, 6))
+        self.story_language_box = ttk.Combobox(
+            picks, values=self._story_language_labels(), state="readonly", width=FIELD_WIDTH
+        )
+        self.story_language_box.pack(side="left")
+        self.story_language_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_story_language())
+        self._show_story_language()
         self._paths_line = ttk.Label(head, text="", style="Brand.TLabel")
         self._paths_line.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
@@ -1221,6 +1224,7 @@ class App:
         for key, widget in self._labels.items():
             widget.configure(text=self.t(key))
         self.bar.relabel()
+        self._show_story_language()
         for index, key in enumerate(("page_audio", "page_display")):
             self.pages.tab(index, text=self.t(key))
         self._show_formats()
@@ -1467,6 +1471,38 @@ class App:
         """What the cards fall back to: the language picked on the speech page, else the window's own."""
         return self.options["speech_language"] or self.options["language"]
 
+    def _story_language_label(self, code: str | None) -> str:
+        """One line of the story language box. Auto names the language the opened
+        pack was read as, so the box says what it is about to do rather than leaving
+        it to be guessed."""
+        if code is not None:
+            return f"{code} - {LANGUAGES[code].name}"
+        if self._part_code in LANGUAGES:
+            return f"{self.t('speech_auto')} — {LANGUAGES[self._part_code].name}"
+        return self.t("speech_auto")
+
+    def _story_language_labels(self) -> list[str]:
+        return [self._story_language_label(code) for code in self.story_language_keys]
+
+    def _show_story_language(self) -> None:
+        self.story_language_box.configure(values=self._story_language_labels())
+        self.story_language_box.set(self._story_language_label(self.options["speech_language"]))
+
+    def _choose_story_language(self) -> None:
+        """Pin the book's language, or leave it to the pack.
+
+        The cards, the words drawn on them and the voice that reads them all follow
+        this one answer: a French book on an English machine needs a French card."""
+        labels = self._story_language_labels()
+        try:
+            chosen = self.story_language_keys[labels.index(self.story_language_box.get())]
+        except ValueError:
+            chosen = None
+        self.options["speech_language"] = chosen
+        settings.save(self.options)
+        self._show_story_language()
+        self._show_crop()
+
     def announce(self) -> Announce:
         return Announce(
             mode=self.options["announce"],
@@ -1548,12 +1584,6 @@ class App:
             self.pack_var.set(path)
             self._find_cover()
 
-    def _pick_pack_dir(self) -> None:
-        path = self._browse("browse_folder", self.pack_var.get(), "folder")
-        if path:
-            self.pack_var.set(path)
-            self._find_cover()
-
     def _find_cover(self) -> None:
         """Read the pack, and offer the cover of the print book it was read from.
 
@@ -1569,6 +1599,7 @@ class App:
         self._cover_job += 1
         self._pack_title = None
         self._part_count, self._part_title, self._part_code = None, "", ""
+        self._show_story_language()
         self._spin_off()
         self._drop_lookup()
         if pack is None or not pack.exists():
@@ -2498,6 +2529,7 @@ class App:
         if job != self._cover_job:
             return
         self._part_count, self._part_title, self._part_code = parts, named, code
+        self._show_story_language()
         self._show_crop()
 
     def _took_cover(self, job: int, path: str, title: str, author: str) -> None:
@@ -3192,11 +3224,7 @@ class Speech(Settings):
         self.tabs.add(cards, text=app.t("speech_tab_cards"))
         self.tabs.add(reading, text=app.t("speech_tab_reading"))
 
-        self.language_keys: list[str | None] = [None, *LANGUAGES]
         self.voice_keys: list[str | None] = [None]
-        self.language_box = self._combo(
-            cards, self.language_keys, app.options["speech_language"], SPEECH_LANGUAGE_KEYS
-        )
         self.voice_box = self._combo(cards, self.voice_keys, app.options["voice"])
         self.speed_box = self._combo(cards, self.speed_keys, app.options["speed"], SPEED_KEYS)
         self.expression_keys = list(tts.EXPRESSIONS)
@@ -3214,7 +3242,9 @@ class Speech(Settings):
         self.try_button = ttk.Button(try_row, text=app.t("speech_try"), command=self._try_voice)
         self.try_button.pack(side="left", padx=(6, 0))
 
-        self._row(cards, "opt_speech_language", 0, self.language_box)
+        # The language the book is read in is asked once, at the top of the window,
+        # so both tabs start from it; the rows are numbered as the reading tab's so
+        # the two answer the same questions in the same places.
         self._row(cards, "opt_voice", 1, self.voice_box)
         self._row(cards, "opt_speed", 2, self.speed_box)
         self._row(cards, "opt_expression", 3, self.expression_box)
@@ -3273,7 +3303,6 @@ class Speech(Settings):
         )
 
         self.engine_box.bind("<<ComboboxSelected>>", lambda _e: self._show_engine())
-        self.language_box.bind("<<ComboboxSelected>>", lambda _e: self._show_engine())
         self._show_engine()
 
     def language(self) -> Language:
@@ -3467,7 +3496,6 @@ class Speech(Settings):
         self._save(
             {
                 "tts": self._chosen(self.engine_box, self.engine_keys),
-                "speech_language": self._chosen(self.language_box, self.language_keys, SPEECH_LANGUAGE_KEYS),
                 "voice": self._chosen(self.voice_box, self.voice_keys),
                 "speed": self._chosen(self.speed_box, self.speed_keys, SPEED_KEYS),
                 "expression": self._chosen(self.expression_box, self.expression_keys, EXPRESSION_KEYS),

@@ -236,6 +236,29 @@ def test_a_torch_engine_gets_its_torch_from_the_cpu_index_first(monkeypatch) -> 
     assert tts.CPU_TORCH in engine, "so a torch the resolver still wants comes from there too"
 
 
+def test_coqui_gets_the_torch_it_never_asks_for(monkeypatch) -> None:
+    """coqui-tts names no torch in its own requirements, and its punctuation module
+    imports `six` without declaring it: an install that names neither leaves the
+    engine installed and unable to speak, on every system."""
+    started: list[list[str]] = []
+
+    def fake_popen(argv, **kwargs):
+        started.append(argv)
+        return _SilentProcess()
+
+    monkeypatch.setattr(tts.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(tts.sys, "platform", "win32")
+    monkeypatch.setattr(tts, "_python", lambda python=None: "/opt/python")
+
+    assert tts.install_engine(tts.COQUI, "/opt/python") == "/opt/python"
+    torch, engine = started
+    assert tts.CPU_TORCH not in torch, "the CPU index is the Linux build of torch"
+    assert set(tts.COQUI_TORCH) <= set(torch)
+    assert tts.PACKAGES[tts.COQUI] in engine
+    assert set(tts.COQUI_EXTRA) <= set(engine)
+    assert set(tts.COQUI_TORCH) <= set(engine), "the pin holds through the engine install"
+
+
 def test_a_light_engine_is_installed_without_touching_the_torch_index(monkeypatch) -> None:
     started: list[list[str]] = []
 
@@ -939,6 +962,35 @@ def test_coqui_needs_a_recording_for_the_model_that_clones(tmp_path, monkeypatch
     assert manifests[0]["clip"] == "ref.wav"
 
 
+@requires_ffmpeg
+def test_the_model_that_clones_is_never_the_apps_own_pick(tmp_path, monkeypatch) -> None:
+    """The cloning model reads with a recording the app does not have unless the user
+    gave one, so the language's own model is picked instead."""
+    manifests: list[dict] = []
+    _fake_batch(monkeypatch, manifests)
+    tts.synthesize_all(["un"], "fr", [tmp_path / "c0.mp3"], engine=tts.COQUI)
+    assert manifests[0]["model"] == tts.COQUI_MODELS["fr"][0]
+
+
+def test_chatterbox_lists_the_model_it_reads_with() -> None:
+    """One model reads every language and carries no voice names beside it: the box
+    has to show the model an install fetched, or the voice looks missing after it lands."""
+    assert tts.voices(tts.CHATTERBOX, LANGUAGES["fr"]) == [tts.CHATTERBOX_MODEL]
+
+
+def test_an_engine_failure_is_reported_with_the_line_that_says_something(monkeypatch) -> None:
+    """A message wrapped in a code fence ends with the fence, and the log would
+    otherwise report nothing but the marks."""
+    class Failed:
+        returncode = 1
+        stdout = ""
+        stderr = "ImportError: the reason for the failure\n```\n"
+
+    monkeypatch.setattr(tts.subprocess, "run", lambda *args, **kwargs: Failed())
+    with pytest.raises(tts.TtsError, match="the reason for the failure"):
+        tts._check(["/opt/python"], "coqui")
+
+
 def test_a_forced_chatterbox_device_is_refused_when_the_machine_lacks_it() -> None:
     class NoGpu:
         class cuda:
@@ -977,6 +1029,18 @@ def test_the_card_total_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -
     assert saved.show_total is False, "the saved choice is used when no flag is given"
     assert drawn.show_total is True
     assert hidden.show_total is False
+
+
+def test_the_card_word_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    settings.save({**settings.DEFAULTS, "card_word": False})
+
+    saved = cli.announce_options(cli._parse_args(["pack.zip", "out"]))
+    worded = cli.announce_options(cli._parse_args(["pack.zip", "out", "--card-word"]))
+    bare = cli.announce_options(cli._parse_args(["pack.zip", "out", "--no-card-word"]))
+    assert saved.show_word is False, "the saved choice is used when no flag is given"
+    assert worded.show_word is True
+    assert bare.show_word is False
 
 
 def test_the_reading_speed_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -> None:

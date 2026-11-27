@@ -1447,6 +1447,16 @@ def test_the_cards_page_saves_the_expressiveness(app: gui.App, tmp_path, monkeyp
     assert '"expression": "expressive"' in saved
 
 
+def test_the_chatterbox_voice_box_lists_the_model_it_installed(app: gui.App, monkeypatch) -> None:
+    """Chatterbox reads every language with one model and no names beside it: the box
+    has to list that model, or the voice an install fetched looks like it never arrived."""
+    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: True)
+    app.options["tts"] = "chatterbox"
+    page = gui.Speech(app)
+    _probed(page)
+    assert gui.tts.CHATTERBOX_MODEL in page.voice_keys
+
+
 def test_the_voice_list_follows_the_engine_and_language(app: gui.App) -> None:
     app.options["language"] = "fr"
     app.options["tts"] = "espeak"
@@ -2082,6 +2092,44 @@ def test_the_card_is_lettered_on_two_lines(app: gui.App) -> None:
     app._choose_card_title()
     assert app.options["card_total"] is False
     assert app.options["card_title"] is False
+
+
+def test_the_card_can_be_lettered_by_its_number_alone(app: gui.App) -> None:
+    """The word for the part is not wanted on every card: the box offers the number
+    alone and the number over the total, beside the two worded shapes."""
+    card = app.card_word().upper()
+    assert app.card_text_names() == [f"{card} 1", f"{card} 1/20", "1", "1/20"]
+
+    app.card_text_box.set("1/20")
+    app._choose_card_text()
+    assert app.options["card_word"] is False
+    assert app.options["card_total"] is True
+    assert app._card_text_index() == 3
+
+    app.card_text_box.set("1")
+    app._choose_card_text()
+    assert app.options["card_word"] is False
+    assert app.options["card_total"] is False
+    assert app._card_text_index() == 2
+
+
+def test_the_card_is_lettered_in_the_books_own_language(app: gui.App, tmp_path: Path, monkeypatch) -> None:
+    """The words on a card belong to the book, not to the language the window was
+    opened in: a French book's card is lettered in French."""
+    monkeypatch.setattr(
+        app,
+        "_cover_lookup",
+        lambda *args: app.events.put(("pack", args[1], 23, "L'Aiguille creuse", "fr")),
+    )
+    app.language_var.set("en")
+    app.options["language"] = "en"
+    (tmp_path / "aiguille.zip").write_bytes(b"PK")
+    app.pack_var.set(str(tmp_path / "aiguille.zip"))
+    app._find_cover()
+    app._drain()
+
+    word = gui.LANGUAGES["fr"].card.upper()
+    assert app.card_text_names() == [f"{word} 1", f"{word} 1/20", "1", "1/20"]
 
 
 def test_the_contrast_reaches_the_conversion(app: gui.App) -> None:

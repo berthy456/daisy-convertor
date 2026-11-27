@@ -916,9 +916,6 @@ class App:
         self.seconds_box.grid(row=5, column=0, sticky="w")
         for event in ("<Return>", "<FocusOut>"):
             self.seconds_box.bind(event, lambda _e: self._type_seconds())
-        self._label(fields, "card_seconds_hint", style="Brand.TLabel", wraplength=420).grid(
-            row=6, column=0, columnspan=2, sticky="w", pady=(4, 0)
-        )
         self._show_announce()
 
         # The cover and the card's lettering stand in the column beside the picture:
@@ -1453,6 +1450,7 @@ class App:
             auto_language=self.options["speech_language"] is None,
             autoplay=self.options["autoplay"],
             show_total=self.options["card_total"],
+            show_word=self.options["card_word"],
             show_title=self.options["card_title"],
             contrast=float(self.options["card_contrast"]),
             engine=self.options["tts"],
@@ -1737,9 +1735,15 @@ class App:
             self.cover_var.set(path)
 
     def card_text_names(self) -> list[str]:
-        """The card's first line, written the way a card writes it."""
-        card = LANGUAGES.get(self.language_var.get(), LANGUAGES["en"]).card.upper()
-        return [f"{card} 1", f"{card} 1/20"]
+        """The card's first line, written the way a card writes it: the word for the
+        part or no word, the total or no total."""
+        card = self.card_word().upper()
+        return [f"{card} 1", f"{card} 1/20", "1", "1/20"]
+
+    def card_word(self) -> str:
+        """The story's own word for a part of it: the language the pack was read as,
+        or the one the user pinned over it."""
+        return LANGUAGES.get(self._part_code or self.speech_language(), LANGUAGES["en"]).card
 
     def card_title_names(self) -> list[str]:
         """What the line under the number holds."""
@@ -1748,13 +1752,20 @@ class App:
     def _show_card_text(self) -> None:
         names = self.card_text_names()
         self.card_text_box.configure(values=names)
-        self.card_text_box.set(names[1 if self.options["card_total"] else 0])
+        self.card_text_box.set(names[self._card_text_index()])
         titles = self.card_title_names()
         self.card_title_box.configure(values=titles)
         self.card_title_box.set(titles[1 if self.options["card_title"] else 0])
 
+    def _card_text_index(self) -> int:
+        """Which of the four shapes the saved word and total make."""
+        word, total = bool(self.options["card_word"]), bool(self.options["card_total"])
+        return (0 if word else 2) + (1 if total else 0)
+
     def _choose_card_text(self) -> None:
-        self.options["card_total"] = self.card_text_names().index(self.card_text_box.get()) == 1
+        index = self.card_text_names().index(self.card_text_box.get())
+        self.options["card_word"] = index < 2
+        self.options["card_total"] = index in (1, 3)
         settings.save(self.options)
         self._show_crop()
 
@@ -1975,7 +1986,7 @@ class App:
             self._part_code or self.speech_language(),
             1,
             self._part_count or 1,
-            self.cut == "chapter",
+            self.cut == "chapter" and bool(self.options["card_word"]),
             chapters and bool(self.options["card_total"]),
             self._part_title if chapters and self.options["card_title"] else "",
             size,

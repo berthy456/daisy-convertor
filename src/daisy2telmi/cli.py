@@ -153,6 +153,13 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="draw how many parts there are on each chapter card, as in '4/12' (--no-card-total for the number alone)",
     )
     speech.add_argument(
+        "--card-word",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="write the word for the part beside its number on each chapter card, as in 'CHAPTER 4' "
+        "(--no-card-word for the number alone)",
+    )
+    speech.add_argument(
         "--card-title",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -275,6 +282,7 @@ def announce_options(args: argparse.Namespace) -> Announce:
         auto_language=chosen is None,
         autoplay=bool(args.autoplay or saved["autoplay"]),
         show_total=saved["card_total"] if args.card_total is None else args.card_total,
+        show_word=saved["card_word"] if args.card_word is None else args.card_word,
         show_title=saved["card_title"] if args.card_title is None else args.card_title,
         engine=args.tts or saved["tts"],
         voice=args.tts_voice or saved["voice"],

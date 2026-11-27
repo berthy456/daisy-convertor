@@ -57,7 +57,7 @@ MODULES = {PIPER: "piper", COQUI: "TTS", CHATTERBOX: "chatterbox"}
 # What each of them imports at speak time besides its own package. A package engine
 # can be present with its runtime missing: the app then calls it installed and the
 # first chapter dies on "no module named torch".
-RUNTIMES = {PIPER: ("onnxruntime",), COQUI: ("torch",), CHATTERBOX: ("torch",)}
+RUNTIMES = {PIPER: ("onnxruntime",), COQUI: ("torch", "six"), CHATTERBOX: ("torch",)}
 
 # Coqui and Chatterbox speak with torch. On Linux the PyPI wheel of torch brings the
 # CUDA libraries and triton with it — over a gigabyte, none of it used here — and
@@ -65,6 +65,18 @@ RUNTIMES = {PIPER: ("onnxruntime",), COQUI: ("torch",), CHATTERBOX: ("torch",)}
 # versions with none of that, and a pin like `torch==2.6.0` is satisfied by 2.6.0+cpu.
 TORCH_ENGINES = (COQUI, CHATTERBOX)
 CPU_TORCH = "https://download.pytorch.org/whl/cpu"
+
+# Coqui's package refuses to import at all with torch 2.9 or newer unless torchcodec is
+# installed beside it, and torchcodec wants the FFmpeg shared libraries this app never
+# asks a machine for (and ships no build for an Intel Mac). Coqui therefore gets the
+# last torch under that line, on both installs: its own package asks for no torch, so
+# the version already in the environment is the version it runs with. Chatterbox pins
+# its torch itself, so it is left alone.
+COQUI_TORCH = ("torch<2.9", "torchaudio<2.9")
+
+# Coqui reads a package it never asks for: its punctuation module imports `six`, and a
+# fresh environment installs Coqui and then fails at import.
+COQUI_EXTRA = ("six",)
 
 # pip gives up on a stalled download after five tries and 15 s with nothing arriving.
 # A torch wheel is exactly the size that stalls.
@@ -563,16 +575,17 @@ def _stream(exe: str, args: list[str], label: str) -> None:
 def install_engine(engine: str, python: str | None = None, lang: str | None = None) -> str:
     """Install `engine`'s package, and answer which interpreter now has it.
 
-    Asked for rather than done on the side: Chatterbox and Coqui bring torch with
-    them, which is a download of a gigabyte or more.
+    Asked for rather than done on the side: the torch engines are a download of a
+    gigabyte or more.
 
     With no Python named, the app installs into one it made itself: the machine's
     own Python refuses the install on Debian 13 and Fedora.
 
-    For the two engines that speak with torch, torch goes in first and from the CPU
-    index. Asked for alongside the engine, pip takes the PyPI build of it, and on
-    Linux that build drags the CUDA libraries and triton down with it — over a
-    gigabyte, on a machine that is going to speak on the CPU.
+    For the two engines that speak with torch, torch goes in first, from the CPU
+    index on Linux. Asked for alongside the engine, pip takes the PyPI build of it, and
+    on Linux that build drags the CUDA libraries and triton down with it — over a
+    gigabyte, on a machine that is going to speak on the CPU. Coqui asks for no torch
+    of its own, so an install that does not name it leaves the engine unable to speak.
 
     Piper also gets one voice per language: the package alone has no weights, and
     `auto` looks for a voice on disk before it looks for the package.
@@ -586,15 +599,18 @@ def install_engine(engine: str, python: str | None = None, lang: str | None = No
             f"no Python to install {package} into: set the {LABELS[engine]} Python in the options, "
             "or pass --tts-python"
         )
+    torch_args = list(COQUI_TORCH) if engine == COQUI else ["torch", "torchaudio"]
+    coqui_extra = [*COQUI_EXTRA, *COQUI_TORCH] if engine == COQUI else []
     cpu_torch = ["--extra-index-url", CPU_TORCH] if engine in TORCH_ENGINES and sys.platform == "linux" else []
-    if cpu_torch:
+    if engine == COQUI or cpu_torch:
+        index = ["--index-url", CPU_TORCH] if cpu_torch else []
         try:
-            _stream(exe, ["-m", "pip", "install", "--index-url", CPU_TORCH, "torch", "torchaudio", *PIP_RETRIES], "pip")
+            _stream(exe, ["-m", "pip", "install", *index, *torch_args, *PIP_RETRIES], "pip")
         except TtsError as exc:
             # The CPU index is a second host. Where it cannot be reached, the engine
             # install still has the PyPI wheel to fall back on.
             log.info("%s: %s", CPU_TORCH, exc)
-    _stream(exe, ["-m", "pip", "install", "--upgrade", package, *PIP_RETRIES, *cpu_torch], "pip")
+    _stream(exe, ["-m", "pip", "install", "--upgrade", package, *coqui_extra, *PIP_RETRIES, *cpu_torch], "pip")
     _package_cache.clear()
     log.info("%s is installed in %s", package, exe)
     if engine == PIPER:
@@ -791,6 +807,10 @@ def voices(engine: str, lang: Language, any_language: bool = False) -> list[str]
         return piper_voices(lang, any_language)
     if engine == COQUI:
         return coqui_models(lang.code)
+    if engine == CHATTERBOX:
+        # One model reads every language and carries no voice names beside it: the box
+        # lists the model itself, so the one an install fetched is visible once it lands.
+        return [CHATTERBOX_MODEL]
     if engine == ESPEAK and (exe := _which("espeak-ng") or _which("espeak")):
         return _lines(exe, ["--voices=" + lang.espeak], _espeak_env(), skip_header=True)
     if engine == SAY and (exe := _which("say")):
@@ -897,7 +917,10 @@ def _check(argv: list[str], label: str, env: dict[str, str] | None = None) -> su
     result = subprocess.run(argv, capture_output=True, env=env, creationflags=NO_WINDOW, **UTF8)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip().splitlines()
-        raise TtsError(f"{label} failed: {detail[-1] if detail else 'exit ' + str(result.returncode)}")
+        # The last line of a traceback is the reason; the last line of a message wrapped
+        # in a code fence is the fence.
+        reason = next((line.strip() for line in reversed(detail) if any(char.isalnum() for char in line)), "")
+        raise TtsError(f"{label} failed: {reason or 'exit ' + str(result.returncode)}")
     return result
 
 
@@ -957,15 +980,19 @@ def _speak_batch(
         manifest["model"] = str(model)
         manifest["length_scale"] = LENGTH_SCALES.get(speed, 1.0)
     elif engine == COQUI:
-        model = voice or (voices(COQUI, lang) or [None])[0]
+        listed = voices(COQUI, lang)
+        # The cloning model is never the app's own pick: it reads with a recording, and
+        # the app has one only when the user gave it.
+        alone = [model for model in listed if model != COQUI_MULTILINGUAL]
+        model = voice or (alone or listed or [None])[0]
         if not model:
             raise TtsError(f"Coqui has no model listed for {lang.name}: name one with --tts-voice")
         manifest["model"] = model
         manifest["clip"] = clip
         if model == COQUI_MULTILINGUAL and not clip:
             raise TtsError(
-                f"{COQUI_MULTILINGUAL} reads with a cloned voice: give it a recording with --tts-clip "
-                "or pick another model"
+                f"{COQUI_MULTILINGUAL} reads with a cloned voice: give it a recording in the Reference clip "
+                "field (--tts-clip) or pick another model"
             )
     else:
         manifest["clip"] = clip

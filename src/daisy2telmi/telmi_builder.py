@@ -91,6 +91,8 @@ class Announce:
     autoplay: bool = False
     # Whether the drawn card counts the parts as well as numbering them.
     show_total: bool = True
+    # Whether the drawn card writes the word for the part beside its number.
+    show_word: bool = True
     # Whether the drawn card letters the part's own name beside its number.
     show_title: bool = False
     # How far apart the cover's lights and shadows are drawn: a teller's screen shows
@@ -518,6 +520,7 @@ def build_story(
 
     code = announce.language if announce is not None else "en"
     show_total = announce.show_total if announce is not None else True
+    show_word = announce.show_word if announce is not None else True
     # A part cut below chapter level has no name of its own: the outline names the
     # chapter, and the part is a piece of it.
     titles = [part_title(c.title, code) for c in book.chapters] if cut == "chapter" else [""] * count
@@ -525,7 +528,13 @@ def build_story(
     scene_size = images.screen(player)[0]
     labels = [
         images.card_label(
-            code, k + 1, count, cut == "chapter", show_total, titles[k] if show_title else "", scene_size
+            code,
+            k + 1,
+            count,
+            cut == "chapter" and show_word,
+            show_total,
+            titles[k] if show_title else "",
+            scene_size,
         )
         for k in range(count)
     ]

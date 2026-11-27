@@ -37,6 +37,7 @@ DEFAULTS: dict = {
     # How long a card that plays the part's own opening plays it for.
     "card_seconds": 3.0,
     "card_total": True,
+    "card_word": True,
     "card_title": True,
     "card_contrast": 1.0,
     "card_negative": False,

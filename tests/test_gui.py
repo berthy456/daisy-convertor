@@ -1991,14 +1991,27 @@ def test_the_window_offers_every_player(app: gui.App) -> None:
 
 
 def test_an_mp3_pack_hides_the_picture_and_the_emulator(app: gui.App) -> None:
-    """A plain player is given no cards, so the window has nothing to draw or preview."""
+    """A plain player is given no cards, so the window has nothing to draw, nothing to
+    preview, no cover to place and no card to letter."""
+    app.pages.select(app.display_page)
+    app.root.update_idletasks()
     app.format_var.set("mp3")
     app._show_cover()
     assert not app.crop_preview.grid_info(), "the picture frame and its knobs have nothing to show"
+    assert not app.cover_card.grid_info(), "the pack carries no picture, so there is no cover to place"
+    assert not app.osd_card.grid_info(), "and no card to letter"
+    assert app.pages.select() != app.display_page, "the window leaves the page it has nothing to fill"
     assert app.test_button.instate(["disabled"]), "there is no story to test"
+    app.pages.select(app.display_page)
+    app.root.update_idletasks()
     app.format_var.set("telmi")
     app._show_cover()
+    app.pages.select(app.display_page)
+    app.root.update_idletasks()
     assert app.crop_preview.grid_info(), "and the frame comes back for a story-teller"
+    assert app.cover_card.grid_info(), "with the cover and the card text beside it"
+    assert app.osd_card.grid_info()
+    assert app.display_page.winfo_ismapped(), "and the page it stands on is offered again"
     assert app.test_button.instate(["!disabled"])
 
 

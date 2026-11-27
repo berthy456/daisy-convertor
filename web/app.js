@@ -61,6 +61,7 @@ const cardSayBoxes = {
   word: document.getElementById("card-say-word"),
   count: document.getElementById("card-say-count"),
 };
+const cardsTextRow = document.getElementById("cards-text-row");
 const cardLanguageSelect = document.getElementById("card-language");
 const cardAudioSelect = document.getElementById("card-audio");
 const cardSecondsInput = document.getElementById("card-seconds");
@@ -366,6 +367,9 @@ function showFormat() {
   // A plain player is handed no pictures at all, so there is no cover to frame and
   // no story for the drawn machine to play.
   coverSection.hidden = format === "mp3";
+  // The playlist's interlude is only ever spoken, so the fields that letter a card
+  // have nothing to letter.
+  cardsTextRow.hidden = format === "mp3";
   testButton.hidden = format === "mp3";
   showCaptions();
 }

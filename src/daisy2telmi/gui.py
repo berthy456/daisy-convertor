@@ -884,6 +884,7 @@ class App:
         audio = ttk.Frame(pages, padding=(10, 8))
         audio.columnconfigure(1, weight=1)
         display = ttk.Frame(pages, padding=(10, 8))
+        self.display_page = display
         pages.add(audio, text=self.t("page_audio"))
         pages.add(display, text=self.t("page_display"))
 
@@ -927,6 +928,7 @@ class App:
         cover_card = ttk.Labelframe(right, text=self.t("cover_section"), padding=(10, 8))
         cover_card.grid(row=0, column=0, sticky="w")
         cover_card.columnconfigure(1, weight=1)
+        self.cover_card = cover_card
         self._labels["cover_section"] = cover_card
         self._label(cover_card, "cover_label").grid(row=0, column=0, sticky="w")
         cover_entry = ttk.Entry(cover_card, textvariable=self.cover_var, width=FIELD_WIDTH)
@@ -1087,6 +1089,7 @@ class App:
         # then the line under it.
         osd = ttk.Labelframe(right, text=self.t("card_text_section"), padding=(10, 8))
         osd.grid(row=1, column=0, sticky="w", pady=(12, 0))
+        self.osd_card = osd
         self._labels["card_text_section"] = osd
         self._label(osd, "card_text_label").grid(row=0, column=0, sticky="w")
         self.card_text_box = ttk.Combobox(osd, state="readonly", width=22)
@@ -1820,12 +1823,18 @@ class App:
 
     def _show_cover(self) -> None:
         """An mp3 pack carries no pictures, so the frame and its knobs have nothing
-        to show for it, and there is no story graph for the emulator to play."""
+        to show for it, there is no cover to place, no card to letter, and no story
+        graph for the emulator to play."""
         cards = self.format_var.get() in CARD_FORMATS
+        for frame in (self.crop_preview, self.cover_card, self.osd_card):
+            if cards:
+                frame.grid()
+            else:
+                frame.grid_remove()
         if cards:
-            self.crop_preview.grid()
+            self.pages.add(self.display_page, text=self.t("page_display"))
         else:
-            self.crop_preview.grid_remove()
+            self.pages.hide(self.display_page)
         self.test_button.configure(state="normal" if cards else "disabled")
 
     def _show_negative(self) -> None:

@@ -44,6 +44,22 @@ test("the card choices are the language, then the words, then the sound", () => 
   );
 });
 
+test("the fields a pack with no pictures has nothing to answer for are put away", async () => {
+  const js = await readFile(`${ROOT}web/app.js`, "utf8");
+  const rows = [
+    ["cover-section", "coverSection"],
+    ["cards-text-row", "cardsTextRow"],
+    ["test", "testButton"],
+  ];
+  for (const [id, name] of rows) {
+    assert.ok(html.includes(`id="${id}"`), `the page has no #${id} to put away`);
+    assert.ok(
+      js.includes(`${name}.hidden = format === "mp3"`),
+      `#${id} is not hidden for the playlist, which carries no pictures`,
+    );
+  }
+});
+
 test("the cover link is fetched from its own box", () => {
   assert.equal(html.includes('id="cover-use"'), false, "the box has no separate button any more");
   assert.ok(at('id="cover-url"') < at('id="cover-clear"'), "the box comes before the clear button");

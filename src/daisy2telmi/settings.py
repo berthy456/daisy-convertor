@@ -58,9 +58,13 @@ DEFAULTS: dict = {
     "python": None,
     "clip": None,
     "device": "auto",
-    # A whole chapter is not read at the pace a card's few words are. Empty reads it at
-    # the card's speed, with the card's engine, voice and clip.
+    # The book's text is read with the cards' settings. Each one of these left empty
+    # keeps the cards' own answer for it.
+    "read_voice": None,
+    "read_clip": None,
+    "read_device": None,
     "read_speed": None,
+    "read_expression": None,
     "input_dir": None,
     "output_dir": None,
 }

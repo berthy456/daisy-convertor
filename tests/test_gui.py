@@ -959,7 +959,8 @@ def test_every_option_sits_inside_the_page_frame(app: gui.App) -> None:
         (
             gui.Speech(app),
             "engine_box language_box voice_box speed_box expression_box "
-            "device_box clip_box read_speed_box".split(),
+            "device_box clip_box read_voice_box read_speed_box read_expression_box "
+            "read_device_box read_clip_box".split(),
         )
     )
     for page, names in pages:
@@ -1372,30 +1373,38 @@ def test_the_speech_page_has_one_page_for_the_cards_and_one_for_the_book(app: gu
     page.top.destroy()
 
 
-def test_the_book_is_read_with_the_cards_voice(app: gui.App) -> None:
-    """One voice reads the cards and the book: the reading page asks for a pace, nothing else."""
+def test_the_reading_page_copies_the_cards_settings_row_for_row(app: gui.App) -> None:
+    """The book is read with the cards' settings, until one is changed on this page."""
     app.options["tts"] = "piper"
     page = gui.Speech(app)
-    assert not hasattr(page, "read_voice_box"), "the book has no voice of its own"
-    assert not hasattr(page, "read_clip_box"), "the book has no recording of its own"
-    assert page.read_speed_box.get() == app.t("speech_same_as_cards")
+    same = app.t("speech_same_as_cards")
+    boxes = (page.read_voice_box, page.read_speed_box, page.read_expression_box, page.read_device_box)
+    assert [box.get() for box in boxes] == [same] * 4
+    assert page.read_clip_box.get() == ""
 
     page._close()
-    assert app.options["read_speed"] is None
+    keys = ("read_voice", "read_speed", "read_expression", "read_device", "read_clip")
+    assert [app.options[key] for key in keys] == [None] * 5
 
 
-def test_the_reading_page_saves_its_own_speed(app: gui.App, tmp_path, monkeypatch) -> None:
+def test_the_reading_page_saves_its_own_settings(app: gui.App, tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    app.options["tts"] = "piper"
+    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: True)
+    app.options["tts"] = "chatterbox"
 
     page = gui.Speech(app)
     page.read_speed_box.set(app.t("speed_fast"))
+    page.read_expression_box.set(app.t("expression_expressive"))
+    page.read_device_box.set("cpu")
+    page.read_clip_box.insert(0, "/tmp/reader.wav")
     page._close()
 
-    assert app.options["read_speed"] == "fast"
+    keys = ("read_voice", "read_speed", "read_expression", "read_device", "read_clip")
+    assert [app.options[key] for key in keys] == [None, "fast", "expressive", "cpu", "/tmp/reader.wav"]
     saved = (tmp_path / "daisy2telmi" / "config.json").read_text(encoding="utf-8")
     assert '"read_speed": "fast"' in saved
-    assert "read_voice" not in saved and "read_clip" not in saved
+    assert '"read_device": "cpu"' in saved
+    assert '"read_clip": "/tmp/reader.wav"' in saved
 
 
 def test_the_voice_lists_hold_the_voices_installed_for_another_language(app: gui.App, tmp_path, monkeypatch) -> None:
@@ -1410,14 +1419,23 @@ def test_the_voice_lists_hold_the_voices_installed_for_another_language(app: gui
     assert "en_US-lessac-medium" in page.voice_keys
 
 
-def test_the_reading_speed_row_follows_the_engine(app: gui.App) -> None:
+def test_the_reading_rows_follow_the_engine(app: gui.App) -> None:
     app.options["tts"] = "piper"
     page = gui.Speech(app)
     assert str(page.read_speed_box.cget("state")) == "readonly"
+    assert str(page.read_device_box.cget("state")) == "disabled"
+    assert str(page.read_clip_box.cget("state")) == "disabled"
+
+    page.engine_box.set(app.engine_name("chatterbox"))
+    page._show_engine()
+    assert str(page.read_device_box.cget("state")) == "readonly"
+    assert str(page.read_expression_box.cget("state")) == "readonly"
+    assert str(page.read_clip_box.cget("state")) == "normal"
 
     page.engine_box.set(app.engine_name("command"))
     page._show_engine()
     assert str(page.read_speed_box.cget("state")) == "disabled"
+    assert str(page.read_clip_box.cget("state")) == "disabled"
 
 
 def test_the_expressiveness_row_follows_the_engine(app: gui.App) -> None:
@@ -1541,6 +1559,29 @@ def test_the_try_box_speaks_its_text_and_plays_it_back(app: gui.App, monkeypatch
     assert played and played[0].name == "try.mp3"
     page._close()
     assert not page._try_folder.exists(), "the sample clip goes with the window"
+
+
+def test_the_reading_try_box_speaks_with_the_reading_settings(app: gui.App, monkeypatch) -> None:
+    """Each page's sample is spoken with its own page's settings."""
+    spoken: list[tuple] = []
+
+    def fake(phrase: str, lang_code: str, dest: Path, engine, voice, command, python, clip, device, speed, expression) -> None:
+        dest.write_bytes(b"")
+        spoken.append((voice, device, speed, expression))
+
+    monkeypatch.setattr(gui.tts, "synthesize", fake)
+    monkeypatch.setattr(gui.chapters, "open_preview", lambda path, resume=0.0: None)
+    app.options["tts"] = "piper"
+    page = gui.Speech(app)
+
+    page.read_speed_box.set(app.t("speed_fast"))
+    page.read_device_box.set("cpu")
+    page.read_try_box.delete(0, "end")
+    page.read_try_box.insert(0, "Le lapin")
+    page._try_reading()
+    _settled(app, page.read_try_button)
+    assert spoken == [(None, "cpu", "fast", "natural")], "the cards' answer is kept where nothing was chosen"
+    page._close()
 
 
 def test_every_card_pattern_is_offered_in_the_language_of_the_window(

@@ -236,9 +236,19 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="reference clip the book's text is read with, for --tts chatterbox or --tts coqui",
     )
     speech.add_argument(
+        "--read-device",
+        choices=tts.DEVICES,
+        help="what a neural engine runs on when it reads the book's own text",
+    )
+    speech.add_argument(
         "--read-speed",
         choices=tts.SPEEDS,
         help="how fast the book's own text is read",
+    )
+    speech.add_argument(
+        "--read-expression",
+        choices=tts.EXPRESSIONS,
+        help="how expressive Chatterbox is when it reads the book's own text",
     )
     speech.add_argument(
         "--tts-python",
@@ -301,9 +311,11 @@ def announce_options(args: argparse.Namespace) -> Announce:
         device=args.tts_device or saved["device"],
         speed=args.tts_speed or saved["speed"],
         expression=args.tts_expression or saved["expression"],
-        read_voice=args.read_voice,
-        read_clip=args.read_clip,
+        read_voice=args.read_voice or saved["read_voice"],
+        read_clip=args.read_clip or saved["read_clip"],
+        read_device=args.read_device or saved["read_device"],
         read_speed=args.read_speed or saved["read_speed"],
+        read_expression=args.read_expression or saved["read_expression"],
         contrast=saved["card_contrast"] if args.card_contrast is None else args.card_contrast,
     )
 

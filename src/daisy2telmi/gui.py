@@ -52,8 +52,11 @@ SPEED_KEYS = {speed: f"speed_{speed}" for speed in tts.SPEEDS}
 EXPRESSION_KEYS = {name: f"expression_{name}" for name in tts.EXPRESSIONS}
 # Nothing chosen on the speech page means the book's own language is read off the pack.
 SPEECH_LANGUAGE_KEYS = {None: "speech_auto"}
-# Nothing chosen on the reading page means the book is read at the card's speed.
+# Nothing chosen on the reading page means the book is read with the cards' setting.
 READ_SPEED_KEYS = {**SPEED_KEYS, None: "speech_same_as_cards"}
+READ_EXPRESSION_KEYS = {**EXPRESSION_KEYS, None: "speech_same_as_cards"}
+READ_DEVICE_KEYS = {None: "speech_same_as_cards"}
+READ_VOICE_KEYS = {None: "speech_same_as_cards"}
 
 
 def engine_keys() -> list[str]:
@@ -3067,8 +3070,10 @@ class Speech(Settings):
 
     Two pages, because a card and a chapter are read differently: one says a few
     words, the other is a page of prose, and each gets its own voice, reference
-    clip and speed. The engine and its installer are one choice for both, so they
-    sit outside the pages, above and below them.
+    clip, device, speed and expressiveness. Every reading box starts at "Same as
+    the cards", so a book is read with the cards' settings until one is changed.
+    The engine and its installer are one choice for both, so they sit outside the
+    pages, above and below them.
 
     The voices these pages read with are downloaded from here - a Piper voice, a
     Coqui model, Chatterbox's model; the engine they belong to is installed from the
@@ -3163,9 +3168,36 @@ class Speech(Settings):
         ttk.Label(reading, text=app.t("speech_read_hint"), style="Brand.TLabel", wraplength=420).grid(
             row=0, column=0, columnspan=2, sticky="w", pady=(0, 8)
         )
+        self.read_voice_keys: list[str | None] = [None]
+        self.read_voice_box = self._combo(reading, self.read_voice_keys, app.options["read_voice"], READ_VOICE_KEYS)
         self.read_speed_keys: list[str | None] = [None, *self.speed_keys]
         self.read_speed_box = self._combo(reading, self.read_speed_keys, app.options["read_speed"], READ_SPEED_KEYS)
-        self._row(reading, "opt_speed", 1, self.read_speed_box)
+        self.read_expression_keys: list[str | None] = [None, *self.expression_keys]
+        self.read_expression_box = self._combo(
+            reading, self.read_expression_keys, app.options["read_expression"], READ_EXPRESSION_KEYS
+        )
+        self.read_device_keys: list[str | None] = [None, *self.device_keys]
+        self.read_device_box = self._combo(reading, self.read_device_keys, app.options["read_device"], READ_DEVICE_KEYS)
+        read_clip_row = ttk.Frame(reading)
+        self.read_clip_box = ttk.Entry(read_clip_row, width=22)
+        self.read_clip_box.insert(0, app.options["read_clip"] or "")
+        self.read_clip_box.pack(side="left")
+        ttk.Button(read_clip_row, text=app.t("browse_output"), command=lambda: self._pick_folder(self.read_clip_box)).pack(
+            side="left", padx=(6, 0)
+        )
+        read_try_row = ttk.Frame(reading)
+        self.read_try_box = ttk.Entry(read_try_row, width=22)
+        self.read_try_box.insert(0, self._sample_text())
+        self.read_try_box.pack(side="left")
+        self.read_try_button = ttk.Button(read_try_row, text=app.t("speech_try"), command=self._try_reading)
+        self.read_try_button.pack(side="left", padx=(6, 0))
+
+        self._row(reading, "opt_voice", 1, self.read_voice_box)
+        self._row(reading, "opt_speed", 2, self.read_speed_box)
+        self._row(reading, "opt_expression", 3, self.read_expression_box)
+        self._row(reading, "opt_device", 4, self.read_device_box)
+        self._row(reading, "opt_clip", 5, read_clip_row)
+        self._row(reading, "speech_try_label", 6, read_try_row)
 
         ttk.Button(self.grid, text=app.t("opt_close"), command=self._close).grid(
             row=3, column=0, columnspan=2, sticky="e", pady=(12, 0)
@@ -3232,21 +3264,28 @@ class Speech(Settings):
         live = self.LIVE.get(engine, ())
         combos = (
             ("voice", self.voice_box), ("speed", self.speed_box), ("device", self.device_box),
-            ("expression", self.expression_box), ("speed", self.read_speed_box),
+            ("expression", self.expression_box),
+            ("voice", self.read_voice_box), ("speed", self.read_speed_box),
+            ("device", self.read_device_box), ("expression", self.read_expression_box),
         )
         for key, box in combos:
             box.configure(state="readonly" if key in live else "disabled")
         self.clip_box.configure(state="normal" if "clip" in live else "disabled")
+        self.read_clip_box.configure(state="normal" if "clip" in live else "disabled")
         self.download_box.configure(state="readonly" if "download" in live else "disabled")
         self.download_button.state(["!disabled"] if "download" in live and self.download_keys else ["disabled"])
 
     def _fill_voices(self, names: list[str]) -> None:
-        """The voice box, filled with the voices the engine answered with."""
+        """Both voice boxes, filled with the voices the engine answered with."""
         keys: list[str | None] = [None, *names]
         self.voice_keys = keys
         self.voice_box.configure(values=[self._label_text(k) for k in keys])
         saved = self.app.options["voice"]
         self.voice_box.set(self._label_text(saved if saved in keys else None))
+        self.read_voice_keys = keys
+        self.read_voice_box.configure(values=[self._label_text(k, READ_VOICE_KEYS) for k in keys])
+        read = self.app.options["read_voice"]
+        self.read_voice_box.set(self._label_text(read if read in keys else None, READ_VOICE_KEYS))
 
     def _fill_downloads(self) -> None:
         """What this engine can fetch for this language and is not set up yet."""
@@ -3261,9 +3300,13 @@ class Speech(Settings):
             self.clip_box.delete(0, "end")
             self.clip_box.insert(0, path)
 
-    def _settings(self) -> dict:
-        """The engine settings as they stand in the boxes. Only this thread reads a widget."""
-        return {
+    def _settings(self, reading: bool = False) -> dict:
+        """The engine settings as they stand in the boxes. Only this thread reads a widget.
+
+        `reading` takes the reading page's boxes instead, keeping the cards' answer for
+        each one left at "Same as the cards".
+        """
+        settings = {
             "engine": self._chosen(self.engine_box, self.engine_keys),
             "voice": self._chosen(self.voice_box, self.voice_keys),
             "speed": self._chosen(self.speed_box, self.speed_keys, SPEED_KEYS),
@@ -3272,6 +3315,16 @@ class Speech(Settings):
             "clip": self.clip_box.get().strip() or None,
             "device": self._chosen(self.device_box, self.device_keys),
         }
+        if reading:
+            settings.update(
+                voice=self._chosen(self.read_voice_box, self.read_voice_keys, READ_VOICE_KEYS) or settings["voice"],
+                speed=self._chosen(self.read_speed_box, self.read_speed_keys, READ_SPEED_KEYS) or settings["speed"],
+                expression=self._chosen(self.read_expression_box, self.read_expression_keys, READ_EXPRESSION_KEYS)
+                or settings["expression"],
+                device=self._chosen(self.read_device_box, self.read_device_keys, READ_DEVICE_KEYS) or settings["device"],
+                clip=self.read_clip_box.get().strip() or settings["clip"],
+            )
+        return settings
 
     def _download_voice(self) -> None:
         name = self._chosen(self.download_box, self.download_keys)
@@ -3283,10 +3336,16 @@ class Speech(Settings):
 
     def _try_voice(self) -> None:
         """Speak the sample with the settings as they stand, then play it back."""
-        self.try_button.state(["disabled"])
+        self._try_with("try", self.try_button, self.try_box, self._settings())
+
+    def _try_reading(self) -> None:
+        """Speak the sample the way the book would be read, then play it back."""
+        self._try_with("read", self.read_try_button, self.read_try_box, self._settings(reading=True))
+
+    def _try_with(self, kind: str, button: ttk.Button, box: ttk.Entry, options: dict) -> None:
+        button.state(["disabled"])
         threading.Thread(
-            target=self._job, args=("try", self.try_box.get().strip() or self._sample_text(), self._settings()),
-            daemon=True,
+            target=self._job, args=(kind, box.get().strip() or self._sample_text(), options), daemon=True
         ).start()
 
     def _job(self, kind: str, argument: str, options: dict) -> None:
@@ -3305,7 +3364,7 @@ class Speech(Settings):
                 options["engine"], options["voice"], self.app.options["command"], options["python"],
                 clip, options["device"], options["speed"], options["expression"],
             )
-            self.events.put(("try", self._try_folder / "try.mp3"))
+            self.events.put((kind, self._try_folder / "try.mp3"))
         except tts.TtsError as exc:
             log.error("%s", exc)
             self.events.put((kind, None))
@@ -3327,9 +3386,10 @@ class Speech(Settings):
             self.download_button.state(["!disabled"])
             self.download_button.configure(text=self.app.t("speech_download"))
             self._show_engine()
-        elif kind == "try":
-            self.try_button.state(["!disabled"])
-            self.try_button.configure(text=self.app.t("speech_try"))
+        elif kind in ("try", "read"):
+            button = self.try_button if kind == "try" else self.read_try_button
+            button.state(["!disabled"])
+            button.configure(text=self.app.t("speech_try"))
             if result is not None:
                 chapters.stop_preview(self._playing)
                 self._playing = chapters.open_preview(Path(result))
@@ -3344,7 +3404,13 @@ class Speech(Settings):
                 "expression": self._chosen(self.expression_box, self.expression_keys, EXPRESSION_KEYS),
                 "clip": self.clip_box.get().strip() or None,
                 "device": self._chosen(self.device_box, self.device_keys),
+                "read_voice": self._chosen(self.read_voice_box, self.read_voice_keys, READ_VOICE_KEYS),
+                "read_clip": self.read_clip_box.get().strip() or None,
+                "read_device": self._chosen(self.read_device_box, self.read_device_keys, READ_DEVICE_KEYS),
                 "read_speed": self._chosen(self.read_speed_box, self.read_speed_keys, READ_SPEED_KEYS),
+                "read_expression": self._chosen(
+                    self.read_expression_box, self.read_expression_keys, READ_EXPRESSION_KEYS
+                ),
             }
         )
         self.app._show_engines()

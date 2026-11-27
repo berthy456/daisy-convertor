@@ -225,7 +225,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": "Default",
         "speech_tab_cards": "Chapters cards",
         "speech_tab_reading": "Ebook reading",
-        "speech_read_hint": "The book's text is read with the cards' voice and recording. Only the speed is picked here: left empty, the cards' speed.",
+        "speech_read_hint": "The book's text is read with the cards' settings. A box left at 'Same as the cards' keeps the cards' choice.",
         "speech_same_as_cards": "Same as the cards",
     },
     "fr": {
@@ -373,7 +373,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": 'Par défaut',
         "speech_tab_cards": "Cartes des chapitres",
         "speech_tab_reading": "Lecture du livre",
-        "speech_read_hint": "Le texte du livre est lu avec la voix et l'échantillon des cartes. Seule la vitesse est choisie ici : laissée vide, celle des cartes.",
+        "speech_read_hint": "Le texte du livre est lu avec les réglages des cartes. Un champ laissé sur « Comme les cartes » garde le choix des cartes.",
         "speech_same_as_cards": "Comme les cartes",
     },
     "zh": {
@@ -521,7 +521,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": "默认",
         "speech_tab_cards": "章节卡片",
         "speech_tab_reading": "电子书朗读",
-        "speech_read_hint": "书籍正文使用卡片的语音和参考音频朗读。这里只选择语速：留空即卡片的语速。",
+        "speech_read_hint": "书籍正文使用卡片的设置朗读。选择「与卡片相同」即沿用卡片的设置。",
         "speech_same_as_cards": "与卡片相同",
     },
     "ar": {
@@ -669,7 +669,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": "الافتراضي",
         "speech_tab_cards": "بطاقات الفصول",
         "speech_tab_reading": "قراءة الكتاب",
-        "speech_read_hint": "يُقرأ نص الكتاب بصوت البطاقات ومقطعها. لا تُختار هنا إلا السرعة: إذا تُركت فارغة فهي سرعة البطاقات.",
+        "speech_read_hint": "يُقرأ نص الكتاب بإعدادات البطاقات. أي حقل يُترك على «مثل البطاقات» يحتفظ باختيار البطاقات.",
         "speech_same_as_cards": "مثل البطاقات",
     },
     "tr": {
@@ -817,7 +817,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": 'Varsayılan',
         "speech_tab_cards": "Bölüm kartları",
         "speech_tab_reading": "Kitap okuma",
-        "speech_read_hint": "Kitabın metni kartların sesi ve klibiyle okunur. Burada yalnızca hız seçilir: boş bırakılırsa kartların hızı.",
+        "speech_read_hint": "Kitabın metni kartların ayarlarıyla okunur. 'Kartlarla aynı' bırakılan her kutu kartların seçimini korur.",
         "speech_same_as_cards": "Kartlarla aynı",
     },
     "de": {
@@ -965,7 +965,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": "Standard",
         "speech_tab_cards": "Kapitelkarten",
         "speech_tab_reading": "Buchvorlesung",
-        "speech_read_hint": "Der Text des Buchs wird mit der Stimme und dem Clip der Karten gelesen. Hier wird nur das Tempo gewählt: leer gelassen gilt das der Karten.",
+        "speech_read_hint": "Der Text des Buchs wird mit den Einstellungen der Karten gelesen. Ein Feld, das auf „Wie die Karten“ steht, übernimmt die Wahl der Karten.",
         "speech_same_as_cards": "Wie die Karten",
     },
     "it": {
@@ -1113,7 +1113,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": "Predefinita",
         "speech_tab_cards": "Schede dei capitoli",
         "speech_tab_reading": "Lettura del libro",
-        "speech_read_hint": "Il testo del libro viene letto con la voce e la clip delle schede. Qui si sceglie solo la velocità: lasciata vuota, quella delle schede.",
+        "speech_read_hint": "Il testo del libro viene letto con le impostazioni delle schede. Una casella lasciata su 'Come le schede' mantiene la scelta delle schede.",
         "speech_same_as_cards": "Come le schede",
     },
     "es": {
@@ -1261,7 +1261,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": "Predeterminada",
         "speech_tab_cards": "Tarjetas de capítulos",
         "speech_tab_reading": "Lectura del libro",
-        "speech_read_hint": "El texto del libro se lee con la voz y el clip de las tarjetas. Aquí solo se elige la velocidad: vacía, la de las tarjetas.",
+        "speech_read_hint": "El texto del libro se lee con la configuración de las tarjetas. Un campo dejado en 'Igual que las tarjetas' mantiene la elección de las tarjetas.",
         "speech_same_as_cards": "Igual que las tarjetas",
     },
     "pt": {
@@ -1409,7 +1409,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": 'Padrão',
         "speech_tab_cards": "Cartões dos capítulos",
         "speech_tab_reading": "Leitura do livro",
-        "speech_read_hint": "O texto do livro é lido com a voz e o clipe dos cartões. Aqui só se escolhe a velocidade: vazia, a dos cartões.",
+        "speech_read_hint": "O texto do livro é lido com as configurações dos cartões. Um campo deixado em 'Igual aos cartões' mantém a escolha dos cartões.",
         "speech_same_as_cards": "Igual aos cartões",
     },
     "nl": {
@@ -1557,7 +1557,7 @@ UI: dict[str, dict[str, str]] = {
         "voice_default": "Standaard",
         "speech_tab_cards": "Hoofdstukkaarten",
         "speech_tab_reading": "Voorlezen van het boek",
-        "speech_read_hint": "De tekst van het boek wordt voorgelezen met de stem en clip van de kaarten. Hier wordt alleen de snelheid gekozen: laat je die leeg, dan die van de kaarten.",
+        "speech_read_hint": "De tekst van het boek wordt voorgelezen met de instellingen van de kaarten. Een keuzelijst die op 'Zelfde als de kaarten' staat, houdt de keuze van de kaarten.",
         "speech_same_as_cards": "Zelfde als de kaarten",
     },
 }

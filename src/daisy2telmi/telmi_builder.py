@@ -118,11 +118,19 @@ class Announce:
     # prose are not read the same way. Each one falls back to the card's setting.
     read_voice: str | None = None
     read_clip: str | None = None
+    read_device: str | None = None
     read_speed: str | None = None
+    read_expression: str | None = None
 
-    def reading(self) -> tuple[str | None, str | None, str]:
-        """The voice, the reference clip and the speed the book's text gets."""
-        return self.read_voice or self.voice, self.read_clip or self.clip, self.read_speed or self.speed
+    def reading(self) -> tuple[str | None, str | None, str, str, str]:
+        """The voice, clip, device, speed and expressiveness the book's text gets."""
+        return (
+            self.read_voice or self.voice,
+            self.read_clip or self.clip,
+            self.read_device or self.device,
+            self.read_speed or self.speed,
+            self.read_expression or self.expression,
+        )
 
     def phrase(self, number: int, total: int | None = None, title: str = "") -> str | None:
         """What the card says for one part.
@@ -398,7 +406,7 @@ def narrate(text: str, announce: Announce | None, dest: Path) -> None:
     so the failure is raised rather than logged.
     """
     voice = announce or Announce()
-    read_voice, read_clip, read_speed = voice.reading()
+    read_voice, read_clip, read_device, read_speed, read_expression = voice.reading()
     try:
         tts.narrate(
             text,
@@ -409,9 +417,9 @@ def narrate(text: str, announce: Announce | None, dest: Path) -> None:
             command=voice.command,
             python=voice.python,
             clip=read_clip,
-            device=voice.device,
+            device=read_device,
             speed=read_speed,
-            expression=voice.expression,
+            expression=read_expression,
         )
     except tts.TtsError as exc:
         raise StoryError(f"this pack has no audio, and its text cannot be spoken: {exc}") from exc

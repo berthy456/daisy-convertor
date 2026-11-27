@@ -426,12 +426,16 @@ def test_each_spoken_card_is_named_after_its_chapter(tmp_path, monkeypatch) -> N
 def test_the_book_text_can_be_read_by_another_voice_than_the_cards() -> None:
     """A card says a few words; a chapter is a page. The voice wanted for one is
     not always the voice wanted for the other."""
-    split = Announce(voice="card", clip="card.wav", speed="slow", read_voice="reader", read_speed="fast")
-    assert split.reading() == ("reader", "card.wav", "fast")
+    split = Announce(
+        voice="card", clip="card.wav", device="cpu", speed="slow", expression="natural",
+        read_voice="reader", read_clip="reader.wav", read_device="cuda", read_speed="fast", read_expression="expressive",
+    )
+    assert split.reading() == ("reader", "reader.wav", "cuda", "fast", "expressive")
 
 
 def test_the_book_text_falls_back_to_the_card_settings() -> None:
-    assert Announce(voice="card", clip="card.wav", speed="slow").reading() == ("card", "card.wav", "slow")
+    card = Announce(voice="card", clip="card.wav", device="cpu", speed="slow", expression="natural")
+    assert card.reading() == ("card", "card.wav", "cpu", "slow", "natural")
 
 
 def test_the_reading_voice_is_the_one_the_book_is_spoken_with(tmp_path, monkeypatch) -> None:

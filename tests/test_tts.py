@@ -1053,15 +1053,16 @@ def test_the_pause_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -> Non
     assert asked.pause_after == "never"
 
 
-def test_the_reading_speed_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -> None:
+def test_the_reading_flags_override_the_saved_choices(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    settings.save({**settings.DEFAULTS, "read_voice": "saved-reader", "read_speed": "slow"})
+    settings.save({**settings.DEFAULTS, "read_voice": "saved-reader", "read_speed": "slow", "read_device": "cpu"})
 
     saved = cli.announce_options(cli._parse_args(["pack.zip", "out"]))
-    forced = cli.announce_options(cli._parse_args(["pack.zip", "out", "--read-voice", "flag", "--read-speed", "fast"]))
-    assert saved.read_voice is None, "the app saves no reading voice: one voice reads the cards and the book"
-    assert saved.read_speed == "slow"
-    assert (forced.read_voice, forced.read_speed) == ("flag", "fast")
+    forced = cli.announce_options(
+        cli._parse_args(["pack.zip", "out", "--read-voice", "flag", "--read-speed", "fast", "--read-device", "cuda"])
+    )
+    assert (saved.read_voice, saved.read_speed, saved.read_device) == ("saved-reader", "slow", "cpu")
+    assert (forced.read_voice, forced.read_speed, forced.read_device) == ("flag", "fast", "cuda")
 
 
 def test_the_expression_flag_overrides_the_saved_choice(monkeypatch, tmp_path) -> None:

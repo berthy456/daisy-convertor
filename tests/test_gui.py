@@ -1561,6 +1561,17 @@ def test_the_extract_length_is_greyed_when_no_card_plays_an_extract(app: gui.App
     assert str(app._labels["opt_card_seconds"].cget("foreground")) == gui.INK
     assert app.options["announce"] == "snippet"
 
+    # A playlist has no card to play an opening on: its interlude is always spoken.
+    app.format_var.set("mp3")
+    app._show_announce()
+    assert str(app.seconds_box.cget("state")) == "disabled"
+    assert str(app._labels["opt_card_seconds"].cget("foreground")) == gui.MUTED
+
+    app.format_var.set("telmi")
+    app._show_announce()
+    assert str(app.seconds_box.cget("state")) == "normal"
+    assert str(app._labels["opt_card_seconds"].cget("foreground")) == gui.INK
+
 
 def test_the_card_audio_length_is_typed_in_seconds(app: gui.App, tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))

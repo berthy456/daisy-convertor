@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
 const html = await readFile(`${ROOT}web/index.html`, "utf8");
+const js = await readFile(`${ROOT}web/app.js`, "utf8");
 
 /** Where something first appears in the page, as a position in its text. */
 function at(needle) {
@@ -44,8 +45,7 @@ test("the card choices are the language, then the words, then the sound", () => 
   );
 });
 
-test("the fields a pack with no pictures has nothing to answer for are put away", async () => {
-  const js = await readFile(`${ROOT}web/app.js`, "utf8");
+test("the fields a pack with no pictures has nothing to answer for are put away", () => {
   const rows = [
     ["cover-section", "coverSection"],
     ["cards-text-row", "cardsTextRow"],
@@ -58,6 +58,13 @@ test("the fields a pack with no pictures has nothing to answer for are put away"
       `#${id} is not hidden for the playlist, which carries no pictures`,
     );
   }
+});
+
+test("the extract length is out of reach for the pack that plays no extract", () => {
+  assert.ok(
+    js.includes('cardSecondsInput.disabled = cards.audio !== "snippet" || format === "mp3"'),
+    "the playlist's interlude is always spoken, so its seconds box must be greyed too",
+  );
 });
 
 test("the cover link is fetched from its own box", () => {

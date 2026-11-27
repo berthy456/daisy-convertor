@@ -292,7 +292,8 @@ function showCardTotal() {
 
 /** The extract length belongs to the one card audio that plays the part's own opening. */
 function showCardSeconds() {
-  cardSecondsInput.disabled = cards.audio !== "snippet";
+  // The playlist has no card to play an opening on: its interlude is always spoken.
+  cardSecondsInput.disabled = cards.audio !== "snippet" || format === "mp3";
 }
 
 /** The card audio length as typed: a blank or unreadable box keeps the default. */
@@ -371,6 +372,7 @@ function showFormat() {
   // have nothing to letter.
   cardsTextRow.hidden = format === "mp3";
   testButton.hidden = format === "mp3";
+  showCardSeconds();
   showCaptions();
 }
 

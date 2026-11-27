@@ -1774,7 +1774,8 @@ class App:
         self.announce_box.configure(values=names)
         chosen = self.options["announce"]
         self.announce_box.set(names[self.announce_keys.index(chosen) if chosen in self.announce_keys else 0])
-        plays = chosen == "snippet"
+        # A playlist's interlude is always spoken: it has no card to play an opening on.
+        plays = chosen == "snippet" and self.format_var.get() in CARD_FORMATS
         self.seconds_box.configure(state="normal" if plays else "disabled")
         self._labels["opt_card_seconds"].configure(foreground=INK if plays else MUTED)
 
@@ -1817,6 +1818,7 @@ class App:
     def _choose_format(self) -> None:
         self.format_var.set(FORMATS[self.format_names().index(self.format_box.get())])
         self._show_cover()
+        self._show_announce()
         self._show_negative()
         self._show_captions()
         self._pick_format()

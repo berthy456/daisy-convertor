@@ -24,7 +24,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 # The window draws the icons and the caption font; PyInstaller unpacks the same
 # files next to the module. The font's own licence travels with it.
-daisy2telmi = ["assets/*.png", "assets/*.ttf", "assets/*.txt"]
+daisy2telmi = ["assets/*.png", "assets/*.ttf", "assets/*.otf", "assets/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

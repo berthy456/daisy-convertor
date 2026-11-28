@@ -26,10 +26,9 @@ def png_header(data: bytes) -> tuple[int, int, int]:
 
 
 def test_the_typeface_can_write_every_card_word_it_claims() -> None:
-    card_font = images._card_typeface(images.IMAGE_SIZE[1])
     for code, language in LANGUAGES.items():
         drawn = images.card_label(code, 3, 12)
-        assert images._letterable(card_font, drawn) == drawn, (code, drawn)
+        assert images._letterable(images._script(drawn), drawn) == drawn, (code, drawn)
 
 
 def test_the_card_word_is_written_in_the_story_language() -> None:
@@ -42,12 +41,21 @@ def test_the_card_word_is_written_in_the_story_language() -> None:
 def test_a_card_can_leave_the_total_out() -> None:
     assert images.card_label("en", 2, 23, show_total=False) == "CHAPTER 2"
     assert images.card_label("en", 2, 23, word=False, show_total=False) == "2"
-    assert images.card_label("zh", 4, 23, show_total=False) == "4"
+    assert images.card_label("zh", 4, 23, show_total=False) == "章 4"
 
 
-def test_scripts_the_font_lacks_fall_back_to_the_number() -> None:
-    for code in ("zh", "ar"):
-        assert images.card_label(code, 4, 23) == "4/23"
+def test_a_card_letters_its_word_in_the_storys_own_script() -> None:
+    assert images.card_label("zh", 4, 23) == "章 4/23"
+    assert images.card_label("ar", 4, 23) == "الفصل 4/23"
+
+
+def test_a_line_is_lettered_with_the_typeface_that_can_write_it() -> None:
+    assert images._script("4/23") == "latin", "digits keep the typeface they always had"
+    assert images._script("الفصل 4/23") == "arabic"
+    assert images._script("章 4/23") == "chinese"
+    assert images._script("狐は女の子を見て") == "chinese", "the Chinese typeface carries Japanese kana too"
+    assert images._script("狼少女 the invisible dog") == "chinese", "one typeface writes the whole mixed line"
+    assert images._letterable("latin", "الفصل") == "     ", "Arimo has no Arabic letters"
 
 
 def test_the_card_layer_is_white_ink_on_a_transparent_canvas() -> None:
@@ -75,8 +83,8 @@ def test_a_card_stops_at_its_twentieth_word() -> None:
     assert " ".join(lines).split()[-1] == f"w{images.CARD_WORDS - 1}"
 
 
-def test_words_the_font_cannot_write_leave_the_card_without_lines() -> None:
-    assert images.card_words("これは、私（わたし）が小さいときに") == []
+def test_words_no_typeface_carries_leave_the_card_without_lines() -> None:
+    assert images.card_words("이야기, 내가 어렸을 때에") == []
     assert images.card_words("") == []
 
 
@@ -149,9 +157,10 @@ def test_a_sentence_broken_across_two_lines_of_its_page_is_one_caption() -> None
 
 
 def test_the_caption_font_letters_every_language_the_app_offers() -> None:
-    font = images._typeface(24)
     for text in ("é è à ç œ « ’ —", "ü ö ß ñ ¿ ¡", "ş ı ğ ç", "0123456789"):
-        assert images._letterable(font, text) == text, text
+        assert images._letterable("latin", text) == text, text
+    for text in ("الفصل الثاني من الكتاب", "这是第二章，文字会继续下去"):
+        assert images._letterable(images._script(text), text) == text, text
 
 
 def test_a_sentence_too_long_for_the_screen_keeps_the_lines_it_has_room_for() -> None:
@@ -161,8 +170,8 @@ def test_a_sentence_too_long_for_the_screen_keeps_the_lines_it_has_room_for() ->
     assert images._block(lines, font) <= 212 - 2 * images._layout(320)[0]
 
 
-def test_a_sentence_the_font_cannot_write_gets_no_caption() -> None:
-    assert images.caption_lines("これは、私（わたし）が小さいときに", 640, 480) == []
+def test_a_sentence_no_typeface_can_write_gets_no_caption() -> None:
+    assert images.caption_lines("이야기, 내가 어렸을 때에", 640, 480) == []
     assert images.caption_lines("", 640, 480) == []
 
 
@@ -204,8 +213,12 @@ def test_the_caption_picture_is_the_words_on_the_card_ground() -> None:
     assert drawn.mode == "RGB"
     assert {colour for _, colour in drawn.getcolors(maxcolors=100000)} == {ground, ink}
 
-    blank = Image.open(io.BytesIO(images.caption_png("これは", 640, 480)))
+    blank = Image.open(io.BytesIO(images.caption_png("이야기", 640, 480)))
     assert blank.getcolors(maxcolors=100000) == [(640 * 480, ground)]
+
+    for sentence in ("الفصل الثاني من الكتاب", "这是第二章，文字会继续下去"):
+        lettered = Image.open(io.BytesIO(images.caption_png(sentence, 640, 480)))
+        assert {colour for _, colour in lettered.getcolors(maxcolors=100000)} == {ground, ink}, sentence
 
 
 def test_a_caption_picture_is_light_enough_for_a_thousand_of_them() -> None:
@@ -216,11 +229,15 @@ def test_a_caption_picture_is_light_enough_for_a_thousand_of_them() -> None:
         assert len(images.caption_png(CAPTION, *scene)) < 20_000, player
 
 
-def test_the_caption_font_travels_inside_the_package() -> None:
-    """The sentence pictures are drawn with it, and a binary that lost it would draw
-    nothing at all."""
-    assert images.FONT_FILE.read_bytes()[:4] in (b"\x00\x01\x00\x00", b"true", b"ttcf")
-    assert "SIL Open Font License" in (images.FONT_FILE.parent / "Arimo-OFL.txt").read_text(encoding="utf-8")
+def test_the_card_typefaces_travel_inside_the_package() -> None:
+    """The cards and the sentence pictures are drawn with them, and a binary that lost
+    one would letter its cards in the wrong script."""
+    for script, name in images.FONTS.items():
+        head = (images.ASSETS / name).read_bytes()[:4]
+        assert head in (b"\x00\x01\x00\x00", b"true", b"ttcf", b"OTTO"), (script, name)
+        licence = images.ASSETS / f"{Path(name).stem}-OFL.txt"
+        assert "SIL Open Font License" in licence.read_text(encoding="utf-8"), name
+    assert set(images.FONTS) == set(images.SCRIPTS)
 
 
 def test_the_crop_preview_keeps_the_players_ratio() -> None:
@@ -245,6 +262,24 @@ def test_a_title_the_card_has_no_room_for_is_left_off() -> None:
 def test_a_title_needs_letters_the_card_can_draw() -> None:
     assert images.card_title("") == ""
     assert images.card_title("the wolf 3") == "THE WOLF 3"
+    assert images.card_title("이야기") == "", "no typeface the card carries writes Hangul"
+    assert images.card_title("狼少女") == "狼少女"
+    assert images.card_title("الذئب الخفي") == "الذئب الخفي"
+
+
+def test_a_card_inks_its_arabic_and_chinese_lettering() -> None:
+    """A card of a story written in another script is drawn with its own typeface:
+    its word and its title add ink of their own, over the number's."""
+    ground = images._rgb(images._palette("colour")["background"])
+
+    def ink(label: str, title: str) -> int:
+        card = Image.open(io.BytesIO(images.card_png(label, "", *images.IMAGE_SIZE, title=title)))
+        return sum(count for count, colour in card.getcolors(maxcolors=100000) if colour != ground)
+
+    for label, title in (("الفصل 1/6", "الذئب الخفي"), ("章 1/6", "狼少女")):
+        whole = ink(label, title)
+        assert whole > ink("1/6", title), (label, "the word is lettered, not left out")
+        assert whole > ink(label, ""), (label, "the title is lettered too")
 
 
 def test_the_two_card_lines_take_two_different_places() -> None:

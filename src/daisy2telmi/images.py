@@ -171,9 +171,9 @@ def _layout(width: int) -> tuple[int, int]:
     return max(6, round(MARGIN * step)), width // 4 * 3 // 4
 
 
-def _card_typeface(height: int) -> ImageFont.FreeTypeFont:
+def _card_typeface(height: int, script: str = "latin") -> ImageFont.FreeTypeFont:
     """The typeface a card's opening words are written in."""
-    return _typeface(max(1, round(height / CARD_WORD_SIZE)))
+    return _typeface(max(1, round(height / CARD_WORD_SIZE)), script)
 
 
 def _outline(size: int) -> int:
@@ -184,12 +184,13 @@ def _outline(size: int) -> int:
 def card_words(text: str, width: int = IMAGE_SIZE[0], height: int = IMAGE_SIZE[1]) -> list[str]:
     """The opening words of a part, as up to three lines the card can show.
 
-    The card's typeface has no letters for some scripts, so a part whose words it
-    cannot write gets no lines at all: the number and the spoken snippet still
-    place the listener.
+    No typeface carries every script, so a part whose words none of them can write
+    gets no lines at all: the number and the spoken snippet still place the
+    listener.
     """
-    font = _card_typeface(height)
-    words = _letterable(font, text).split()[:CARD_WORDS]
+    script = _script(text)
+    font = _card_typeface(height, script)
+    words = _lettered(script, text).split()[:CARD_WORDS]
     if not words:
         return []
     return _wrap(" ".join(words), font, width - 2 * _layout(width)[0])[:CARD_LINES]
@@ -204,8 +205,9 @@ def _number_card(drawn: ImageDraw.ImageDraw, label: str, width: int, height: int
     same height and a story of a hundred parts fills the width of the screen.
     """
     margin = _layout(width)[0]
+    script = _script(label)
     base = max(1, round(height / CARD_NUMBER_SIZE))
-    widest = max(_typeface(base).getlength(label), _typeface(base).getlength("888"))
+    widest = max(_typeface(base, script).getlength(label), _typeface(base).getlength("888"))
     size = int(min(base * (width - 2 * margin) / widest, (height - 2 * margin) / DIGIT_INK))
     ink = round(size * DIGIT_INK)
     middle = height // 2
@@ -213,7 +215,7 @@ def _number_card(drawn: ImageDraw.ImageDraw, label: str, width: int, height: int
         (0, middle - ink // 2 - margin, width - 1, middle + ink // 2 + margin),
         fill=_rgb(palette["background"]),
     )
-    font = _typeface(size)
+    font = _typeface(size, script)
     # A typeface leaves room above and below the letters it draws, and the room is
     # not the same for every digit: the number is centred on what it actually inks.
     box = drawn.textbbox((width // 2, middle), label, font=font, anchor="mm")
@@ -246,7 +248,7 @@ def _number_size(label: str, width: int, height: int) -> int:
     """
     base = max(1, round(height / CARD_NUMBER_SIZE))
     room = width - 2 * _layout(width)[0]
-    wide = _typeface(base).getlength(label)
+    wide = _typeface(base, _script(label)).getlength(label)
     if wide <= room:
         return base
     return max(max(1, round(height / CARD_WORD_SIZE)), int(base * room / wide))
@@ -282,7 +284,7 @@ def _title_size(title: str, room: int, height: int) -> int:
     room its band leaves it; under half that size it stops being readable and is left off.
     """
     base = max(1, round(height / CARD_WORD_SIZE))
-    wide = _typeface(base).getlength(title)
+    wide = _typeface(base, _script(title)).getlength(title)
     if wide <= room:
         return base
     size = int(base * room / wide)
@@ -322,7 +324,7 @@ def _lettering(
         drawn.text(
             (x, y),
             content,
-            font=_typeface(size),
+            font=_typeface(size, _script(content)),
             fill=_rgb(palette["ink"]),
             stroke_width=_outline(size),
             stroke_fill=_rgb(palette["border"]),
@@ -335,13 +337,13 @@ def _lettering(
         span = None
         room = width - 2 * margin
         if number_at.partition("_")[0] == title_at.partition("_")[0]:
-            held = _typeface(number_size).getlength(label)
+            held = _typeface(number_size, _script(label)).getlength(label)
             span = _band_room(title_at, number_at, held, width, margin)
             room = span[1] - span[0]
         size = _title_size(title, room, height)
         if size:
             line(title, title_at, size, span)
-    font = _card_typeface(height)
+    font = _card_typeface(height, _script(text))
     pitch = round(font.size * CARD_WORD_PITCH)
     top = margin + _layout(width)[1] + margin
     for offset, words in enumerate(card_words(text, width, height)):
@@ -423,41 +425,84 @@ CAPTION_LINE_GAP = 4
 
 # A sentence needs letterforms of its own width, and lower case as well as upper,
 # to be read at the size a small screen forces on it. Arimo is metric compatible
-# with Arial and carries the SIL Open Font Licence, whose text sits beside it in
-# assets; that licence lets the font travel inside the binaries.
-FONT_FILE = Path(__file__).resolve().parent / "assets" / "Arimo.ttf"
+# with Arial and carries the Latin, Greek and Cyrillic letters of the languages the
+# app speaks; Noto Sans Arabic and Noto Sans SC carry the two Arimo cannot write.
+# All three carry the SIL Open Font Licence, whose text sits beside each in assets;
+# that licence lets them travel inside the binaries.
+ASSETS = Path(__file__).resolve().parent / "assets"
+FONTS = {
+    "latin": "Arimo.ttf",
+    "arabic": "NotoSansArabic.ttf",
+    "chinese": "NotoSansSC-Regular.otf",
+}
+# Asked in this order: the first typeface that has a glyph for every character of a
+# line is the one it is lettered with. Digits and punctuation are in all three, so a
+# bare number keeps the typeface it always had, and a line mixing Han with Latin is
+# lettered whole by the one that carries both.
+SCRIPTS = ["latin", "arabic", "chinese"]
 # A font answers a character it has no glyph for with its own .notdef box, which is
 # the same picture for every character it cannot write.
 _NOTDEF = "￿"
+# The size the glyph test is made at: big enough that a real glyph is never the
+# empty mask a hairline font draws, small enough to run over a whole sentence.
+_PROBE_SIZE = 20
 
-_SIZES: dict[int, ImageFont.FreeTypeFont] = {}
-_GLYPHS: dict[str, bool] = {}
+_SIZES: dict[tuple[int, str], ImageFont.FreeTypeFont] = {}
+_GLYPHS: dict[tuple[str, str], bool] = {}
+_NOTDEF_MASK: dict[str, bytes] = {}
 
 
-def _typeface(size: int) -> ImageFont.FreeTypeFont:
-    """The caption font at one pixel size, loaded once."""
-    found = _SIZES.get(size)
+def _typeface(size: int, script: str = "latin") -> ImageFont.FreeTypeFont:
+    """One typeface at one pixel size, loaded once."""
+    found = _SIZES.get((size, script))
     if found is None:
-        found = ImageFont.truetype(str(FONT_FILE), size)
-        _SIZES[size] = found
+        found = ImageFont.truetype(str(ASSETS / FONTS[script]), size)
+        _SIZES[(size, script)] = found
     return found
 
 
-def _letterable(font: ImageFont.FreeTypeFont, text: str) -> str:
-    """`text` in single-spaced words, with every character the font has no glyph for turned into a space.
+def _glyph(script: str, character: str) -> bool:
+    """Whether one typeface has a letter for one character."""
+    known = _GLYPHS.get((script, character))
+    if known is None:
+        font = _typeface(_PROBE_SIZE, script)
+        blank = _NOTDEF_MASK.setdefault(script, bytes(font.getmask(_NOTDEF)))
+        known = bytes(font.getmask(character)) != blank
+        _GLYPHS[(script, character)] = known
+    return known
+
+
+def _script(text: str) -> str:
+    """The typeface a line of text is lettered with.
+
+    A line is asked of the three in order, and the first that can write all of it
+    answers. A line none of them can write is left to the first, which drops the
+    characters it has no glyph for.
+    """
+    words = " ".join(text.split())
+    for script in SCRIPTS:
+        if all(_glyph(script, character) for character in words):
+            return script
+    return SCRIPTS[0]
+
+
+def _letterable(script: str, text: str) -> str:
+    """`text` in single-spaced words, with every character the typeface has no glyph for turned into a space.
 
     A sentence keeps the line breaks the page it was written on had, and the font
     renderer refuses to lay one out at all: here they are word separators.
     """
-    blank = bytes(font.getmask(_NOTDEF))
-    kept = []
-    for character in " ".join(text.split()):
-        known = _GLYPHS.get(character)
-        if known is None:
-            known = bytes(font.getmask(character)) != blank
-            _GLYPHS[character] = known
-        kept.append(character if known else " ")
-    return "".join(kept)
+    return "".join(character if _glyph(script, character) else " " for character in " ".join(text.split()))
+
+
+def _lettered(script: str, text: str) -> str:
+    """The words of `text` one typeface can letter, or nothing when it has no letters for any of them.
+
+    A part written in a script none of the three carries is left with its punctuation
+    behind, and a card or a caption of one comma says nothing about the part it sits on.
+    """
+    kept = _letterable(script, text)
+    return kept if any(character.isalpha() for character in kept) else ""
 
 
 def line_pitch(font: ImageFont.FreeTypeFont) -> int:
@@ -503,12 +548,16 @@ def _caption_fit(text: str, width: int, height: int) -> tuple[int, list[str]]:
     """
     margin = _layout(width)[0]
     room_w, room_h = width - 2 * margin, height - 2 * margin
+    script = _script(text)
+    kept = _lettered(script, text)
+    if not kept:
+        return CAPTION_MIN_SIZE, []
     best: tuple[int, list[str]] | None = None
     low, high = CAPTION_MIN_SIZE, CAPTION_MAX_SIZE
     while low <= high:
         size = (low + high) // 2
-        font = _typeface(size)
-        lines = _wrap(_letterable(font, text), font, room_w)
+        font = _typeface(size, script)
+        lines = _wrap(kept, font, room_w)
         if lines and _block(lines, font) <= room_h:
             best = size, lines
             low = size + 1
@@ -518,8 +567,8 @@ def _caption_fit(text: str, width: int, height: int) -> tuple[int, list[str]]:
         return best
     # Nothing above the smallest size held: the smallest size, and only the lines
     # the screen has room for.
-    font = _typeface(CAPTION_MIN_SIZE)
-    lines = _wrap(_letterable(font, text), font, room_w)
+    font = _typeface(CAPTION_MIN_SIZE, script)
+    lines = _wrap(kept, font, room_w)
     room = max(1, 1 + (room_h - sum(font.getmetrics())) // line_pitch(font))
     return CAPTION_MIN_SIZE, lines[:room]
 
@@ -553,7 +602,7 @@ def caption_png(
     size, lines = _caption_fit(text, width, height)
     if not lines:
         return _photo_png(canvas)
-    font = _typeface(size)
+    font = _typeface(size, _script(text))
     pitch = line_pitch(font)
     top = max(_layout(width)[0], (height - _block(lines, font)) // 2)
     ground = Image.new("L", (width, height), 0)
@@ -579,16 +628,17 @@ def card_label(
 ) -> str:
     """The first line drawn on a card, in the story's language.
 
-    The typeface is Latin, so Chinese and Arabic cards carry the number alone: it
-    is the part that has to be read, and the spoken card already says the word.
-    A part cut below chapter level gets the number alone as well, because none
-    of the words we have would be the right one for it.
+    The line is lettered with the typeface that can write it, so an Arabic or a
+    Chinese story carries its own word for the chapter. A script none of them
+    carries leaves the number alone: it is the part that has to be read, and the
+    spoken card already says the word. A part cut below chapter level gets the
+    number alone as well, because none of the words we have would be the right one
+    for it.
     """
     width, height = screen
     shown = f"{number}/{total}" if show_total else str(number)
     label = f"{language(language_code).card.upper()} {shown}" if word else shown
-    font = _card_typeface(height)
-    return label if _letterable(font, label) == label else shown
+    return label if _letterable(_script(label), label) == label else shown
 
 
 def card_title(title: str, screen: tuple[int, int] = IMAGE_SIZE) -> str:
@@ -599,7 +649,7 @@ def card_title(title: str, screen: tuple[int, int] = IMAGE_SIZE) -> str:
     shrunk past the size a card's words are readable at.
     """
     named = " ".join(title.split()).upper()
-    if not named or _letterable(_card_typeface(screen[1]), named) != named:
+    if not named or _letterable(_script(named), named) != named:
         return ""
     margin = _layout(screen[0])[0]
     return named if _title_size(named, screen[0] - 2 * margin, screen[1]) else ""

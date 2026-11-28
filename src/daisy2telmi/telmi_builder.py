@@ -102,6 +102,9 @@ class Announce:
     show_word: bool = True
     # Whether the drawn card letters the part's own name beside its number.
     show_title: bool = False
+    # Where the two lettered lines sit on the card: two of images.CARD_PLACES.
+    number_at: str = images.CARD_NUMBER_PLACE
+    title_at: str = images.CARD_TITLE_PLACE
     # How far apart the cover's lights and shadows are drawn: a teller's screen shows
     # far fewer greys than the one a cover was picked out on.
     contrast: float = 1.0
@@ -581,6 +584,10 @@ def build_story(
     # chapter, and the part is a piece of it.
     titles = [part_title(c.title, code) for c in book.chapters] if cut == "chapter" else [""] * count
     show_title = bool(announce.show_title) if announce is not None else False
+    number_at, title_at = images.card_places(
+        announce.number_at if announce is not None else images.CARD_NUMBER_PLACE,
+        announce.title_at if announce is not None else images.CARD_TITLE_PLACE,
+    )
     scene_size = images.screen(player)[0]
     labels = [
         images.card_label(
@@ -589,11 +596,12 @@ def build_story(
             count,
             cut == "chapter" and show_word,
             show_total,
-            titles[k] if show_title else "",
             scene_size,
         )
         for k in range(count)
     ]
+    # A title is a line of its own, and only where the card can letter it.
+    lettered = [images.card_title(title, scene_size) if show_title else "" for title in titles]
     texts = [chapter.text for chapter in book.chapters]
     # A part whose words the font cannot write gets no picture: its audio plays on
     # the card's own picture, as it does when no caption was asked for.
@@ -623,6 +631,9 @@ def build_story(
                     view,
                     grey,
                     announce.contrast if announce is not None else 1.0,
+                    lettered,
+                    number_at,
+                    title_at,
                 )
                 return
             except images.ImageError as exc:
@@ -633,7 +644,16 @@ def build_story(
         (target / "images").mkdir(parents=True, exist_ok=True)
         for index, text in enumerate(texts):
             (target / "images" / f"m{index}.png").write_bytes(
-                images.card_png(cards[index], text, *scene, style=style, negative=grey)
+                images.card_png(
+                    cards[index],
+                    text,
+                    *scene,
+                    style=style,
+                    negative=grey,
+                    title=lettered[index],
+                    number_at=number_at,
+                    title_at=title_at,
+                )
             )
         (target / images.TITLE_IMAGE).write_bytes(
             images.placeholder_png(*scene, style=style, negative=grey)

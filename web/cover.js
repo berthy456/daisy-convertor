@@ -13,8 +13,26 @@ export const MERLIN_PICTURE = 128;
 export const CARD_MARGIN = 24;
 export const CARD_LINES = 3;
 export const CARD_WORDS = 20;
+export const CARD_NUMBER_SIZE = 11;
+export const CARD_WORD_SIZE = 17;
 // A digit's ink is about three quarters of the font size, in any of them.
 const DIGIT_INK = 0.72;
+
+// Where a card's two lettering lines sit: three bands down the screen, three across
+// it. The GUI offers the nine to each line, and the web page draws the same nine.
+export const CARD_PLACES = [
+  "top_left",
+  "top_centre",
+  "top_right",
+  "centre_left",
+  "centre",
+  "centre_right",
+  "bottom_left",
+  "bottom_centre",
+  "bottom_right",
+];
+export const CARD_NUMBER_PLACE = "top_right";
+export const CARD_TITLE_PLACE = "top_left";
 
 // What each player's screen shows, so the picture is drawn where it will be seen:
 // a cover cropped for a 320x240 Lunii keeps the band that Lunii displays.
@@ -51,6 +69,56 @@ function layout(width) {
     margin: Math.max(6, Math.round(CARD_MARGIN * step)),
     coverTop: Math.floor((cover * 3) / 4),
   };
+}
+
+/**
+ * The two places as a card can letter them.
+ *
+ * A pair that puts both lines at one place moves the title to the next free place:
+ * a card cannot letter two lines on top of each other.
+ */
+export function cardPlaces(numberAt, titleAt) {
+  if (titleAt === numberAt) titleAt = CARD_PLACES.find((one) => one !== numberAt);
+  return [numberAt, titleAt];
+}
+
+/** Which third of the card's width a place stands in. */
+function side(at) {
+  const [, ...rest] = at.split("_");
+  return rest.join("_") || "centre";
+}
+
+/** The row of the card a place stands on: top, centre or bottom. */
+function band(at) {
+  return at.split("_")[0];
+}
+
+/** The point one of the nine places puts text at, and how it is held there. */
+function place(at, width, height, margin) {
+  const x = { left: margin, centre: Math.floor(width / 2), right: width - margin }[side(at)];
+  const y = { top: margin, centre: Math.floor(height / 2), bottom: height - margin }[band(at)];
+  return { x, y, align: { left: "left", centre: "center", right: "right" }[side(at)], baseline: { top: "top", centre: "middle", bottom: "bottom" }[band(at)] };
+}
+
+/**
+ * The stretch of a band a second line has left to it, once the first is drawn.
+ *
+ * Two lines lettered on one band share it: the one that came first keeps the room
+ * its own width needs, and the other is laid out in what is left.
+ */
+function bandRoom(at, heldBy, heldWidth, width, margin) {
+  const edge = margin + heldWidth + margin;
+  const held = side(heldBy);
+  if (held === "left") return [edge, width - margin];
+  if (held === "right") return [margin, width - edge];
+  // The first line stands in the middle of the band, so the second takes one side of it.
+  const half = Math.floor((width - heldWidth) / 2);
+  return side(at) === "left" ? [margin, half - margin] : [width - half + margin, width - margin];
+}
+
+/** The weight of a letter's border: the same at every screen size. */
+function outline(size) {
+  return Math.max(1, Math.round(size / 7));
 }
 
 // A Lunii that is not a Flam has no colour panel: sixteen greys, and the light end
@@ -221,7 +289,20 @@ function drawCover(ctx, cover, left, top, width, height, view = {}, style = "col
  * shows is what the story will carry. `label` letters it as the card will be lettered,
  * so the words it will carry are seen on the picture they will be carried on.
  */
-export function drawPreview(ctx, cover, width, height, view = {}, style = "colour", negative = false, contrast = 1, label = "") {
+export function drawPreview(
+  ctx,
+  cover,
+  width,
+  height,
+  view = {},
+  style = "colour",
+  negative = false,
+  contrast = 1,
+  label = "",
+  title = "",
+  numberAt = CARD_NUMBER_PLACE,
+  titleAt = CARD_TITLE_PLACE,
+) {
   // The frame is painted over each time it is drawn, so the room the cover leaves
   // takes the band and a cover with transparency has something of its own to sit on.
   ctx.fillStyle = PALETTE[style].band;
@@ -230,7 +311,7 @@ export function drawPreview(ctx, cover, width, height, view = {}, style = "colou
     drawCover(ctx, cover, 0, 0, width, height, view, style);
     applyContrast(ctx, width, height, contrast);
   }
-  if (label) cardLettering(ctx, label, width, height, style);
+  if (label || title) cardLettering(ctx, label, width, height, style, numberAt, title, titleAt);
   if (style === "bw") toGreys(ctx, width, height, negative);
 }
 
@@ -274,15 +355,51 @@ export function cardWords(ctx, text, width) {
   return lines;
 }
 
+/** The size a card's number line is drawn at: its own, shrunk only when the line is
+    too wide for the card, and never below the size of the card's own opening words. */
+function numberSize(ctx, label, width, height) {
+  const base = Math.max(1, Math.round(height / CARD_NUMBER_SIZE));
+  const room = width - 2 * layout(width).margin;
+  ctx.font = `bold ${base}px system-ui, sans-serif`;
+  const wide = ctx.measureText(label).width;
+  if (wide <= room) return base;
+  return Math.max(Math.max(1, Math.round(height / CARD_WORD_SIZE)), Math.floor((base * room) / wide));
+}
+
+/**
+ * The size a chapter title is drawn at, or 0 when the card has no room for it.
+ *
+ * A title is lettered at the size of the card's opening words and shrunk to fit the
+ * room its band leaves it; under half that size it stops being readable and is left off.
+ */
+function titleSize(ctx, title, room, height) {
+  const base = Math.max(1, Math.round(height / CARD_WORD_SIZE));
+  ctx.font = `bold ${base}px system-ui, sans-serif`;
+  const wide = ctx.measureText(title).width;
+  if (wide <= room) return base;
+  const size = Math.floor((base * room) / wide);
+  return size * 2 >= base ? size : 0;
+}
+
 /**
  * The card's own lettering, laid over whatever is already drawn on the canvas.
  *
  * A grey card carries its number alone, as large as its screen allows; a colour card
- * numbers itself top right. `cardPng` draws it over the cover it composed, and the
- * crop preview draws it over the frame, so the words a card will carry are seen on
- * the picture they will be carried on.
+ * letters its number line and its chapter title line, each at one of the nine places.
+ * `cardPng` draws it over the cover it composed, and the crop preview draws it over
+ * the frame, so the words a card will carry are seen on the picture they will be
+ * carried on.
  */
-export function cardLettering(ctx, label, width, height, style) {
+export function cardLettering(
+  ctx,
+  label,
+  width,
+  height,
+  style,
+  numberAt = CARD_NUMBER_PLACE,
+  title = "",
+  titleAt = CARD_TITLE_PLACE,
+) {
   const { margin } = layout(width);
   const room = width - 2 * margin;
   ctx.lineJoin = "round";
@@ -310,24 +427,44 @@ export function cardLettering(ctx, label, width, height, style) {
     ctx.fillText(label, width / 2, middle);
     return;
   }
-  ctx.textBaseline = "top";
   // A card asked to carry no words of its own keeps the picture and its opening
   // lines: the number is what a card adds, and it was asked not to.
-  if (!label) return;
-  const numberSize = Math.round(height / 11);
-  ctx.font = `bold ${numberSize}px system-ui, sans-serif`;
-  const wide = ctx.measureText(label).width;
-  // A titled line is drawn smaller than a bare number, never smaller than the
-  // card's own opening words: below that the number stops being the thing a
-  // listener reads on a card.
-  const drawn = wide <= room ? numberSize : Math.max(Math.round(height / 17), Math.round((numberSize * room) / wide));
-  ctx.font = `bold ${drawn}px system-ui, sans-serif`;
-  ctx.lineWidth = 6;
-  ctx.strokeStyle = PALETTE[style].border;
-  ctx.fillStyle = PALETTE[style].ink;
-  ctx.textAlign = "right";
-  ctx.strokeText(label, width - margin, margin);
-  ctx.fillText(label, width - margin, margin);
+  if (!label && !title) return;
+  const [numberPlace, titlePlace] = cardPlaces(numberAt, titleAt);
+
+  const ink = (content, spot, size, span) => {
+    const held = place(spot, width, height, margin);
+    const x = span
+      ? { left: span[0], centre: Math.floor((span[0] + span[1]) / 2), right: span[1] }[side(spot)]
+      : held.x;
+    ctx.font = `bold ${size}px system-ui, sans-serif`;
+    ctx.textAlign = held.align;
+    ctx.textBaseline = held.baseline;
+    ctx.lineWidth = outline(size);
+    ctx.strokeStyle = PALETTE[style].border;
+    ctx.fillStyle = PALETTE[style].ink;
+    ctx.strokeText(content, x, held.y);
+    ctx.fillText(content, x, held.y);
+  };
+
+  let drawn = 0;
+  if (label) {
+    const size = numberSize(ctx, label, width, height);
+    ink(label, numberPlace, size);
+    ctx.font = `bold ${size}px system-ui, sans-serif`;
+    drawn = ctx.measureText(label).width;
+  }
+  if (!title) return;
+
+  // Two lines on one band share it: the title is laid out in what the number leaves.
+  let span = null;
+  let left = room;
+  if (band(at) === band(where)) {
+    span = bandRoom(where, at, drawn, width, margin);
+    left = span[1] - span[0];
+  }
+  const size = titleSize(ctx, title, left, height);
+  if (size) ink(title, where, size, span);
 }
 
 /**
@@ -340,8 +477,8 @@ export function cardLettering(ctx, label, width, height, style) {
  * light and dark are swapped once, when it is flattened, so the number reads as the
  * other way round too.
  *
- * `title` is written beside the number. A card with no room for it keeps its number,
- * as the app keeps it from a card whose typeface cannot write the title.
+ * `title` is lettered as a line of its own, at `titleAt`, while the number line is
+ * lettered at `numberAt`. A title the card has no room for is left off.
  */
 export async function cardPng(
   label,
@@ -354,11 +491,13 @@ export async function cardPng(
   negative = false,
   title = "",
   contrast = 1,
+  numberAt = CARD_NUMBER_PLACE,
+  titleAt = CARD_TITLE_PLACE,
 ) {
   const canvas = surface(width, height);
   const ctx = canvas.getContext("2d");
   const { margin, coverTop } = layout(width);
-  const band = style === "bw";
+  const grey = style === "bw";
   ctx.fillStyle = PALETTE[style].background;
   ctx.fillRect(0, 0, width, height);
   ctx.lineJoin = "round";
@@ -369,7 +508,7 @@ export async function cardPng(
     applyContrast(ctx, width, height, contrast);
   }
 
-  if (band) {
+  if (grey) {
     cardLettering(ctx, label, width, height, style);
     // Flattened last, once the cover and the number are down, so a card cannot
     // pick up a grey the screen lacks where two layers meet.
@@ -377,7 +516,7 @@ export async function cardPng(
     return toPng(canvas);
   }
 
-  const size = Math.round(height / 17);
+  const size = Math.round(height / CARD_WORD_SIZE);
   const pitch = Math.round(size * 1.3);
   const room = width - 2 * margin;
   // The words are measured in the font they will be drawn in, so it goes on first.
@@ -385,10 +524,7 @@ export async function cardPng(
   const lines = cardWords(ctx, text, room);
   const wordsTop = margin + coverTop + margin;
 
-  // A title is kept when the card has room for it at the size of its own words.
-  const named = title ? (label ? `${label}, ${title}` : title) : label;
-  const lettering = ctx.measureText(named).width <= room ? named : label;
-  cardLettering(ctx, lettering, width, height, style);
+  cardLettering(ctx, label, width, height, style, numberAt, title, titleAt);
 
   ctx.font = `${size}px system-ui, sans-serif`;
   ctx.textAlign = "left";

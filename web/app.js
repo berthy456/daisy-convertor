@@ -1,5 +1,8 @@
 import { CUT_LEVELS, cutChoices, extractBook, languageSample, normalizePath } from "./daisy.js";
 import {
+  CARD_NUMBER_PLACE,
+  CARD_PLACES,
+  CARD_TITLE_PLACE,
   CROP_FOCUS,
   MAX_ZOOM,
   CONTRAST_LIMITS,
@@ -60,6 +63,9 @@ const cardSayBoxes = {
   count: document.getElementById("card-say-count"),
 };
 const cardsTextRow = document.getElementById("cards-text-row");
+const cardsPlaceRow = document.getElementById("cards-place-row");
+const cardNumberAtSelect = document.getElementById("card-number-at");
+const cardTitleAtSelect = document.getElementById("card-title-at");
 const cardLanguageSelect = document.getElementById("card-language");
 const cardAudioSelect = document.getElementById("card-audio");
 const cardSecondsInput = document.getElementById("card-seconds");
@@ -133,7 +139,8 @@ let contrast = 1;
 // What the card between two parts shows and says. `title`, `chapter`, `number` and
 // `total` are the words drawn on the picture; `word` and `count` are the ones spoken
 // around the part's number; `audio` is what the card plays — a recorded phrase, the
-// part's own opening, or nothing.
+// part's own opening, or nothing; `numberAt` and `titleAt` are where the two lettered
+// lines are drawn.
 let cards = {
   title: false,
   chapter: true,
@@ -143,6 +150,8 @@ let cards = {
   count: false,
   audio: "voice",
   seconds: CARD_SNIPPET_SECONDS,
+  numberAt: CARD_NUMBER_PLACE,
+  titleAt: CARD_TITLE_PLACE,
 };
 // The language the cards are written and spoken in: null leaves it to the book,
 // whose own language is read off the pack as soon as it is opened (`bookLang`).
@@ -282,6 +291,7 @@ function startCards() {
     startCardChoice(box, CARD_DRAWN, cards[name], (on) => {
       cards[name] = on;
       if (name === "number") showCardTotal();
+      if (name === "title") showCardPlaces();
       remember(STORED_CARDS, JSON.stringify(cards));
       drawCrop();
     });
@@ -294,6 +304,7 @@ function startCards() {
     });
   }
   showCardTotal();
+  startCardPlaces(stored);
   if (stored && CARD_SOURCES.includes(stored.audio)) cards.audio = stored.audio;
   cardAudioSelect.value = cards.audio;
   cardAudioSelect.addEventListener("change", () => {
@@ -328,6 +339,53 @@ function startCardChoice(box, answers, value, choose) {
 /** The total is the number's tail: a card that draws no number has no total to draw. */
 function showCardTotal() {
   cardTextBoxes.total.disabled = !cards.number;
+}
+
+/** One box of the nine places, minus the one another line already holds. */
+function placeChoices(apartFrom) {
+  return CARD_PLACES.filter((one) => one !== apartFrom);
+}
+
+/** The two boxes that put the card's lettered lines on the picture. */
+function startCardPlaces(stored) {
+  cards.numberAt = CARD_PLACES.includes(stored?.numberAt) ? stored.numberAt : CARD_NUMBER_PLACE;
+  cards.titleAt = CARD_PLACES.includes(stored?.titleAt) ? stored.titleAt : CARD_TITLE_PLACE;
+  if (cards.titleAt === cards.numberAt) cards.titleAt = placeChoices(cards.numberAt)[0];
+  cardNumberAtSelect.addEventListener("change", () => chooseCardPlace("numberAt"));
+  cardTitleAtSelect.addEventListener("change", () => chooseCardPlace("titleAt"));
+  showCardPlaces();
+}
+
+function fillPlaces(box, choices, chosen) {
+  box.replaceChildren(
+    ...choices.map((one) => {
+      const option = document.createElement("option");
+      option.value = one;
+      option.dataset.i18n = `card_at_${one}`;
+      option.textContent = t(`card_at_${one}`);
+      return option;
+    }),
+  );
+  box.value = chosen;
+}
+
+/** A card letters its number where it is told, and its title where the number leaves room. */
+function showCardPlaces() {
+  fillPlaces(cardNumberAtSelect, CARD_PLACES, cards.numberAt);
+  fillPlaces(cardTitleAtSelect, placeChoices(cards.numberAt), cards.titleAt);
+  cardTitleAtSelect.disabled = !cards.title;
+}
+
+function chooseCardPlace(key) {
+  const box = key === "numberAt" ? cardNumberAtSelect : cardTitleAtSelect;
+  const other = key === "numberAt" ? "titleAt" : "numberAt";
+  const place = box.value;
+  // The two lines trade places rather than draw over each other.
+  if (place === cards[other]) cards[other] = cards[key];
+  cards[key] = place;
+  remember(STORED_CARDS, JSON.stringify(cards));
+  showCardPlaces();
+  drawCrop();
 }
 
 /** The extract length belongs to the one card audio that plays the part's own opening. */
@@ -453,6 +511,7 @@ function showFormat() {
   // The playlist's interlude is only ever spoken, so the fields that letter a card
   // have nothing to letter.
   cardsTextRow.hidden = format === "mp3";
+  cardsPlaceRow.hidden = format === "mp3";
   testButton.hidden = format === "mp3";
   showCardSeconds();
   showCaptions();
@@ -525,10 +584,13 @@ function cardLabel(number, total, worded) {
  */
 function previewLabel() {
   if (format === "lunii") return "1";
-  const label = cardLabel(1, previewCard?.count ?? 1, cut === "chapter");
-  if (!cards.title || cut !== "chapter" || !previewCard) return label;
-  const title = partTitle(previewCard.title, chapterWords(cardLanguage()));
-  return title ? (label ? `${label}, ${title}` : title) : label;
+  return cardLabel(1, previewCard?.count ?? 1, cut === "chapter");
+}
+
+/** The chapter name the preview card letters as its second line, when it letters one. */
+function previewTitle() {
+  if (format === "lunii" || !cards.title || cut !== "chapter" || !previewCard) return "";
+  return partTitle(previewCard.title, chapterWords(cardLanguage()));
 }
 
 function drawCrop() {
@@ -550,6 +612,9 @@ function drawCrop() {
     negative,
     contrast,
     previewLabel(),
+    previewTitle(),
+    cards.numberAt,
+    cards.titleAt,
   );
 }
 
@@ -907,6 +972,8 @@ function settingsKey() {
     cards.count,
     cards.audio,
     cards.seconds,
+    cards.numberAt,
+    cards.titleAt,
     [...dropped].sort((a, b) => a - b),
   ]);
 }
@@ -955,6 +1022,8 @@ async function buildPack() {
           contrast,
           captions: captionsOn(),
           cardTitle: cards.title,
+          cardNumberAt: cards.numberAt,
+          cardTitleAt: cards.titleAt,
           t: (key) => t(key),
           cardLabel,
           cardAudio: spoken,

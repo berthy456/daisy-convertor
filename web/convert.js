@@ -1,6 +1,14 @@
 // DAISY zip in, Telmi story zip out, entirely in the browser.
 
-import { captionPng, cardPng, coverPng, screen } from "./cover.js";
+import {
+  CARD_NUMBER_PLACE,
+  CARD_TITLE_PLACE,
+  captionPng,
+  cardPlaces,
+  cardPng,
+  coverPng,
+  screen,
+} from "./cover.js";
 import { extractBook, normalizePath } from "./daisy.js";
 import { concatSegments, mp3Duration } from "./mp3.js";
 import { placeholderPng } from "./png.js";
@@ -94,8 +102,10 @@ export function firstSeconds(segments, bytesOf, seconds) {
  * options.player: "telmi", "lunii", "lunii-pk", "merlin" or "flam" — whose screen
  *   sizes every picture is drawn at.
  * options.cardLabel(number, total, worded): the words drawn on a card.
- * options.cardTitle: write each chapter's own title beside its number, when the card
+ * options.cardTitle: letter each chapter's own title as a line of its own, when the card
  *   has room for it.
+ * options.cardNumberAt / options.cardTitleAt: which of the nine places on the card each
+ *   of those two lines is lettered at.
  * options.cardAudio(number, count): bytes for the card to say, or null to leave it silent.
  * options.cardAudioSource: "voice" (a recorded clip), "snippet" (the part's own opening)
  *   or "off" (a silent card). A part cut below chapter level always plays its opening.
@@ -151,6 +161,10 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
   // A part cut below chapter level has no name of its own: the outline names the
   // chapter, and the part is a piece of it.
   const titled = Boolean(options.cardTitle) && cut === "chapter";
+  const [numberAt, titleAt] = cardPlaces(
+    options.cardNumberAt ?? CARD_NUMBER_PLACE,
+    options.cardTitleAt ?? CARD_TITLE_PLACE,
+  );
   const words = options.chapterWords ?? [];
   const titles = book.chapters.map((chapter) => partTitle(chapter.title, words));
   const autoplay = Boolean(options.autoplay);
@@ -180,6 +194,8 @@ export async function buildStoryFiles(entries, silentMp3, onProgress = () => {},
         negative,
         titled ? titles[k] : "",
         contrast,
+        numberAt,
+        titleAt,
       ),
     });
 

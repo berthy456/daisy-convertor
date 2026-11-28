@@ -233,12 +233,59 @@ def test_a_part_below_chapter_level_is_numbered_without_a_word() -> None:
     assert images.card_label("fr", 7, 213, word=False) == "7/213"
 
 
-def test_a_card_writes_its_chapter_title_beside_the_number() -> None:
-    assert images.card_label("en", 3, 12, title="The invisible dog") == "CHAPTER 3/12, THE INVISIBLE DOG"
+def test_a_card_writes_its_chapter_title_as_a_line_of_its_own() -> None:
+    assert images.card_label("en", 3, 12) == "CHAPTER 3/12"
+    assert images.card_title("The invisible dog") == "THE INVISIBLE DOG"
 
 
 def test_a_title_the_card_has_no_room_for_is_left_off() -> None:
-    assert images.card_label("en", 3, 12, title="the invisible dog " * 14) == "CHAPTER 3/12"
+    assert images.card_title("the invisible dog " * 14) == ""
+
+
+def test_a_title_needs_letters_the_card_can_draw() -> None:
+    assert images.card_title("") == ""
+    assert images.card_title("the wolf 3") == "THE WOLF 3"
+
+
+def test_the_two_card_lines_take_two_different_places() -> None:
+    assert images.card_places("bottom_left", "top_right") == ("bottom_left", "top_right")
+    # Two lines cannot letter on top of each other: the title moves on to the next place.
+    assert images.card_places("top_right", "top_right") == ("top_right", "top_left")
+    assert images.card_places("top_left", "top_left") == ("top_left", "top_centre")
+
+
+def test_two_lines_on_one_band_keep_their_own_room() -> None:
+    number = _ink(_layer(images.card_layer_png("3/12", "", 640, 480, number_at="top_centre")), (255, 255, 255))
+    held = {x for x, _ in number}
+    shared = _ink(
+        _layer(
+            images.card_layer_png(
+                "3/12", "", 640, 480, title="THE INVISIBLE DOG", number_at="top_centre", title_at="top_left"
+            )
+        ),
+        (255, 255, 255),
+    )
+    title = [x for x, _ in shared if x not in held]
+    assert title, "the title is lettered"
+    assert max(title) < min(held), "and it stops where the number begins"
+
+
+def test_a_band_with_no_room_left_letters_no_title() -> None:
+    full = _layer(
+        images.card_layer_png(
+            "3/12", "", 320, 240, title="THE INVISIBLE DOG OF THE UNKNOWN LANDS", number_at="top_centre", title_at="top_left"
+        )
+    )
+    only = _layer(images.card_layer_png("3/12", "", 320, 240, number_at="top_centre"))
+    assert _ink(full, (255, 255, 255)) == _ink(only, (255, 255, 255)), "the title is left off, not drawn over the number"
+
+
+def test_a_card_letters_its_number_where_it_is_told() -> None:
+    corners = [
+        _span(_ink(_layer(images.card_layer_png("3/12", "", 640, 480, number_at=place)), (255, 255, 255)))
+        for place in ("top_left", "bottom_right")
+    ]
+    assert corners[0][1] < 640 // 2 < corners[1][0], "the same lettering in both corners means the place was ignored"
 
 
 def test_the_placeholder_and_the_card_are_the_sizes_telmi_wants() -> None:

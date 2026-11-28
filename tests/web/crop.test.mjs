@@ -128,22 +128,75 @@ test("a Lunii number is sized as a three-digit one", async () => {
   assert.ok((await sizeOf("8888")) < three, "a fourth digit makes it give way");
 });
 
-test("a card writes its chapter title beside its number, and gives way to it", async () => {
+test("a card writes its chapter title as a line of its own", async () => {
   const { cardPng } = await import("../../web/cover.js");
   const { fontSize } = await import("./canvas-stub.mjs");
   TEXTS.length = 0;
   await cardPng("Chapter 1/6", "Once upon a time", null, {}, 640, 480, "colour", false, "The invisible dog");
-  const [number] = TEXTS;
-  assert.equal(number[0], "Chapter 1/6, The invisible dog");
-  assert.ok(fontSize(number[5]) < 44, "the number is drawn smaller than a bare one");
-  assert.ok(fontSize(number[5]) >= 28, "but never smaller than the card's own opening words");
+  const [number, title] = TEXTS;
+  assert.equal(number[0], "Chapter 1/6");
+  assert.equal(title[0], "The invisible dog", "the title is written on its own, not after the number");
+  assert.equal(fontSize(number[5]), 44, "the number keeps the size a bare one has");
+  assert.equal(fontSize(title[5]), 28, "the title is lettered at the size of the card's own words");
 });
 
 test("a title the card has no room for is left off", async () => {
   const { cardPng } = await import("../../web/cover.js");
   TEXTS.length = 0;
   await cardPng("Chapter 1/6", "Once upon a time", null, {}, 640, 480, "colour", false, "the invisible dog ".repeat(14));
-  assert.equal(TEXTS[0][0], "Chapter 1/6", "the card keeps its number alone");
+  assert.equal(TEXTS.length, 1, "the card keeps its number alone");
+});
+
+test("the two card lines take two different places", async () => {
+  const { cardPlaces } = await import("../../web/cover.js");
+  assert.deepEqual(cardPlaces("bottom_left", "top_right"), ["bottom_left", "top_right"]);
+  assert.deepEqual(cardPlaces("top_right", "top_right"), ["top_right", "top_left"]);
+  assert.deepEqual(cardPlaces("top_left", "top_left"), ["top_left", "top_centre"]);
+});
+
+test("a card letters its number where it is told", async () => {
+  const { cardPng } = await import("../../web/cover.js");
+  TEXTS.length = 0;
+  await cardPng("1/6", "", null, {}, 640, 480, "colour", false, "", 1, "bottom_right");
+  const [number] = TEXTS;
+  assert.equal(number[1], 640 - 24, "the number stands at the card's right edge");
+  assert.equal(number[2], 480 - 24, "and at its bottom");
+});
+
+test("two lines on one band keep their own room", async () => {
+  const { cardPng } = await import("../../web/cover.js");
+  const { fontSize } = await import("./canvas-stub.mjs");
+  TEXTS.length = 0;
+  await cardPng("3/12", "", null, {}, 640, 480, "colour", false, "THE INVISIBLE DOG", 1, "top_centre", "top_left");
+  const [number, title] = TEXTS;
+  assert.equal(number[1], 320, "the number stands in the middle of the band");
+  const numberLeft = number[1] - ([...number[0]].length * 0.5 * fontSize(number[5])) / 2;
+  const titleRight = title[1] + [...title[0]].length * 0.5 * fontSize(title[5]);
+  assert.ok(titleRight < numberLeft, "the title is laid out in what the number leaves it");
+});
+
+test("a band with no room left letters no title", async () => {
+  const { cardPng } = await import("../../web/cover.js");
+  TEXTS.length = 0;
+  await cardPng(
+    "3/12",
+    "",
+    null,
+    {},
+    320,
+    240,
+    "colour",
+    false,
+    "THE INVISIBLE DOG OF THE UNKNOWN LANDS",
+    1,
+    "top_centre",
+    "top_left",
+  );
+  assert.deepEqual(
+    TEXTS.map((line) => line[0]),
+    ["3/12"],
+    "a title that cannot be read at that size is not written at all",
+  );
 });
 
 test("a card with no number writes its title alone", async () => {

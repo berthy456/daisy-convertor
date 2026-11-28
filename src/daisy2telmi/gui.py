@@ -839,9 +839,9 @@ class App:
         # was drawn for, the zoom it was drawn at, then the picture and its size.
         self._crop_cover: tuple[str, str, float, bool, float, tuple[bytes, tuple[int, int]]] | None = None
         self._crop_photo: tk.PhotoImage | None = None
-        # The card's lettering over that picture: the words it was drawn for, then the
-        # picture itself.
-        self._crop_osd: tuple[str, tuple[int, int], str, bool] | None = None
+        # The card's lettering over that picture: everything it was drawn from, kept so
+        # moving the frame does not redraw the same words.
+        self._crop_osd: tuple[str, str, str, str, tuple[int, int], str, bool] | None = None
         self._osd_photo: tk.PhotoImage | None = None
         self._crop_zoom_value = 1.0
         self._crop_focus: tuple[float, float] | None = None
@@ -1147,13 +1147,20 @@ class App:
         osd = self._card(display.body, "card_text_section", row=1, sticky="ew")
         self.osd_card = osd
         self._label(osd.body, "card_text_label").grid(row=0, column=0, sticky="w")
+        self._label(osd.body, "card_at_label").grid(row=0, column=1, sticky="w", padx=(14, 0))
         self.card_text_box = ttk.Combobox(osd.body, state="readonly", width=22)
         self.card_text_box.grid(row=1, column=0, sticky="w")
         self.card_text_box.bind("<<ComboboxSelected>>", lambda _e: self._choose_card_text())
+        self.card_number_at_box = ttk.Combobox(osd.body, state="readonly", width=18)
+        self.card_number_at_box.grid(row=1, column=1, sticky="w", padx=(14, 0))
+        self.card_number_at_box.bind("<<ComboboxSelected>>", lambda _e: self._choose_card_at("card_number_at"))
         self._label(osd.body, "card_text_next").grid(row=2, column=0, sticky="w", pady=(6, 0))
         self.card_title_box = ttk.Combobox(osd.body, state="readonly", width=22)
         self.card_title_box.grid(row=3, column=0, sticky="w")
         self.card_title_box.bind("<<ComboboxSelected>>", lambda _e: self._choose_card_title())
+        self.card_title_at_box = ttk.Combobox(osd.body, state="readonly", width=18)
+        self.card_title_at_box.grid(row=3, column=1, sticky="w", padx=(14, 0))
+        self.card_title_at_box.bind("<<ComboboxSelected>>", lambda _e: self._choose_card_at("card_title_at"))
         self._show_card_text()
         # A part's own words on screen is a thing a big screen does, so this box is
         # only live next to the two formats whose screen can hold a sentence.
@@ -1548,6 +1555,8 @@ class App:
             announce.device,
             announce.speed,
             announce.show_title,
+            announce.number_at,
+            announce.title_at,
             float(self.options["card_contrast"]),
         )
 
@@ -1639,6 +1648,7 @@ class App:
         self._show_crop()
 
     def announce(self) -> Announce:
+        number_at, title_at = self._card_at()
         return Announce(
             mode=self.options["announce"],
             seconds=self.options["card_seconds"],
@@ -1649,6 +1659,8 @@ class App:
             show_total=self.options["card_total"],
             show_word=self.options["card_word"],
             show_title=self.options["card_title"],
+            number_at=number_at,
+            title_at=title_at,
             contrast=float(self.options["card_contrast"]),
             engine=self.options["tts"],
             voice=self.options["voice"],
@@ -1956,6 +1968,51 @@ class App:
         titles = self.card_title_names()
         self.card_title_box.configure(values=titles)
         self.card_title_box.set(titles[1 if self.options["card_title"] else 0])
+        self._show_card_at()
+
+    def card_at_names(self, apart_from: str | None = None) -> list[str]:
+        """The nine places a card's lettering can sit, in this window's language.
+
+        A line is never offered the place the other line holds: two lines at one
+        place draw on top of each other.
+        """
+        return [self.t(f"card_at_{place}") for place in self._card_places(apart_from)]
+
+    def _card_places(self, apart_from: str | None = None) -> list[str]:
+        return [place for place in images.CARD_PLACES if place != apart_from]
+
+    def _card_at(self) -> tuple[str, str]:
+        """The two places the boxes show and the cards are lettered at."""
+        return images.card_places(self._saved_at("card_number_at"), self._saved_at("card_title_at"))
+
+    def _saved_at(self, key: str) -> str:
+        saved = self.options[key]
+        if saved in images.CARD_PLACES:
+            return saved
+        return images.CARD_NUMBER_PLACE if key == "card_number_at" else images.CARD_TITLE_PLACE
+
+    def _show_card_at(self) -> None:
+        number, title = self._card_at()
+        self.card_number_at_box.configure(values=self.card_at_names())
+        self.card_number_at_box.set(self.t(f"card_at_{number}"))
+        self.card_title_at_box.configure(values=self.card_at_names(number))
+        self.card_title_at_box.set(self.t(f"card_at_{title}"))
+        # A card lettering no title has no title to place.
+        self.card_title_at_box.state(["!disabled"] if self.options["card_title"] else ["disabled"])
+
+    def _choose_card_at(self, key: str) -> None:
+        box = self.card_number_at_box if key == "card_number_at" else self.card_title_at_box
+        other = "card_title_at" if key == "card_number_at" else "card_number_at"
+        self.options["card_number_at"], self.options["card_title_at"] = self._card_at()
+        places = self._card_places() if key == "card_number_at" else self._card_places(self.options["card_number_at"])
+        place = places[[self.t(f"card_at_{one}") for one in places].index(box.get())]
+        if place == self.options[other]:
+            # The two lines trade places rather than draw over each other.
+            self.options[other] = self.options[key]
+        self.options[key] = place
+        settings.save(self.options)
+        self._show_card_text()
+        self._show_crop()
 
     def _card_text_index(self) -> int:
         """Which of the four shapes the saved word and total make."""
@@ -1972,6 +2029,7 @@ class App:
     def _choose_card_title(self) -> None:
         self.options["card_title"] = self.card_title_names().index(self.card_title_box.get()) == 1
         settings.save(self.options)
+        self._show_card_at()
         self._show_crop()
 
     def announce_names(self) -> list[str]:
@@ -2270,9 +2328,14 @@ class App:
             self._part_count or 1,
             self.cut == "chapter" and bool(self.options["card_word"]),
             chapters and bool(self.options["card_total"]),
-            self._part_title if chapters and self.options["card_title"] else "",
             size,
         )
+
+    def _card_title(self, size: tuple[int, int]) -> str:
+        """The title the book's first card will letter on its second line, if it letters one."""
+        if self.cut != "chapter" or not self.options["card_title"]:
+            return ""
+        return images.card_title(self._part_title or "", size)
 
     def _draw_osd(self, size: tuple[int, int], style: str, negative: bool) -> None:
         """Lay the card's own lettering over the preview, so the words it will carry
@@ -2281,13 +2344,18 @@ class App:
         A grey card carries its number alone, as every card of that player does.
         It is drawn once per card, not once per move: the cover slides under it.
         """
+        number_at, title_at = self._card_at()
         label = "1" if style == "bw" else self._card_words(size)
-        key = (label, size, style, negative)
+        title = "" if style == "bw" else self._card_title(size)
+        key = (label, title, number_at, title_at, size, style, negative)
         if self._crop_osd == key:
             return
         self._crop_osd = key
         self._osd_photo = tk.PhotoImage(
-            master=self.root, data=images.card_layer_png(label, "", *size, style=style, negative=negative)
+            master=self.root,
+            data=images.card_layer_png(
+                label, "", *size, style=style, negative=negative, title=title, number_at=number_at, title_at=title_at
+            ),
         )
         self.crop_frame.itemconfigure(self._osd_item, image=self._osd_photo)
 

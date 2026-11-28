@@ -164,8 +164,21 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--card-title",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="draw the part's own name beside its number on each chapter card, as in 'CHAPTER 4/12, THE WOLF' "
+        help="draw the part's own name on a second line of each chapter card, as in 'THE WOLF' "
         "(--no-card-title for the number alone)",
+    )
+    speech.add_argument(
+        "--card-number-at",
+        choices=images.CARD_PLACES,
+        default=None,
+        help="where the card's number line is drawn: three bands down the card (top, centre, bottom) times "
+        "three across it (left, centre, right)",
+    )
+    speech.add_argument(
+        "--card-title-at",
+        choices=images.CARD_PLACES,
+        default=None,
+        help="where the card's title line is drawn, in the same nine places",
     )
     speech.add_argument(
         "--card-negative",
@@ -303,6 +316,8 @@ def announce_options(args: argparse.Namespace) -> Announce:
         show_total=saved["card_total"] if args.card_total is None else args.card_total,
         show_word=saved["card_word"] if args.card_word is None else args.card_word,
         show_title=saved["card_title"] if args.card_title is None else args.card_title,
+        number_at=args.card_number_at or saved["card_number_at"],
+        title_at=args.card_title_at or saved["card_title_at"],
         engine=args.tts or saved["tts"],
         voice=args.tts_voice or saved["voice"],
         command=args.tts_command or saved["command"],

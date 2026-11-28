@@ -42,6 +42,9 @@ DEFAULTS: dict = {
     "card_total": True,
     "card_word": True,
     "card_title": True,
+    # Where the two lettered lines sit on the card: two of images.CARD_PLACES.
+    "card_number_at": "top_right",
+    "card_title_at": "top_left",
     "card_contrast": 1.0,
     "card_negative": False,
     # Whether anyone ever ticked the bar box. A settings file written by a version

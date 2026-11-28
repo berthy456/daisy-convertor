@@ -121,6 +121,45 @@ CARD_WORD_PITCH = 1.3
 # A digit's ink is about three quarters of the font size, in any of them.
 DIGIT_INK = 0.72
 
+# Where a card's two lettering lines sit: three bands down the screen, three across
+# it. The GUI offers the nine to each line, and the web page draws the same nine.
+CARD_PLACES = [
+    "top_left",
+    "top_centre",
+    "top_right",
+    "centre_left",
+    "centre",
+    "centre_right",
+    "bottom_left",
+    "bottom_centre",
+    "bottom_right",
+]
+CARD_NUMBER_PLACE = "top_right"
+CARD_TITLE_PLACE = "top_left"
+# A place is the point the text is held at, and the anchor that point is held with.
+CARD_ANCHORS = {
+    "top_left": "la",
+    "top_centre": "ma",
+    "top_right": "ra",
+    "centre_left": "lm",
+    "centre": "mm",
+    "centre_right": "rm",
+    "bottom_left": "lb",
+    "bottom_centre": "mb",
+    "bottom_right": "rb",
+}
+
+
+def card_places(number_at: str, title_at: str) -> tuple[str, str]:
+    """The two places as a card can letter them.
+
+    A pair that puts both lines at one place moves the title to the next free place:
+    a card cannot letter two lines on top of each other.
+    """
+    if title_at == number_at:
+        title_at = next(place for place in CARD_PLACES if place != number_at)
+    return number_at, title_at
+
 
 def _layout(width: int) -> tuple[int, int]:
     """The margin and the height the cover keeps to itself.
@@ -189,11 +228,83 @@ def _number_card(drawn: ImageDraw.ImageDraw, label: str, width: int, height: int
     )
 
 
-def _lettering(label: str, text: str, width: int, height: int, style: str, negative: bool) -> Image.Image:
-    """One card's lettering on a transparent canvas: its number, and the words it opens with.
+def _place(place: str, width: int, height: int, margin: int) -> tuple[int, int, str]:
+    """The point one of the nine places puts text at, and the anchor held there."""
+    row, _, side = place.partition("_")
+    side = side or "centre"
+    x = {"left": margin, "centre": width // 2, "right": width - margin}[side]
+    y = {"top": margin, "centre": height // 2, "bottom": height - margin}[row]
+    return x, y, CARD_ANCHORS[place]
 
-    A colour card numbers itself top right, and its words start under the height the
-    cover keeps to itself. A four-grey card is the Lunii's, and draws the number alone.
+
+def _number_size(label: str, width: int, height: int) -> int:
+    """The size a card's number line is drawn at.
+
+    Its own size, shrunk only when the line is too wide for the card, and never
+    below the size of the card's own opening words: below that the number stops
+    being the thing a listener reads on a card.
+    """
+    base = max(1, round(height / CARD_NUMBER_SIZE))
+    room = width - 2 * _layout(width)[0]
+    wide = _typeface(base).getlength(label)
+    if wide <= room:
+        return base
+    return max(max(1, round(height / CARD_WORD_SIZE)), int(base * room / wide))
+
+
+def _side(place: str) -> str:
+    """Which third of the card's width a place stands in."""
+    return place.partition("_")[2] or "centre"
+
+
+def _band_room(place: str, held_by: str, held_width: int, width: int, margin: int) -> tuple[int, int]:
+    """The stretch of a band a second line has left to it, once the first is drawn.
+
+    Two lines lettered on one band share it: the one that came first keeps the room
+    its own width needs, and the other is laid out in what is left.
+    """
+    edge = margin + held_width + margin
+    side = _side(held_by)
+    if side == "left":
+        return edge, width - margin
+    if side == "right":
+        return margin, width - edge
+    # The first line stands in the middle of the band, so the second takes one side of it.
+    half = (width - held_width) // 2
+    left = _side(place) == "left"
+    return (margin, half - margin) if left else (width - half + margin, width - margin)
+
+
+def _title_size(title: str, room: int, height: int) -> int:
+    """The size a chapter title is drawn at, or 0 when the card has no room for it.
+
+    A title is lettered at the size of the card's opening words and shrunk to fit the
+    room its band leaves it; under half that size it stops being readable and is left off.
+    """
+    base = max(1, round(height / CARD_WORD_SIZE))
+    wide = _typeface(base).getlength(title)
+    if wide <= room:
+        return base
+    size = int(base * room / wide)
+    return size if size * 2 >= base else 0
+
+
+def _lettering(
+    label: str,
+    text: str,
+    width: int,
+    height: int,
+    style: str,
+    negative: bool,
+    title: str = "",
+    number_at: str = CARD_NUMBER_PLACE,
+    title_at: str = CARD_TITLE_PLACE,
+) -> Image.Image:
+    """One card's lettering on a transparent canvas: its number, its title, and the words it opens with.
+
+    A colour card draws its two lines where they were placed, and its opening words
+    under the height the cover keeps to itself. A four-grey card is the Lunii's, and
+    draws the number alone.
     """
     palette = _palette(style, negative)
     canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
@@ -203,30 +314,40 @@ def _lettering(label: str, text: str, width: int, height: int, style: str, negat
         _number_card(drawn, label, width, height, palette)
         return canvas
 
-    number_size = max(1, round(height / CARD_NUMBER_SIZE))
-    room = width - 2 * margin
-    wide = _typeface(number_size).getlength(label)
-    if wide > room:
-        # A titled line is drawn smaller than a bare number, never smaller than the
-        # card's own opening words: below that the number stops being the thing a
-        # listener reads on a card.
-        number_size = max(max(1, round(height / CARD_WORD_SIZE)), int(number_size * room / wide))
-    drawn.text(
-        (width - margin, margin),
-        label,
-        font=_typeface(number_size),
-        fill=_rgb(palette["ink"]),
-        stroke_width=_outline(number_size),
-        stroke_fill=_rgb(palette["border"]),
-        anchor="ra",
-    )
+    def line(content: str, place: str, size: int, span: tuple[int, int] | None = None) -> None:
+        x, y, anchor = _place(place, width, height, margin)
+        if span:
+            lo, hi = span
+            x = {"left": lo, "centre": (lo + hi) // 2, "right": hi}[_side(place)]
+        drawn.text(
+            (x, y),
+            content,
+            font=_typeface(size),
+            fill=_rgb(palette["ink"]),
+            stroke_width=_outline(size),
+            stroke_fill=_rgb(palette["border"]),
+            anchor=anchor,
+        )
+
+    number_size = _number_size(label, width, height)
+    line(label, number_at, number_size)
+    if title:
+        span = None
+        room = width - 2 * margin
+        if number_at.partition("_")[0] == title_at.partition("_")[0]:
+            held = _typeface(number_size).getlength(label)
+            span = _band_room(title_at, number_at, held, width, margin)
+            room = span[1] - span[0]
+        size = _title_size(title, room, height)
+        if size:
+            line(title, title_at, size, span)
     font = _card_typeface(height)
     pitch = round(font.size * CARD_WORD_PITCH)
     top = margin + _layout(width)[1] + margin
-    for offset, line in enumerate(card_words(text, width, height)):
+    for offset, words in enumerate(card_words(text, width, height)):
         drawn.text(
             (margin, top + offset * pitch),
-            line,
+            words,
             font=font,
             fill=_rgb(palette["ink"]),
             stroke_width=_outline(font.size),
@@ -260,9 +381,12 @@ def card_png(
     height: int = IMAGE_SIZE[1],
     style: str = "colour",
     negative: bool = False,
+    title: str = "",
+    number_at: str = CARD_NUMBER_PLACE,
+    title_at: str = CARD_TITLE_PLACE,
 ) -> bytes:
     """A card on its own: the part number, and the words it opens with when we can draw them."""
-    lettering = _lettering(label, text, width, height, style, negative)
+    lettering = _lettering(label, text, width, height, style, negative, title, number_at, title_at)
     if style == "bw":
         lettering = _hard_lettering(lettering)
     canvas = Image.new("RGB", (width, height), _rgb(_palette(style, negative)["background"]))
@@ -277,9 +401,12 @@ def card_layer_png(
     height: int = IMAGE_SIZE[1],
     style: str = "colour",
     negative: bool = False,
+    title: str = "",
+    number_at: str = CARD_NUMBER_PLACE,
+    title_at: str = CARD_TITLE_PLACE,
 ) -> bytes:
     """The same lettering on a transparent canvas, to lay over a cropped cover."""
-    lettering = _lettering(label, text, width, height, style, negative)
+    lettering = _lettering(label, text, width, height, style, negative, title, number_at, title_at)
     return _photo_png(_hard_lettering(lettering) if style == "bw" else lettering)
 
 
@@ -448,29 +575,34 @@ def card_label(
     total: int,
     word: bool = True,
     show_total: bool = True,
-    title: str = "",
     screen: tuple[int, int] = IMAGE_SIZE,
 ) -> str:
-    """The words drawn on a card, in the story's language.
+    """The first line drawn on a card, in the story's language.
 
     The typeface is Latin, so Chinese and Arabic cards carry the number alone: it
     is the part that has to be read, and the spoken card already says the word.
     A part cut below chapter level gets the number alone as well, because none
-    of the words we have would be the right one for it. A title is added after the
-    number, and a card keeps its number alone when its typeface has no letters for
-    the title, or no room for it at the size of the card's own opening words.
+    of the words we have would be the right one for it.
     """
     width, height = screen
     shown = f"{number}/{total}" if show_total else str(number)
     label = f"{language(language_code).card.upper()} {shown}" if word else shown
     font = _card_typeface(height)
-    if title:
-        named = f"{label}, {title.upper()}"
-        room = width - 2 * _layout(width)[0]
-        small = _typeface(max(1, round(height / CARD_WORD_SIZE)))
-        if _letterable(font, named) == named and small.getlength(named) <= room:
-            return named
     return label if _letterable(font, label) == label else shown
+
+
+def card_title(title: str, screen: tuple[int, int] = IMAGE_SIZE) -> str:
+    """The chapter's own name as a card letters it, or nothing when it cannot.
+
+    A title is a line of its own, placed where it was asked to be: it is left off
+    when the card's typeface has no letters for it, or when it would have to be
+    shrunk past the size a card's words are readable at.
+    """
+    named = " ".join(title.split()).upper()
+    if not named or _letterable(_card_typeface(screen[1]), named) != named:
+        return ""
+    margin = _layout(screen[0])[0]
+    return named if _title_size(named, screen[0] - 2 * margin, screen[1]) else ""
 
 
 def _run(args: list[str], description: str) -> None:
@@ -709,6 +841,9 @@ def write_cover(
     view: dict | None = None,
     negative: bool = False,
     contrast: float = 1.0,
+    titles: Sequence[str] = (),
+    number_at: str = CARD_NUMBER_PLACE,
+    title_at: str = CARD_TITLE_PLACE,
 ) -> None:
     """`title.png`, `cover.png` and one card per part, all from `source`.
 
@@ -718,9 +853,11 @@ def write_cover(
     negative of an old film. `scene` and `cover_size` are that player's own sizes.
 
     Every card shows the cover across the whole screen, with the number and the
-    opening words laid over it. A colour card of a photograph weighs far more than
-    a grey one of the same cover: the greys flatten into a few palette entries and
-    a photograph does not, and a book cut to the sentence level is where that shows.
+    opening words laid over it. `titles` is one title per card, laid at its own
+    place: `number_at` and `title_at` are two of the nine places a card's lettering
+    can sit at. A colour card of a photograph weighs far more than a grey one of
+    the same cover: the greys flatten into a few palette entries and a photograph
+    does not, and a book cut to the sentence level is where that shows.
     """
     ffmpeg = require_ffmpeg()
     images = out_dir / "images"
@@ -740,9 +877,20 @@ def write_cover(
         # lettering, once: flattening twice would push every grey up a level.
         shutil.copyfile(base, card_base)
 
+        named = list(titles) + [""] * len(labels)
         for index, (label, text) in enumerate(zip(labels, texts)):
             layer = scratch / f"layer{index}.png"
-            layer.write_bytes(card_layer_png(label, text, *scene, style=style))
+            layer.write_bytes(
+                card_layer_png(
+                    label,
+                    text,
+                    *scene,
+                    style=style,
+                    title=named[index],
+                    number_at=number_at,
+                    title_at=title_at,
+                )
+            )
             _overlay(ffmpeg, card_base, layer, images / f"m{index}.png", 0, 0)
             if style == "bw":
                 # Flattened last, once the compositing is done, so a card cannot

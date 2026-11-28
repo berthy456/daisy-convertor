@@ -2311,6 +2311,37 @@ def test_the_card_can_be_lettered_by_its_number_alone(app: gui.App) -> None:
     assert app._card_text_index() == 2
 
 
+def test_each_card_line_is_placed_by_its_own_box(app: gui.App) -> None:
+    """Three bands down the card times three across it, offered to each lettered line."""
+    assert app.card_at_names() == [app.t(f"card_at_{place}") for place in images.CARD_PLACES]
+    assert app.card_number_at_box.get() == app.t("card_at_top_right")
+    assert app.card_title_at_box.get() == app.t("card_at_top_left")
+
+    app.card_number_at_box.set(app.t("card_at_bottom_centre"))
+    app._choose_card_at("card_number_at")
+    assert app.options["card_number_at"] == "bottom_centre"
+    assert app._card_at() == ("bottom_centre", "top_left")
+
+
+def test_the_second_line_is_never_offered_the_place_the_first_holds(app: gui.App) -> None:
+    """Two lines lettered at one place draw on top of each other: the title box leaves
+    the number's place out, and a number moved onto the title's place swaps the two."""
+    assert app.t("card_at_top_right") not in app.card_title_at_box.cget("values")
+
+    app.card_number_at_box.set(app.t("card_at_top_left"))
+    app._choose_card_at("card_number_at")
+    assert app.options["card_number_at"] == "top_left"
+    assert app.options["card_title_at"] == "top_right", "the title line moves to where the number was"
+    assert app.t("card_at_top_left") not in app.card_title_at_box.cget("values")
+
+
+def test_the_title_line_is_greyed_when_the_card_letters_none(app: gui.App) -> None:
+    app.card_title_box.set(app.card_title_names()[0])
+    app._choose_card_title()
+    assert app.options["card_title"] is False
+    assert "disabled" in app.card_title_at_box.state()
+
+
 def test_the_card_is_lettered_in_the_books_own_language(app: gui.App, tmp_path: Path, monkeypatch) -> None:
     """The words on a card belong to the book, not to the language the window was
     opened in: a French book's card is lettered in French."""
@@ -2603,13 +2634,17 @@ def test_the_preview_carries_the_cards_own_words(app: gui.App, tmp_path: Path, m
 
     size = (int(app.crop_frame.cget("width")), int(app.crop_frame.cget("height")))
     assert app.crop_frame.itemcget(app._osd_item, "image"), "the preview carries the card's words"
-    assert app._crop_osd[0] == images.card_label(
-        "fr", 1, 23, True, True, "L'Aiguille creuse", size
+    assert app._crop_osd[:2] == (
+        images.card_label("fr", 1, 23, True, True, size),
+        images.card_title("L'Aiguille creuse", size),
     ), "the default card: number of total, and the part's own name"
 
     app.card_text_box.set(app.card_text_names()[0])
     app._choose_card_text()
-    assert app._crop_osd[0] == images.card_label("fr", 1, 23, True, False, "L'Aiguille creuse", size)
+    assert app._crop_osd[:2] == (
+        images.card_label("fr", 1, 23, True, False, size),
+        images.card_title("L'Aiguille creuse", size),
+    )
 
 
 def test_the_preview_letters_no_total_for_a_cut_that_has_none(app: gui.App, tmp_path: Path, monkeypatch) -> None:
@@ -2627,7 +2662,7 @@ def test_the_preview_letters_no_total_for_a_cut_that_has_none(app: gui.App, tmp_
     app._drain()
 
     size = (int(app.crop_frame.cget("width")), int(app.crop_frame.cget("height")))
-    assert app._crop_osd[0] == images.card_label("fr", 1, 1, False, False, "", size)
+    assert app._crop_osd[:2] == (images.card_label("fr", 1, 1, False, False, size), "")
 
 
 def test_the_grey_preview_carries_a_number_alone(app: gui.App) -> None:

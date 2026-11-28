@@ -66,7 +66,7 @@ test("every language translates every key", () => {
 // the Latin-script languages all borrow as is; so does the machine's "OK", which the
 // five Latin-script dictionaries write as it is, while Arabic, Chinese and Turkish
 // write their own; Dutch writes the button's "Stop" and the slider's "Contrast" as
-// it is too.
+// it is too; German writes the card position's "Position" as it is.
 // Anything else that matches was left untranslated.
 test("no language is left in English by accident", () => {
   const allowed = new Set([
@@ -85,6 +85,7 @@ test("no language is left in English by accident", () => {
     "contrast",
     "cover_stop",
     "emu_ok",
+    "card_at_label",
   ]);
   for (const code of LANGUAGES) {
     if (code === "en") continue;

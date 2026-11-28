@@ -11,6 +11,7 @@ Builds from runs of the `build` workflow, before they are a release. Each build 
 | `beta5` | `abb3750` | [45878975449](https://github.com/berthy456/daisy-convertor/actions/runs/45878975449) | 142644817 bytes |
 | `beta6` | `7cafdf9` | [45956814893](https://github.com/berthy456/daisy-convertor/actions/runs/45956814893) | 142652807 bytes |
 | `beta7` | `057541e` | [45976688144](https://github.com/berthy456/daisy-convertor/actions/runs/45976688144) | 142649492 bytes |
+| `beta8` | `bee5722` | built on this machine, not a workflow run | 121525440 bytes |
 
 `beta1` to `beta3` hold the Windows build only; the other builds of those commits (macOS, .deb, AppImage) are the artifacts of the run named beside it. `beta4` to `beta7` hold four builds each:
 
@@ -41,6 +42,12 @@ Builds from runs of the `build` workflow, before they are a release. Each build 
 | `daisy-convertor-0.0.0-dev-057541e-x86_64.AppImage` | 125805760 bytes, in two parts |
 | `daisy-convertor-0.0.0-dev-057541e-macos-arm64.dmg` | 53266814 bytes |
 | `daisy-convertor-0.0.0-dev-057541e-macos-x86_64.dmg` | 55609404 bytes |
+
+| File in `beta8` | Size |
+| :--- | :--- |
+| `daisy-convertor-0.0.0-dev-bee5722-x86_64.AppImage` | 121525440 bytes, in two parts |
+
+`beta8` holds the Linux AppImage only: it was built on this machine instead of by the workflow, so the other three builds of that commit were not made.
 
 A build of a commit that is not a release tag carries `0.0.0-dev-<commit>` in its name instead of a version; the app inside still reports the version it was built with. `beta5` is the `v1.6` build, and `beta6`'s and `beta7`'s Windows setup keep that name because the app inside still reports 1.6.
 

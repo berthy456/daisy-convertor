@@ -781,12 +781,14 @@ def test_the_folder_button_hands_back_the_folder_being_shown(app: gui.App, tmp_p
             window.top.destroy()
 
 
-def test_the_player_is_chosen_before_the_cover(app: gui.App) -> None:
-    """The player decides the size of every picture, so it is asked on the line above
-    the button that writes the story, beside the chapters it is chosen for."""
-    chosen = app.chapters_button.master
-    assert app.format_box.master is chosen, "the format sits beside the chapter choice"
-    assert chosen.grid_info()["row"] < app.save_button.master.grid_info()["row"]
+def test_the_last_line_asks_in_the_order_the_work_is_done(app: gui.App) -> None:
+    """Which machine the story is for, a look at it before it is written, the settings,
+    whether an old story may be replaced, then the button that writes it."""
+    line = app.save_button.master
+    order = [line.pack_slaves().index(w) for w in (app.format_box, app.test_button, app.options_button, app.force_box, app.save_button)]
+    assert order == sorted(order), "the line reads in the order the work is asked for"
+    assert line.pack_slaves()[-1] is app.progress, "the wheel stands at the line's right end"
+    assert line.grid_info()["row"] > app.audio_card.master.grid_info()["row"], "the line stands under the cards it follows"
 
 
 def test_conversion_log_lines_reach_the_window(app: gui.App) -> None:
@@ -1757,23 +1759,29 @@ def three_chapters(app: gui.App, monkeypatch, tmp_path) -> Book:
     return book
 
 
-def test_the_cut_levels_wait_until_the_pack_has_been_read(app: gui.App, three_chapters) -> None:
-    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
-    assert not any(box.instate(["!disabled"]) for box in page.cut_boxes.values())
+def _read_pack(app: gui.App, pack: Path) -> None:
+    """Read a pack the way the window does when a book is picked, on this thread."""
+    app.pack_var.set(str(pack))
+    app._cover_asked = "pack"
+    app._cover_lookup(pack, app._cover_job, app._cover_dest(app._cover_job), typed=True)
+    app._drain()
 
 
-def test_a_pack_with_one_outline_level_greys_out_the_finer_cuts(
-    app: gui.App, three_chapters, monkeypatch
+def test_the_cut_levels_wait_until_the_pack_has_been_read(app: gui.App) -> None:
+    assert app.cut_box.instate(["disabled"]), "no book read yet, so no level offered"
+
+
+def test_a_pack_with_one_outline_level_offers_only_the_cut_it_can_give(
+    app: gui.App, three_chapters, tmp_path
 ) -> None:
-    monkeypatch.setattr(gui, "extract", lambda pack, level="chapter": three_chapters)
-    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
-    page._measure()
-    page._drain()
+    _read_pack(app, tmp_path / "pack.zip")
 
-    assert [box.instate(["!disabled"]) for box in page.cut_boxes.values()] == [True, False, False]
+    assert app.cut_levels == ["chapter"]
+    assert list(app.cut_box.cget("values")) == [app.t("cut_chapter")]
+    assert app.cut_box.instate(["!disabled"])
 
 
-def test_a_deeper_outline_opens_every_level_it_adds_parts_to(
+def test_a_deeper_outline_offers_every_level_it_adds_parts_to(
     app: gui.App, three_chapters, monkeypatch, tmp_path
 ) -> None:
     def by_level(pack, level: str = "chapter"):
@@ -1786,24 +1794,20 @@ def test_a_deeper_outline_opens_every_level_it_adds_parts_to(
         )
 
     monkeypatch.setattr(gui, "extract", by_level)
-    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
-    page._measure()
-    page._drain()
+    _read_pack(app, tmp_path / "pack.zip")
 
-    assert [box.instate(["!disabled"]) for box in page.cut_boxes.values()] == [True, True, True]
+    assert app.cut_levels == ["chapter", "paragraph", "sentence"]
+    assert list(app.cut_box.cget("values")) == [app.t(f"cut_{level}") for level in gui.CUT_LEVELS]
 
 
 def test_a_saved_level_the_pack_cannot_cut_falls_back(
-    app: gui.App, three_chapters, monkeypatch
+    app: gui.App, three_chapters, monkeypatch, tmp_path
 ) -> None:
     app.cut = "sentence"
-    monkeypatch.setattr(gui, "extract", lambda pack, level="chapter": three_chapters)
-    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
-    page._measure()
-    page._drain()
+    _read_pack(app, tmp_path / "pack.zip")
 
-    assert page.cut == "chapter"
-    assert page.cut_var.get() == "chapter"
+    assert app.cut == "chapter"
+    assert app.cut_box.get() == app.t("cut_chapter")
 
 
 def test_a_level_the_pack_skips_falls_back_to_the_coarser_side(
@@ -1822,26 +1826,25 @@ def test_a_level_the_pack_skips_falls_back_to_the_coarser_side(
         )
 
     monkeypatch.setattr(gui, "extract", by_level)
-    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
-    page._measure()
-    page._drain()
+    _read_pack(app, tmp_path / "pack.zip")
 
-    assert page.cut == "chapter"
-    assert page.cut_var.get() == "chapter"
+    assert app.cut == "chapter"
+    assert app.cut_box.get() == app.t("cut_chapter")
 
 
-def test_a_pack_that_will_not_be_read_says_so(app: gui.App, three_chapters, monkeypatch) -> None:
+def test_a_pack_that_will_not_be_read_says_so(app: gui.App, three_chapters, monkeypatch, tmp_path) -> None:
     """The cut levels stay shut until the pack has been read, so a read that failed
     with nothing to say looked like a book with no chapters in it."""
     def unreadable(pack, level: str = "chapter") -> Book:
         raise DaisyPackError("no outline")
 
     monkeypatch.setattr(gui, "extract", unreadable)
-    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
+    _read_pack(app, tmp_path / "pack.zip")
+    page = gui.ChapterList(app, tmp_path / "pack.zip")
     page._drain()
 
     assert "no outline" in page.status.cget("text")
-    assert not any(box.instate(["!disabled"]) for box in page.cut_boxes.values())
+    assert app.cut_box.instate(["disabled"])
 
 
 def test_the_chapter_window_lists_the_chapters(app: gui.App, three_chapters) -> None:
@@ -2063,11 +2066,12 @@ def test_choosing_a_cut_level_redraws_the_parts(
     assert [box.get() for box in page.keep] == [True, True, True]
     page.keep[0].set(False)
 
-    page._choose("sentence")
+    app._choose_cut("sentence")
     assert [box.get() for box in page.keep] == [True, True]
     assert page.info[1].title == "Phrase 2"
     assert app.dropped == set()
     assert app.cut == "sentence"
+    assert page.cut == "sentence", "the list open under the box follows the level it chose"
 
 
 def test_the_chosen_cut_level_reaches_the_conversion(
@@ -2078,7 +2082,7 @@ def test_the_chosen_cut_level_reaches_the_conversion(
     monkeypatch.setattr(gui.settings, "save", lambda options: None)
 
     page = gui.ChapterList(app, Path("/tmp/pack.zip"))
-    page._choose("paragraph")
+    app._choose_cut("paragraph")
     page._close()
     assert app.options["cut"] == "paragraph"
 
@@ -2134,25 +2138,21 @@ def test_the_window_offers_every_player(app: gui.App) -> None:
 def test_an_mp3_pack_hides_the_picture_and_the_emulator(app: gui.App) -> None:
     """A plain player is given no cards, so the window has nothing to draw, nothing to
     preview, no cover to place and no card to letter."""
-    app.pages.select(app.display_page)
     app.root.update_idletasks()
     app.format_var.set("mp3")
     app._show_cover()
+    assert not app.display_card.grid_info(), "the whole section has nothing to show for it"
     assert not app.crop_preview.grid_info(), "the picture frame and its knobs have nothing to show"
     assert not app.cover_card.grid_info(), "the pack carries no picture, so there is no cover to place"
     assert not app.osd_card.grid_info(), "and no card to letter"
-    assert app.pages.select() != app.display_page, "the window leaves the page it has nothing to fill"
     assert app.test_button.instate(["disabled"]), "there is no story to test"
-    app.pages.select(app.display_page)
-    app.root.update_idletasks()
     app.format_var.set("telmi")
     app._show_cover()
-    app.pages.select(app.display_page)
     app.root.update_idletasks()
-    assert app.crop_preview.grid_info(), "and the frame comes back for a story-teller"
-    assert app.cover_card.grid_info(), "with the cover and the card text beside it"
+    assert app.display_card.grid_info(), "and the section comes back for a story-teller"
+    assert app.crop_preview.grid_info(), "with its frame"
+    assert app.cover_card.grid_info(), "the cover and the card text under it"
     assert app.osd_card.grid_info()
-    assert app.display_page.winfo_ismapped(), "and the page it stands on is offered again"
     assert app.test_button.instate(["!disabled"])
 
 
@@ -2178,28 +2178,94 @@ def test_the_crop_knobs_stand_beside_the_frame(app: gui.App) -> None:
     assert app.contrast_box.master is side, "and the contrast too"
     assert app.negative_box.master is not side, "the negative belongs to the cover, not to the knobs"
     beside = {w for w in _walk(side) if isinstance(w, ttk.Button)}
-    assert beside == {app.crop_zoom_out, app.crop_zoom_in}, "only the two zoom steps stand there"
+    assert beside == {app.crop_zoom_out, app.crop_zoom_in, app.cover_search_button}, (
+        "the two zoom steps and the search the two words feed stand there"
+    )
+    assert app.cover_search_button.master.master is side, "the words and their button stand on the same column"
 
 
-def test_the_window_asks_about_the_audio_on_one_page_and_the_screen_on_the_other(app: gui.App) -> None:
-    """Two pages, because the two questions are different: what a card says, and what
-    the teller's screen shows."""
-    assert [app.pages.tab(index, "text") for index in (0, 1)] == [app.t("page_audio"), app.t("page_display")]
-    audio, display = (app.root.nametowidget(name) for name in app.pages.tabs())
+def test_the_window_asks_about_the_audio_the_screen_and_the_parts_in_three_cards(app: gui.App) -> None:
+    """Three cards, because the three questions are different: what a card says, what
+    the teller's screen shows, and which parts of the book the story is made of."""
+    main = [app.audio_card, app.display_card, app.chapters_card]
+    assert [card.key for card in main] == ["page_audio", "page_display", "chapters"]
+    assert [card.cget("text").removesuffix("  +") for card in main] == [
+        app.t("page_audio"),
+        app.t("page_display"),
+        app.t("chapters"),
+    ]
+    assert all(card.master is app.audio_card.master for card in main), "the three stand in one column"
+    assert [app.cover_card.key, app.osd_card.key] == ["cover_section", "card_text_section"]
+    assert app.cover_card.master is app.display_card.body, "the cover folds under the Display card"
+    assert app.osd_card.master is app.display_card.body, "and so does the card's lettering"
 
-    def page_of(widget) -> str:
+    def card_of(widget) -> str:
         while widget is not app.root:
-            if widget is audio:
-                return "audio"
-            if widget is display:
-                return "display"
+            for name in ("audio_card", "display_card", "chapters_card"):
+                if widget is getattr(app, name):
+                    return name.removesuffix("_card")
             widget = widget.master
         return "outside"
 
-    for name in ("speech_box", "announce_box", "seconds_box"):
-        assert page_of(getattr(app, name)) == "audio", f"{name} is an audio choice"
-    for name in ("crop_frame", "contrast_box", "card_text_box", "card_title_box", "negative_box", "captions_box"):
-        assert page_of(getattr(app, name)) == "display", f"{name} is a display choice"
+    for name in ("speech_box", "announce_box", "seconds_box", "autoplay_box", "pause_box"):
+        assert card_of(getattr(app, name)) == "audio", f"{name} is an audio choice"
+    for name in ("crop_frame", "contrast_box", "cover_entry_box", "card_text_box", "negative_box"):
+        assert card_of(getattr(app, name)) == "display", f"{name} is a display choice"
+    for name in ("cut_box", "chapters_button"):
+        assert card_of(getattr(app, name)) == "chapters", f"{name} is a chapter choice"
+    assert card_of(app.format_box) == "outside", "the machine the story is for is not one of the three"
+
+
+def test_a_card_folds_away_under_its_own_title(app: gui.App) -> None:
+    """The window opens with every section shut, so the whole window fits the screen it
+    opens on; a section's fields are there, only hidden under the line that names it."""
+    card = app.audio_card
+    assert not card.open and card.body.winfo_manager() == "", "the window opens with the cards shut"
+    assert card.cget("text").endswith("+")
+
+    card.toggle()
+    assert card.body.winfo_manager() == "pack", "the fields under the title are shown"
+    assert card.cget("text").endswith("−")
+
+    card.toggle()
+    assert card.body.winfo_manager() == "", "and folded away again"
+
+
+def test_the_title_band_is_what_opens_a_card(app: gui.App) -> None:
+    app.audio_card.event_generate("<Button-1>")
+    assert app.audio_card.open, "the line that names the section is the thing you press"
+    app.audio_card.event_generate("<Button-1>")
+    assert not app.audio_card.open
+
+
+def test_opening_a_card_folds_the_ones_that_would_not_fit(app: gui.App, monkeypatch) -> None:
+    """A window taller than the screen is not scrolled or shrunk: Tk cuts what hangs
+    past its bottom, which is where the buttons and the log are."""
+    monkeypatch.setattr(app, "_needed_height", lambda: 4000)
+    monkeypatch.setattr(app, "_fit_window", lambda: None)
+    app.audio_card.open_body()
+    app.chapters_card.open_body()
+
+    app.display_card.toggle()
+
+    assert app.display_card.open, "the card that was asked for stays open"
+    assert not app.audio_card.open and not app.chapters_card.open, "the others gave their room away"
+
+
+def test_a_wheel_that_is_not_turning_draws_nothing(app: gui.App) -> None:
+    """An idle wheel was a half-drawn arc standing in the corner permanently."""
+    assert app.progress.find_all() == ()
+
+    app.progress.start()
+    assert app.progress.find_all(), "a turning wheel draws itself"
+    app.progress.stop()
+    assert app.progress.find_all() == (), "and stops drawing when the work is done"
+
+
+def test_the_wheel_stands_as_tall_as_the_button_it_answers(app: gui.App) -> None:
+    app.root.update()
+    assert app.progress.winfo_height() >= app.save_button.winfo_height()
+    assert app.progress.winfo_y() >= app.save_button.winfo_y()
 
 
 def test_the_card_is_lettered_on_two_lines(app: gui.App) -> None:
@@ -2285,9 +2351,9 @@ def test_a_book_cut_below_its_chapters_reads_on(app: gui.App, three_chapters, mo
         gui, "extract", lambda pack, level="chapter": three_chapters if level == "chapter" else sentences
     )
 
-    page = gui.ChapterList(app, Path("/tmp/pack.zip"))
+    gui.ChapterList(app, Path("/tmp/pack.zip"))
     assert app.options["autoplay"] is False
-    page._choose("sentence")
+    app._choose_cut("sentence")
     assert app.options["autoplay"] is True
     assert app.autoplay_var.get() is True
 
@@ -2352,7 +2418,7 @@ def test_the_words_on_screen_recut_the_chapters_window_open_under_them(
     app._pick_captions()
 
     assert page.cut == "sentence", "the window lists the parts the run will cut"
-    assert page.cut_var.get() == "sentence", "and its own radio shows that cut"
+    assert app.cut_box.get() == app.t("cut_sentence"), "and the box above it shows that cut"
 
     second = gui.ChapterList(app, Path("/tmp/other.zip"))
     second._measure = lambda: None

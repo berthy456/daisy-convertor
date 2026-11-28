@@ -492,10 +492,13 @@ class Wheel(tk.Canvas):
         self.size = size
         self._turn = 0
         self._job: str | None = None
+        self.turning = False
         self.redraw()
 
     def redraw(self) -> None:
         self.delete("all")
+        if not self.turning:
+            return  # a wheel that is not turning is a half-drawn arc standing still
         middle = self.size / 2
         reach = middle - 2
         self.create_arc(
@@ -511,8 +514,9 @@ class Wheel(tk.Canvas):
         )
 
     def start(self, interval: int = 90) -> None:
-        if self._job is not None:
+        if self.turning:
             return
+        self.turning = True
         self._spin(interval)
 
     def _spin(self, interval: int) -> None:
@@ -524,6 +528,53 @@ class Wheel(tk.Canvas):
         if self._job is not None:
             self.after_cancel(self._job)
             self._job = None
+        if self.turning:
+            self.turning = False
+            self.redraw()
+
+
+class Card(ttk.Labelframe):
+    """A section of the window that folds away under its own title.
+
+    A click on the title band shows or hides everything under it. A folded card keeps
+    the same border with nothing inside, so the line between two sections and the line
+    around one are the same line - and the window can hold every section at once without
+    being taller than the screen it opens on.
+    """
+
+    MARK = {"open": "−", "shut": "+"}
+
+    def __init__(self, app: App, parent: tk.Widget, key: str) -> None:
+        super().__init__(parent, padding=(10, 8))
+        self.app = app
+        self.key = key
+        self.open = False
+        self.head = ttk.Frame(self)
+        self.head.pack(anchor="w", fill="x")
+        self.body = ttk.Frame(self)
+        self.bind("<Button-1>", lambda _event: self.toggle())
+        self.relabel()
+
+    def relabel(self) -> None:
+        mark = self.MARK["open" if self.open else "shut"]
+        self.configure(text=f"{self.app.t(self.key)}  {mark}")
+
+    def toggle(self) -> None:
+        if self.open:
+            self.close()
+        else:
+            self.open_body()
+            self.app._make_room(self)
+
+    def open_body(self) -> None:
+        self.open = True
+        self.body.pack(anchor="w", fill="x", pady=(6, 0))
+        self.relabel()
+
+    def close(self) -> None:
+        self.open = False
+        self.body.pack_forget()
+        self.relabel()
 
 
 class _QueueHandler(logging.Handler):
@@ -812,6 +863,11 @@ class App:
         self._card_player: subprocess.Popen | None = None
         self._on_done = None
         self._labels: dict[str, tk.Widget] = {}
+        # Every foldable section of the window, in the order they stand: the window
+        # folds the others away when the one being opened will not fit the screen.
+        self.cards: list[Card] = []
+        # Which levels the opened pack's own outline can cut at, once it has been read.
+        self.cut_levels: list[str] = []
         self._pick_marks = {name: self._mark_photo(PICK_MARK, f"pick-{name}") for name in PICK_MARKS}
         self._crop_width = self._crop_room()
         self._build()
@@ -850,9 +906,15 @@ class App:
             widget.configure(image=mark)
         return widget
 
+    def _card(self, parent: tk.Widget, key: str, row: int = 0, sticky: str = "nsew") -> Card:
+        card = Card(self, parent, key)
+        card.grid(row=row, column=0, sticky=sticky, pady=(0, 8))
+        self.cards.append(card)
+        return card
+
     def _build(self) -> None:
         self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(1, weight=1)
+        self.root.rowconfigure(4, weight=1)
 
         # The window's own title block stands at the top left - the mark, the name with
         # its version, and what the window is for on the line under it. At the top right
@@ -879,28 +941,32 @@ class App:
         self._paths_line = ttk.Label(head, text="", style="Brand.TLabel")
         self._paths_line.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
-        # Two pages: one for what the cards say and how long they play, one for
-        # everything the screen shows. The log is in neither - it runs along the bottom
-        # of the window, as wide as the window is, because a log read one column at a
-        # time is not read.
+        # Three sections, each folding away under its own title: what the cards say out
+        # loud, what the screen shows, and which parts of the book the story is made of.
+        # The log is in none of them - it runs along the bottom of the window, as wide as
+        # the window is, because a log read one column at a time is not read.
         grid = ttk.Frame(self.root, padding=(12, 8))
         grid.grid(row=1, column=0, sticky="nsew")
-        grid.rowconfigure(0, weight=1)
+        grid.columnconfigure(0, weight=1)
 
-        pages = ttk.Notebook(grid)
-        pages.grid(row=0, column=0, sticky="nsew")
-        self.pages = pages
-        audio = ttk.Frame(pages, padding=(10, 8))
-        audio.columnconfigure(1, weight=1)
-        display = ttk.Frame(pages, padding=(10, 8))
-        self.display_page = display
-        pages.add(audio, text=self.t("page_audio"))
-        pages.add(display, text=self.t("page_display"))
+        # What a card says out loud stays in sight with the card shut: it is the answer
+        # this window is mostly there to take.
+        audio = self._card(grid, "page_audio")
+        self.audio_card = audio
+        audio.head.columnconfigure(1, weight=1)
+        self._label(audio.head, "opt_announce").grid(row=0, column=0, sticky="w")
+        self.announce_keys = list(ANNOUNCE_MODES)
+        self.announce_box = ttk.Combobox(audio.head, values=self.announce_names(), state="readonly", width=FIELD_WIDTH)
+        self.announce_box.grid(row=1, column=0, sticky="w")
+        self.announce_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_announce())
+        self.announce_try_button = self._button(audio.head, "announce_try", self._try_announce)
+        self.announce_try_button.grid(row=1, column=1, sticky="w", padx=(8, 0))
 
         # Every field on one grid: the label above its box, every box the same width,
-        # every button in the same column, so the whole page reads down one edge.
-        fields = ttk.Frame(audio)
+        # every button in the same column, so the whole card reads down one edge.
+        fields = ttk.Frame(audio.body)
         fields.grid(row=0, column=0, sticky="nw")
+        fields.columnconfigure(1, weight=1)
 
         # The voice the cards get is picked here, next to the machine they are read
         # on; everything that goes with it - voices, installs, a sample to clone -
@@ -912,22 +978,13 @@ class App:
         self._button(fields, "speech_configure", self._open_speech).grid(row=1, column=1, sticky="w", padx=(6, 0))
         self._show_engines()
 
-        # What a card says out loud, and how long it plays when it has nothing of its
-        # own to say: the two answers that decide the audio of every chapter.
-        self._label(fields, "opt_announce").grid(row=2, column=0, sticky="w", pady=(6, 0))
-        self.announce_keys = list(ANNOUNCE_MODES)
-        self.announce_box = ttk.Combobox(fields, values=self.announce_names(), state="readonly", width=FIELD_WIDTH)
-        self.announce_box.grid(row=3, column=0, sticky="w")
-        self.announce_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_announce())
-        self.announce_try_button = self._button(fields, "announce_try", self._try_announce)
-        self.announce_try_button.grid(row=3, column=1, sticky="w", padx=(8, 0))
-        self._label(fields, "opt_card_seconds").grid(row=4, column=0, sticky="w", pady=(6, 0))
+        # How long a card plays when it has nothing of its own to say.
+        self._label(fields, "opt_card_seconds").grid(row=2, column=0, sticky="w", pady=(6, 0))
         self.seconds_box = ttk.Entry(fields, width=6)
         self.seconds_box.insert(0, f"{self.options['card_seconds']:g}")
-        self.seconds_box.grid(row=5, column=0, sticky="w")
+        self.seconds_box.grid(row=3, column=0, sticky="w")
         for event in ("<Return>", "<FocusOut>"):
             self.seconds_box.bind(event, lambda _e: self._type_seconds())
-        self._show_announce()
 
         # Where the story waits for OK. Without autoplay there is nothing to choose:
         # such a story waits at its chapters, however it was cut.
@@ -935,95 +992,35 @@ class App:
         self.autoplay_box = ttk.Checkbutton(
             fields, text=self.t("opt_autoplay"), variable=self.autoplay_var, command=self._choose_autoplay
         )
-        self.autoplay_box.grid(row=6, column=0, sticky="w", pady=(8, 0))
+        self.autoplay_box.grid(row=4, column=0, sticky="w", pady=(8, 0))
         self._labels["opt_autoplay"] = self.autoplay_box
         self.pause_keys = list(PAUSE_LEVELS)
-        self._label(fields, "opt_pause").grid(row=5, column=1, sticky="w", padx=(8, 0))
+        self._label(fields, "opt_pause").grid(row=3, column=1, sticky="w", padx=(8, 0))
         self.pause_box = ttk.Combobox(fields, values=self.pause_names(), state="readonly", width=12)
-        self.pause_box.grid(row=6, column=1, sticky="w", padx=(8, 0))
+        self.pause_box.grid(row=4, column=1, sticky="w", padx=(8, 0))
         self.pause_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_pause())
+        self._show_announce()
         self._show_pause()
 
-        # The cover and the card's lettering stand in the column beside the picture:
-        # stacked under it they make the page taller than any screen they open on.
-        right = ttk.Frame(display)
-        right.grid(row=0, column=1, sticky="n", padx=(12, 0))
-        cover_card = ttk.Labelframe(right, text=self.t("cover_section"), padding=(10, 8))
-        cover_card.grid(row=0, column=0, sticky="w")
-        cover_card.columnconfigure(1, weight=1)
-        self.cover_card = cover_card
-        self._labels["cover_section"] = cover_card
-        self._label(cover_card, "cover_label").grid(row=0, column=0, sticky="w")
-        cover_entry = ttk.Entry(cover_card, textvariable=self.cover_var, width=FIELD_WIDTH)
-        cover_entry.grid(row=1, column=0, sticky="w")
-        cover_entry.bind("<Return>", self._cover_typed)
-        cover_entry.bind("<FocusOut>", self._cover_typed)
-        self._button(cover_card, "browse_cover", self._pick_cover).grid(row=1, column=1, sticky="w", padx=(6, 0))
-        # A lookup takes a second or two on its own thread, and four services are
-        # asked before the answer says there is nothing: the window has to say it is
-        # waiting, and let the user call it off. It gets the line under the box -
-        # the wheel, its sentence and the Stop button are wider than the box is.
-        cover_wait = ttk.Frame(cover_card)
-        cover_wait.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
-        self.cover_spin = Wheel(cover_wait)
-        self.cover_note = self._label(cover_wait, "cover_searching")
-        self.cover_stop = self._button(cover_wait, "cover_stop", self._stop_cover)
+        # The cover, its frame and the words drawn on it. The picture and the two things
+        # a drag cannot do stay in sight with the card shut; the cover itself and the
+        # card's lettering fold under it, as the two halves of the same answer.
+        display = self._card(grid, "page_display", row=1)
+        self.display_card = display
+        display.body.columnconfigure(0, weight=1)
 
-        # When none of those services has the book, the two words the user types
-        # are the search: the app's own catalogues first, then an image search on
-        # either of the two engines that answer without an account - those two
-        # only open a browser, so their answer is a picture the user saves. The
-        # button comes after the two boxes it reads, on their line.
-        search = ttk.Frame(cover_card)
-        search.grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
-        words = ttk.Frame(search)
-        words.pack(anchor="w")
-        self._label(words, "cover_author").pack(side="left")
-        ttk.Entry(words, textvariable=self.author_var, width=12).pack(side="left", padx=(6, 12))
-        self._label(words, "cover_book_title").pack(side="left")
-        ttk.Entry(words, textvariable=self.title_var, width=16).pack(side="left", padx=(6, 12))
-        self._button(words, "cover_search_app", self._search_words).pack(side="left")
-        # The two engines that only open a browser are a second line rather than a
-        # wider one: a row this wide would push the log off the window.
-        engines = ttk.Frame(search)
-        engines.pack(anchor="w", pady=(4, 0))
-        self._label(engines, "cover_search_on").pack(side="left")
-        self._button(engines, "cover_search_ddg", lambda: self._search_cover("ddg")).pack(side="left", padx=(6, 0))
-        self._button(engines, "cover_search_google", lambda: self._search_cover("google")).pack(
-            side="left", padx=(4, 0)
-        )
-        # Turning the picture inside out is a thing a grey screen does, so the box is
-        # only live next to the format that has one.
-        self.negative_var = tk.BooleanVar(value=bool(self.options["card_negative"]))
-        self.negative_box = ttk.Checkbutton(
-            cover_card, text=self.t("card_negative"), variable=self.negative_var, command=self._pick_negative
-        )
-        self._labels["card_negative"] = self.negative_box
-        self.negative_box.grid(row=4, column=0, columnspan=2, sticky="w", pady=(10, 0))
-        self._label(cover_card, "card_negative_hint", wraplength=440).grid(
-            row=5, column=0, columnspan=2, sticky="w", pady=(2, 0)
-        )
-
-        # The frame and its knobs are one card: what changes the picture stands next to
-        # it, not in the next column over. It takes the column the log used to have,
-        # and the words that explain the knobs go under the picture, where they are
-        # read after the thing they describe rather than beside it.
-        preview = ttk.Frame(display)
-        preview.grid(row=0, column=0, sticky="nw")
-        self.crop_preview = preview
-        crop_top = ttk.Frame(preview)
-        crop_top.pack(anchor="n")
         # The picture and the words under it are one column: the advice is read against
         # the frame it describes, so it follows the frame's own bottom rather than the
         # tallest thing in the row.
-        crop_left = ttk.Frame(crop_top)
-        crop_left.pack(side="left", anchor="n")
+        preview = ttk.Frame(display.head)
+        preview.grid(row=0, column=0, sticky="n")
+        self.crop_preview = preview
 
         # The frame the chosen player shows, drawn from the cover: drag it to move,
-        # the wheel or the arrows to enlarge. What is inside here is what the story
+        # the wheel or the arrow keys to enlarge. What is inside here is what the story
         # carries, so the choice is made on the picture instead of described to it.
         self.crop_frame = tk.Canvas(
-            crop_left, highlightthickness=0, cursor="fleur", takefocus=1, background=SUNK
+            preview, highlightthickness=0, cursor="fleur", takefocus=1, background=SUNK
         )
         self.crop_frame.pack(anchor="n")
         self._crop_item = self.crop_frame.create_image(0, 0, anchor="nw")
@@ -1049,9 +1046,9 @@ class App:
         # Everything that changes what the frame shows stands beside it. Where the frame
         # lands on a tall cover is answered on the picture itself, by dragging it, so
         # this column only carries the two things a drag cannot do: how far in, and how
-        # far apart the lights and shadows are.
-        side = ttk.Frame(crop_top)
-        side.pack(side="left", anchor="n", padx=(12, 0))
+        # far apart the lights and shadows are - and the two words a cover search needs.
+        side = ttk.Frame(display.head)
+        side.grid(row=0, column=1, sticky="n", padx=(12, 0))
         self.crop_side = side
         self._label(side, "cover_crop_label").pack(anchor="w")
 
@@ -1088,24 +1085,73 @@ class App:
         self.contrast_box.pack(anchor="w", pady=(2, 0))
         self.cover_var.trace_add("write", lambda *_: self._show_crop())
 
+        # When none of the catalogues has the book, the two words the user types are the
+        # search, so the boxes and the button that reads them stay in sight with the card
+        # shut. The two engines that only open a browser are a second line rather than a
+        # wider one: a row this wide would push the log off the window.
+        words = ttk.Frame(side)
+        words.pack(anchor="w", pady=(10, 0))
+        self._label(words, "cover_author").pack(side="left")
+        ttk.Entry(words, textvariable=self.author_var, width=12).pack(side="left", padx=(6, 12))
+        self._label(words, "cover_book_title").pack(side="left")
+        ttk.Entry(words, textvariable=self.title_var, width=16).pack(side="left", padx=(6, 12))
+        self.cover_search_button = self._button(words, "cover_search_app", self._search_words)
+        self.cover_search_button.pack(side="left")
+
         # The words that explain the knobs read after the picture they describe, so they
         # sit under it, as wide as it is, rather than beside it.
-        self._label(crop_left, "crop_hint", wraplength=self._crop_width - 24, justify="center").pack(
+        self._label(preview, "crop_hint", wraplength=self._crop_width - 24, justify="center").pack(
             anchor="center", pady=(8, 0)
+        )
+
+        # Which picture the cards are drawn from.
+        cover = self._card(display.body, "cover_section", sticky="ew")
+        self.cover_card = cover
+        cover.body.columnconfigure(1, weight=1)
+        self._label(cover.body, "cover_label").grid(row=0, column=0, sticky="w")
+        self.cover_entry_box = ttk.Entry(cover.body, textvariable=self.cover_var, width=FIELD_WIDTH)
+        self.cover_entry_box.grid(row=1, column=0, sticky="w")
+        self.cover_entry_box.bind("<Return>", self._cover_typed)
+        self.cover_entry_box.bind("<FocusOut>", self._cover_typed)
+        self._button(cover.body, "browse_cover", self._pick_cover).grid(row=1, column=1, sticky="w", padx=(6, 0))
+        # A lookup takes a second or two on its own thread, and four services are
+        # asked before the answer says there is nothing: the window has to say it is
+        # waiting, and let the user call it off. It gets the line under the box -
+        # the wheel, its sentence and the Stop button are wider than the box is.
+        cover_wait = ttk.Frame(cover.body)
+        cover_wait.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.cover_spin = Wheel(cover_wait)
+        self.cover_note = self._label(cover_wait, "cover_searching")
+        self.cover_stop = self._button(cover_wait, "cover_stop", self._stop_cover)
+        engines = ttk.Frame(cover.body)
+        engines.grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self._label(engines, "cover_search_on").pack(side="left")
+        self._button(engines, "cover_search_ddg", lambda: self._search_cover("ddg")).pack(side="left", padx=(6, 0))
+        self._button(engines, "cover_search_google", lambda: self._search_cover("google")).pack(
+            side="left", padx=(4, 0)
+        )
+        # Turning the picture inside out is a thing a grey screen does, so the box is
+        # only live next to the format that has one.
+        self.negative_var = tk.BooleanVar(value=bool(self.options["card_negative"]))
+        self.negative_box = ttk.Checkbutton(
+            cover.body, text=self.t("card_negative"), variable=self.negative_var, command=self._pick_negative
+        )
+        self._labels["card_negative"] = self.negative_box
+        self.negative_box.grid(row=4, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        self._label(cover.body, "card_negative_hint", wraplength=440).grid(
+            row=5, column=0, columnspan=2, sticky="w", pady=(2, 0)
         )
 
         # What the card is lettered with, read as the card will read: the line first,
         # then the line under it.
-        osd = ttk.Labelframe(right, text=self.t("card_text_section"), padding=(10, 8))
-        osd.grid(row=1, column=0, sticky="w", pady=(12, 0))
+        osd = self._card(display.body, "card_text_section", row=1, sticky="ew")
         self.osd_card = osd
-        self._labels["card_text_section"] = osd
-        self._label(osd, "card_text_label").grid(row=0, column=0, sticky="w")
-        self.card_text_box = ttk.Combobox(osd, state="readonly", width=22)
+        self._label(osd.body, "card_text_label").grid(row=0, column=0, sticky="w")
+        self.card_text_box = ttk.Combobox(osd.body, state="readonly", width=22)
         self.card_text_box.grid(row=1, column=0, sticky="w")
         self.card_text_box.bind("<<ComboboxSelected>>", lambda _e: self._choose_card_text())
-        self._label(osd, "card_text_next").grid(row=2, column=0, sticky="w", pady=(6, 0))
-        self.card_title_box = ttk.Combobox(osd, state="readonly", width=22)
+        self._label(osd.body, "card_text_next").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        self.card_title_box = ttk.Combobox(osd.body, state="readonly", width=22)
         self.card_title_box.grid(row=3, column=0, sticky="w")
         self.card_title_box.bind("<<ComboboxSelected>>", lambda _e: self._choose_card_title())
         self._show_card_text()
@@ -1113,43 +1159,57 @@ class App:
         # only live next to the two formats whose screen can hold a sentence.
         self.captions_var = tk.BooleanVar(value=bool(self.options["captions"]))
         self.captions_box = ttk.Checkbutton(
-            osd, text=self.t("captions"), variable=self.captions_var, command=self._pick_captions
+            osd.body, text=self.t("captions"), variable=self.captions_var, command=self._pick_captions
         )
         self._labels["captions"] = self.captions_box
         self.captions_box.grid(row=4, column=0, sticky="w", pady=(10, 0))
-        self._label(osd, "captions_warning", style="Warn.TLabel", wraplength=440).grid(
+        self._label(osd.body, "captions_warning", style="Warn.TLabel", wraplength=440).grid(
             row=5, column=0, sticky="w", pady=(2, 0)
         )
 
-        # Which parts, and in which player's shape: the two choices that decide what
-        # gets written, standing together on the line above the button that writes it.
-        choose = ttk.Frame(self.root)
-        choose.grid(row=2, column=0, sticky="ew", padx=12, pady=(6, 0))
-        self.chapters_button = self._button(choose, "chapters", self._open_chapters)
-        self.chapters_button.pack(side="left")
-        self._label(choose, "format_label").pack(side="left", padx=(12, 6))
-        self.format_box = ttk.Combobox(choose, values=self.format_names(), state="readonly", width=FIELD_WIDTH)
-        self.format_box.pack(side="left")
+        # Which parts of the book the story is made of. The level the book is cut at
+        # stays in sight with the card shut: it decides how many parts there are, and the
+        # preview's card is numbered for them.
+        parts = self._card(grid, "chapters", row=2)
+        self.chapters_card = parts
+        self._label(parts.head, "cut_level").grid(row=0, column=0, sticky="w")
+        self.cut_keys = list(CUT_LEVELS)
+        self.cut_box = ttk.Combobox(parts.head, values=self._cut_labels(), state="readonly", width=14)
+        self.cut_box.grid(row=1, column=0, sticky="w")
+        self.cut_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_cut(self._cut_chosen()))
+        self._show_cut()
+
+        self.chapters_button = self._button(parts.body, "chapters", self._open_chapters)
+        self.chapters_button.grid(row=0, column=0, sticky="w")
+        self.cut_counts = ttk.Label(parts.body, text=self.t("cut_hint"))
+        self.cut_counts.grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self._label(parts.body, "chapters_hint").grid(row=2, column=0, sticky="w", pady=(4, 0))
+
+        # The last line, in the order the work is asked for: which machine the story is
+        # for, a look at it before it is written, the settings, whether an old story may
+        # be replaced, then the button that writes it. The wheel that says the work is
+        # running stands at the line's right end, as tall as the button it answers.
+        controls = ttk.Frame(self.root)
+        controls.grid(row=2, column=0, sticky="ew", padx=12, pady=(6, 0))
+        self._label(controls, "format_label").pack(side="left")
+        self.format_box = ttk.Combobox(controls, values=self.format_names(), state="readonly", width=FIELD_WIDTH)
+        self.format_box.pack(side="left", padx=(6, 0))
         self.format_box.bind("<<ComboboxSelected>>", lambda _event: self._choose_format())
         self._show_formats()
-
-        controls = ttk.Frame(self.root)
-        controls.grid(row=3, column=0, sticky="ew", padx=12, pady=(6, 0))
-        self.save_button = self._button(controls, "save", self._start, style="Work.TButton")
-        self.save_button.pack(side="left")
-        # The wheel that says the work is running stands on the button's right, and
-        # bigger than the one that says a search is running: it is the answer to the
-        # button the user just pressed.
-        self.progress = Wheel(controls, WORK_WHEEL)
-        self.progress.pack(side="left", padx=(12, 0))
-        self._button(controls, "options", self._open_options).pack(side="left", padx=12)
         self.test_button = self._button(controls, "test_story", self._test_story)
-        self.test_button.pack(side="left", padx=12)
+        self.test_button.pack(side="left", padx=(12, 0))
+        self.options_button = self._button(controls, "options", self._open_options)
+        self.options_button.pack(side="left", padx=(12, 0))
         self.force_box = ttk.Checkbutton(
             controls, text=self.t("overwrite"), variable=self.force_var
         )
         self._labels["overwrite"] = self.force_box
-        self.force_box.pack(side="left", padx=12)
+        self.force_box.pack(side="left", padx=(12, 0))
+        self.save_button = self._button(controls, "save", self._start, style="Work.TButton")
+        self.save_button.pack(side="left", padx=(12, 0))
+        # The wheel is read as the button's own state, so it stands as tall as it is.
+        self.progress = Wheel(controls, max(WORK_WHEEL, self.save_button.winfo_reqheight()))
+        self.progress.pack(side="right")
 
         # Every control the format decides between now exists.
         self._show_cover()
@@ -1211,12 +1271,13 @@ class App:
             widget.configure(text=self.t(key))
         self.bar.relabel()
         self._show_story_language()
-        for index, key in enumerate(("page_audio", "page_display")):
-            self.pages.tab(index, text=self.t(key))
+        for card in self.cards:
+            card.relabel()
         self._show_formats()
         self._show_engines()
         self._show_announce()
         self._show_pause()
+        self._show_cut()
         self._show_card_text()
         self._show_crop()
         if not DND_FILES:
@@ -1370,6 +1431,94 @@ class App:
             self._append("ERROR: choose a DAISY pack first")
             return
         ChapterList(self, source)
+
+    def _cut_labels(self) -> list[str]:
+        """The levels this window's language names, in the order this book can be cut at them."""
+        return [self.t(f"cut_{level}") for level in self.cut_keys]
+
+    def _cut_chosen(self) -> str:
+        labels = self._cut_labels()
+        try:
+            return self.cut_keys[labels.index(self.cut_box.get())]
+        except ValueError:
+            return self.cut
+
+    def _show_cut(self) -> None:
+        """The levels the opened pack can actually cut at. Until its outline is in hand
+        there is nothing to answer with, so the box stays shut rather than offering a
+        level this book may not have."""
+        self.cut_box.configure(values=self._cut_labels())
+        self.cut_box.set(self.t(f"cut_{self.cut}"))
+        self.cut_box.state(["!disabled"] if self.cut_levels else ["disabled"])
+
+    def _offer_levels(self, rows: list[chapters.LevelInfo]) -> None:
+        """Open the levels the pack's own outline can cut at, and drop the rest.
+
+        A level that gives no more parts than the one above it only repeats that level,
+        so the pack has nothing to cut at there. The audio is never asked.
+        """
+        available: list[str] = []
+        parts = 0
+        for row in rows:
+            if row.parts > parts:
+                available.append(row.level)
+                parts = row.parts
+        self.cut_levels = available
+        if self.cut not in available:
+            # A level the pack cannot cut at falls back to the coarser one beside it. A
+            # book whose outline has no paragraph layer should open at chapters, not at
+            # the sentence level nobody asked for.
+            coarser = [level for level in available if CUT_LEVELS.index(level) < CUT_LEVELS.index(self.cut)]
+            self.cut = coarser[-1] if coarser else available[0]
+            self.options["cut"] = self.cut
+            settings.save(self.options)
+        self.cut_keys = available
+        self._show_cut()
+        self.cut_counts.configure(
+            text="   ".join(
+                f"{self.t(f'cut_{row.level}')} {row.parts} ({chapters.format_seconds(row.each)})"
+                for row in rows
+            )
+        )
+
+    def _choose_cut(self, level: str) -> None:
+        """A different level is a different book: the old part numbers mean nothing."""
+        if level == self.cut:
+            return
+        self.cut = level
+        self.options["cut"] = level
+        settings.save(self.options)
+        self.dropped = set()
+        if level != "chapter":
+            # A book cut below its chapters is cut that finely to be read through: its
+            # parts run on their own and the story stops at the end of a chapter.
+            self.options["autoplay"] = True
+            self.autoplay_var.set(True)
+            self._show_pause()
+        self._show_cut()
+        self._show_crop()
+        if self.chapter_list is not None:
+            self.chapter_list._recut(level)
+
+    def _make_room(self, opened: Card) -> None:
+        """Give the card being opened the room the screen has, by folding the others away.
+
+        A window taller than the screen is not scrolled or shrunk: Tk cuts what hangs
+        past the bottom, which is where the buttons and the log are.
+        """
+        limit = self.root.winfo_screenheight() - 2 * WINDOW_MARGIN
+        while self._needed_height() > limit:
+            others = [card for card in self.cards if card is not opened and card.open and card.winfo_ismapped()]
+            if not others:
+                break
+            others.sort(key=lambda card: -card.body.winfo_reqheight())
+            others[0].close()
+        if not self._maximised:
+            self._fit_window()
+
+    def _needed_height(self) -> int:
+        self.root.update_idletasks()
+        return self.root.winfo_reqheight()
 
     def _settings_key(self) -> tuple:
         """Everything a run reads from the window. Two runs with the same key write
@@ -1585,6 +1734,11 @@ class App:
         self._cover_job += 1
         self._pack_title = None
         self._part_count, self._part_title, self._part_code = None, "", ""
+        # A new book has its own outline: the levels the last one could cut at are not
+        # offered again until this one has been read.
+        self.cut_levels, self.cut_keys = [], list(CUT_LEVELS)
+        self.cut_counts.configure(text=self.t("cut_hint"))
+        self._show_cut()
         self._show_story_language()
         self._spin_off()
         self._drop_lookup()
@@ -1646,13 +1800,15 @@ class App:
     def _cover_lookup(self, pack: Path, job: int, dest: Path, typed: bool) -> None:
         """Read the pack's own metadata off the worker thread, then post the picture back.
 
-        The pack is read once and answers two questions: what the book is called,
-        which the cover services search for, and how many parts it has and what the
-        first one is named, which is what the preview's card is lettered with.
+        The pack is read once and answers three questions: what the book is called, which
+        the cover services search for; how many parts it has and what the first one is
+        named, which is what the preview's card is lettered with; and how many parts each
+        cut level gives, which is what the window offers to cut at.
         """
         try:
             with open_pack(pack) as opened:
-                book = extract(opened, "chapter")
+                books = {level: extract(opened, level) for level in CUT_LEVELS}
+            book = books["chapter"]
             code = card_language(self.announce(), book)[0]
             self.events.put(
                 (
@@ -1663,6 +1819,7 @@ class App:
                     code,
                 )
             )
+            self.events.put(("levels", job, chapters.describe_levels(books)))
             found = None if typed else covers.find(book, dest)
             title, author = book.title, book.author or ""
         except Exception as exc:  # a suggestion is worth nothing here: it must never break the window
@@ -1972,9 +2129,9 @@ class App:
             else:
                 frame.grid_remove()
         if cards:
-            self.pages.add(self.display_page, text=self.t("page_display"))
+            self.display_card.grid()
         else:
-            self.pages.hide(self.display_page)
+            self.display_card.grid_remove()
         self.test_button.configure(state="normal" if cards else "disabled")
 
     def _show_negative(self) -> None:
@@ -2003,9 +2160,7 @@ class App:
         self.options["captions"] = self.captions_var.get()
         if self.captions_var.get() and self.cut != "sentence":
             # One picture per sentence is only worth drawing when each part is one.
-            self.cut = self.options["cut"] = "sentence"
-            if self.chapter_list is not None:
-                self.chapter_list._choose("sentence")
+            self._choose_cut("sentence")
         settings.save(self.options)
 
     def _pick_format(self) -> None:
@@ -2492,6 +2647,8 @@ class App:
                 self._took_cover(*item[1:])
             elif item[0] == "pack":
                 self._took_pack(*item[1:])
+            elif item[0] == "levels":
+                self._took_levels(*item[1:])
             elif item[0] == "install_engine":
                 self._offer_install(item[1])
             elif item[0] == "card":
@@ -2508,6 +2665,12 @@ class App:
         self._part_count, self._part_title, self._part_code = parts, named, code
         self._show_story_language()
         self._show_crop()
+
+    def _took_levels(self, job: int, rows: list[chapters.LevelInfo]) -> None:
+        """Offer the cut levels this pack's own outline can give."""
+        if job != self._cover_job:
+            return
+        self._offer_levels(rows)
 
     def _took_cover(self, job: int, path: str, title: str, author: str) -> None:
         """Put a looked-up cover in the Image box.
@@ -2587,7 +2750,6 @@ class ChapterList:
             return
 
         self.cut = app.cut
-        self.reported = False
         app.chapter_list = self
         # The chapter now playing, when the app started the player itself: only
         # then can the window stop it, and only one chapter plays at a time.
@@ -2595,32 +2757,14 @@ class ChapterList:
         grid = ttk.Frame(self.top, padding=12)
         grid.grid(sticky="nsew")
         grid.columnconfigure(0, weight=1)
-        grid.rowconfigure(3, weight=1)
+        grid.rowconfigure(1, weight=1)
 
-        # The levels stay shut until the pack has been read: which of them the
-        # pack can actually cut at is only known once its own outline is in hand.
-        chooser = ttk.Frame(grid)
-        chooser.grid(row=0, column=0, sticky="w")
-        ttk.Label(chooser, text=app.t("cut_level")).pack(side="left")
-        self.cut_var = tk.StringVar(value=self.cut)
-        self.cut_boxes: dict[str, ttk.Radiobutton] = {}
-        for level in CUT_LEVELS:
-            box = ttk.Radiobutton(
-                chooser,
-                text=app.t(f"cut_{level}"),
-                variable=self.cut_var,
-                value=level,
-                command=lambda chosen=level: self._choose(chosen),
-            )
-            box.state(["disabled"])
-            box.pack(side="left", padx=(8, 0))
-            self.cut_boxes[level] = box
-        self.counts = ttk.Label(grid, text=app.t("cut_hint"))
-        self.counts.grid(row=1, column=0, sticky="w", pady=(2, 6))
-        ttk.Label(grid, text=app.t("chapters_hint")).grid(row=2, column=0, sticky="w", pady=(0, 6))
+        # The level is chosen on the main window, where the pack has already been read:
+        # this window shows the parts that level gives and lets lines be left out.
+        ttk.Label(grid, text=app.t("chapters_hint")).grid(row=0, column=0, sticky="w", pady=(0, 6))
 
         listing = ttk.Frame(grid)
-        listing.grid(row=3, column=0, sticky="nsew")
+        listing.grid(row=1, column=0, sticky="nsew")
         listing.columnconfigure(0, weight=1)
         listing.rowconfigure(0, weight=1)
         self.rows = ttk.Treeview(
@@ -2648,7 +2792,7 @@ class ChapterList:
         self.rows.bind("<Return>", lambda _event: self._play_selected())
 
         actions = ttk.Frame(grid)
-        actions.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        actions.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         actions.columnconfigure(1, weight=1)
         self.play_button = ttk.Button(
             actions, text=app.t("chapters_play"), command=self._play_or_stop
@@ -2736,63 +2880,23 @@ class ChapterList:
         if index is not None:
             self._play(index)
 
-    def _offer_levels(self, rows: list[chapters.LevelInfo]) -> None:
-        """Open the levels the pack's own outline can cut at, and grey out the rest.
+    def _recut(self, level: str) -> None:
+        """Redraw the list for the level the main window just chose.
 
-        A level that gives no more parts than the one above it only repeats that
-        level, so the pack has nothing to cut at there. The audio is never asked.
+        A different level is a different book: the old part numbers mean nothing.
         """
-        available: list[str] = []
-        parts = 0
-        for row in rows:
-            if row.parts > parts:
-                available.append(row.level)
-                parts = row.parts
-        for level, box in self.cut_boxes.items():
-            box.state(["!disabled"] if level in available else ["disabled"])
-        if self.cut not in available:
-            # A level the pack cannot cut at falls back to the coarser one beside
-            # it. A book whose outline has no paragraph layer should open at
-            # chapters, not at the sentence level nobody asked for.
-            coarser = [
-                level
-                for level in available
-                if CUT_LEVELS.index(level) < CUT_LEVELS.index(self.cut)
-            ]
-            self._choose(coarser[-1] if coarser else available[0])
-
-    def _choose(self, level: str) -> None:
-        """A different level is a different book: the old part numbers mean nothing."""
         if level == self.cut:
             return
         self.cut = level
-        self.cut_var.set(level)
-        self.app.cut = level
-        self.app.dropped = set()
-        if level != "chapter":
-            # A book cut below its chapters is cut that finely to be read through: its
-            # parts run on their own and the story stops at the end of a chapter.
-            self.app.options["autoplay"] = True
-            self.app.autoplay_var.set(True)
-            self.app._show_pause()
-        self.app._show_crop()
         self._build()
         threading.Thread(target=self._measure, daemon=True).start()
 
     def _measure(self) -> None:
-        """Read the parts and their counts.
-
-        The cut levels stay shut until the counts come back, so a worker that dies
-        quietly leaves the window looking like the pack has no chapters at all.
-        """
+        """Read the parts' lengths, for the row each one stands on."""
         cut = self.cut
         try:
             rows = chapters.describe(extract(self.pack, cut))
             self.events.put(("sizes", (cut, rows)))
-            if not self.reported:
-                self.reported = True
-                books = {level: extract(self.pack, level) for level in CUT_LEVELS}
-                self.events.put(("counts", chapters.describe_levels(books)))
         except Exception as exc:  # the pack's own problems belong in this window
             self.events.put(("unread", str(exc)))
 
@@ -2840,15 +2944,6 @@ class ChapterList:
                     continue  # a rebuild already replaced the rows these were measured for
                 for offset, info in enumerate(rows):
                     self.rows.set(str(offset), "length", chapters.format_seconds(info.seconds))
-            elif kind == "counts":
-                self.counts.configure(
-                    text="   ".join(
-                        f"{self.app.t(f'cut_{row.level}')} {row.parts}"
-                        f" ({chapters.format_seconds(row.each)})"
-                        for row in payload
-                    )
-                )
-                self._offer_levels(payload)
             elif kind == "unread":
                 self._unread(payload)
             elif kind == "play":

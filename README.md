@@ -25,49 +25,55 @@ The Mac archive is not signed by Apple, so the first run needs right-click → *
 
 The steps below name the app's buttons; the web page has the same ones under the same words.
 
+The settings stand in three cards — **Audio**, **Display** and **Chapters** — each shut when the window opens, marked with a **+**. Press the line that names a card to open it, press it again to fold it away. **Display** holds two cards of its own, **Cover** and **Display text**. When the screen cannot hold every open card, opening one folds the others away.
+
 ### 1. Open the book
 
-Type the book's path in the **DAISY pack** line, or use **Browse zip...** for a `.zip` or `.epub` file and **Browse folder...** for a book that is already unzipped. The web page has **Choose a zip** and **Choose a folder**, and takes a book dropped onto the page.
+Type the book's path in the **DAISY pack** line — a `.zip`, an `.epub` or an unzipped folder — or press **Browse zip...** for a `.zip` or `.epub` file. **Options** holds the folder the file lists open in. The web page has **Choose a zip** and **Choose a folder**, and takes a book dropped onto the page.
+
+**Story language**, beside the pack line, reads the book's language from the pack (**Auto**) or forces one, which decides the words the cards say and show.
 
 The story is written next to the book, so you find it where the book already is.
 
 ### 2. Say which machine the story is for
 
-**Story format**: Telmi, Lunii (B/W), Commercial PK, Flam, Merlin (beta), or MP3 playlist. Choose this before the cover: it decides the shape of every screen the pictures have to fit, and the pictures are drawn to match. The MP3 playlist draws no pictures at all: it is a folder of chapters for an ordinary player.
+**Output format**, on the line under the cards: Telmi, Lunii (B/W), Commercial PK, Flam, Merlin (beta), or MP3 playlist. Choose this before the cover: it decides the shape of every screen the pictures have to fit, and the pictures are drawn to match. The MP3 playlist draws no pictures at all: it is a folder of chapters for an ordinary player.
 
-Only the plain Lunii's screen has no colour, so only next to it does a **Negative cards** tick appear: it turns the picture inside out, as an old film's negative reads.
+Only the plain Lunii's screen has no colour, so only next to it does a **Negative cards** tick appear, in the **Cover** card: it turns the picture inside out, as an old film's negative reads.
 
 ### 3. Give it a cover
 
-Audiobook packs rarely carry one, so you can: **Choose image...** picks a picture from your machine, **Use this link** takes one from a web address you paste, and **Search in the app** looks for the print book the audiobook was read from. The search asks Open Library, Google Books and Apple Books in turn — by the pack's ISBN first, then by the title and author — says **Searching the web for a cover…** while it works, and has **Stop** beside it. **DuckDuckGo** and **Google** are links: they open in your browser, which is the only place those two answer. The app searches by itself as soon as you pick the book, and leaves a cover you typed alone.
+Audiobook packs rarely carry one, so you can: **Choose image...** picks a picture from your machine, the **Cover** card's image field takes a web address you paste, and **Manual search** — beside the **Author** and **Title** fields under the preview — looks for the print book the audiobook was read from. The search asks Open Library, Google Books and Apple Books in turn — by the pack's ISBN first, then by the title and author — says **Searching the web for a cover…** while it works, and has **Stop** beside it. **DuckDuckGo** and **Google** are buttons in the **Cover** card: they open in your browser, which is the only place those two answer. The app searches by itself as soon as you pick the book, and leaves a cover you typed alone.
 
 Without a cover the cards still work: they get a plain background and the chapter number.
 
 ### 4. Frame the cover
 
-Under **Image crop to fit** is a picture: that box is exactly what the machine will show, at that machine's shape. A tall book cover does not fit a wide screen, and which part survives is easier to see than to describe.
+The **Display** card opens on a picture, under **Image crop to fit**: that box is exactly what the machine will show, at that machine's shape. A tall book cover does not fit a wide screen, and which part survives is easier to see than to describe.
 
-Drag the picture to move it, or nudge it with the arrow keys. The **Zoom** slider or the mouse wheel scale it: at **0** the whole cover shows and the card's own colour fills the room a differently-shaped screen leaves, at **1** the cover fills the screen, and past that it grows and the frame cuts it, which also opens room to move sideways.
+Drag the picture to move it, or nudge it with the arrow keys. The mouse wheel, the two **Zoom** buttons or a typed percentage scale it: at **0%** the whole cover shows and the card's own colour fills the room a differently-shaped screen leaves, at **100%** the cover fills the screen, and past that it grows and the frame cuts it, which also opens room to move sideways. Beside the picture stand the **Contrast** slider, the **Author** and **Title** fields and **Manual search**; the **Cover** and **Display text** cards under it hold the rest.
 
 ### 5. Choose how the book is cut
 
-**Chapters** follows the book's own outline. **Paragraphs** and **Sentences** make many short parts instead, which is how a long chapter becomes something a child listens to in one sitting. The book's own marks decide how many parts each gives, and the app only offers the levels that book can actually give.
+**Cut the book at**, on the **Chapters** card's title line, follows the book's own outline: **Chapters**, **Paragraphs** or **Sentences**. The last two make many short parts, which is how a long chapter becomes something a child listens to in one sitting. The book's own marks decide how many parts each gives, and the app only offers the levels that book can actually give; open the card and it lists how many parts each level would make, and how long each part runs.
 
-**Show the words on screen.** Tick it with **Sentences** and each part shows its own words while its audio plays — the whole sentence, at the largest lettering that screen holds, with no cover behind it. Only a Telmi or a Flam screen is big enough to read a sentence on.
+**Display the text on screen**, in the **Display text** card, is the tick that shows each part's own words while its audio plays — the whole sentence, at the largest lettering that screen holds, with no cover behind it. Only a Telmi or a Flam screen is big enough to read a sentence on.
 
 ### 6. Listen, and drop what is not the story
 
-**Chapters** opens the list. Select a line and press **Listen**, or double-click it, to hear a chapter before deciding. One part plays at a time, and the button becomes **Stop** while it plays, so a part you have heard enough of is over when you say so. Untick the ones that are not part of the story — the legal notice, the table of contents, the "end of book" announcement — and what is left is renumbered, so the cards still count from 1.
+**Chapters**, under the **Cut the book at** box, opens the list. Select a line and press **Listen**, or double-click it, to hear a chapter before deciding. One part plays at a time, and the button becomes **Stop** while it plays, so a part you have heard enough of is over when you say so. Untick the ones that are not part of the story — the legal notice, the table of contents, the "end of book" announcement — and what is left is renumbered, so the cards still count from 1.
 
 ### 7. Decide what the cards say
 
-**Configure the speech...** holds what each chapter card plays when it appears: nothing, the number, the number and how many parts there are, the part's own name, "Chapter 4", the number and a question inviting the listener to continue, or the first seconds of the part it introduces — with a box for how many seconds. **Options** holds the interface language (English, French, Chinese, Arabic, Turkish, German, Italian, Spanish, Portuguese, Dutch) and whether the card also *shows* how many parts there are — `4/12` or just `4`. The web page asks the same under **The chapter cards**: show how many parts there are, say the word chapter, say how many parts there are, and what each card plays.
+The **Audio** card's title line holds **Chapter card audio**: what each chapter card plays when it appears — a silent card, the number, the number and the total, the part's own name, "Chapter 4", the number and a question inviting the listener to continue, or the first seconds of the part it introduces. **Test the card** beside it plays that choice once. Open the card for the **Speech** system and its **Configure the speech...** window, the box for how many seconds to cut, and the autoplay and **Pause after each:** settings.
+
+The **Display text** card holds what the card *writes*: its first line — `Chapter 1`, `Chapter 1/20`, `1` or `1/20`, in the book's own language — and the line under it, nothing or the part's own name. **Options** holds the interface language (English, French, Chinese, Arabic, Turkish, German, Italian, Spanish, Portuguese, Dutch). The web page asks the same under **The chapter cards**: show how many parts there are, say the word chapter, say how many parts there are, and what each card plays.
 
 The app can read the cards in a real voice. On the first conversion it offers to install that voice; say no and the machine's own voice reads them, or the cards stay silent. The web page uses recorded announcements instead, which are already in the page.
 
 ### 8. Save the zip
 
-**Save the zip**. The log below the buttons shows what is happening and what was found; each run starts on an empty log and ends with a report that repeats its errors in red. When it finishes, the zip is next to the book.
+**Save the zip** stands at the right end of the line under the cards, which asks in the order the work is done: **Output format**, **Test the story**, **Options**, the **Overwrite an existing story folder** tick, then **Save the zip**. The wheel beside it turns only while the app is working. The log below the buttons shows what is happening and what was found; each run starts on an empty log and ends with a report that repeats its errors in red. When it finishes, the zip is next to the book.
 
 ### 9. Play it first
 

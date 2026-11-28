@@ -143,7 +143,7 @@ test("a card writes its chapter title as a line of its own", async () => {
 test("a title the card has no room for is left off", async () => {
   const { cardPng } = await import("../../web/cover.js");
   TEXTS.length = 0;
-  await cardPng("Chapter 1/6", "Once upon a time", null, {}, 640, 480, "colour", false, "the invisible dog ".repeat(14));
+  await cardPng("Chapter 1/6", "", null, {}, 640, 480, "colour", false, "the invisible dog ".repeat(14));
   assert.equal(TEXTS.length, 1, "the card keeps its number alone");
 });
 

@@ -459,12 +459,12 @@ export function cardLettering(
   // Two lines on one band share it: the title is laid out in what the number leaves.
   let span = null;
   let left = room;
-  if (band(at) === band(where)) {
-    span = bandRoom(where, at, drawn, width, margin);
+  if (band(numberPlace) === band(titlePlace)) {
+    span = bandRoom(titlePlace, numberPlace, drawn, width, margin);
     left = span[1] - span[0];
   }
   const size = titleSize(ctx, title, left, height);
-  if (size) ink(title, where, size, span);
+  if (size) ink(title, titlePlace, size, span);
 }
 
 /**

@@ -10,7 +10,18 @@ import tempfile
 from dataclasses import replace
 from pathlib import Path
 
-from . import __version__, audio, chapters, covers, images, merlin, playlist, settings, tts
+from . import (
+    __version__,
+    audio,
+    chapters,
+    covers,
+    daisy_writer,
+    images,
+    merlin,
+    playlist,
+    settings,
+    tts,
+)
 from .chapters import ChapterError
 from .detector import DaisyPackError, open_pack
 from .extractor import CUT_LEVELS, extract
@@ -36,10 +47,12 @@ log = logging.getLogger("daisy-convertor")
 # The players, and the archive each one imports. Telmi, the Flam and a commercial
 # Lunii card carry colour; a plain Lunii screen has sixteen greys, so its cards are
 # redrawn. The Merlin has no screen and no story graph: it takes a card of flat files.
-# The mp3 pack has no story graph and no pictures either: it is for an ordinary
-# audio player, which is why it is the one format written without a card.
-FORMATS = ("telmi", "lunii", "lunii-pk", "flam", "merlin", "mp3")
-CARD_FORMATS = tuple(fmt for fmt in FORMATS if fmt != "mp3")
+# The mp3 pack and the DAISY pack have no story graph and no pictures either: one is
+# for an ordinary audio player, the other for a DAISY player, which reads the book off
+# its own table of contents. They are the formats written without a card.
+FORMATS = ("telmi", "lunii", "lunii-pk", "flam", "merlin", "mp3", "daisy2")
+NO_CARDS = ("mp3", "daisy2")
+CARD_FORMATS = tuple(fmt for fmt in FORMATS if fmt not in NO_CARDS)
 PLAYER = {
     "telmi": "Telmi Sync",
     "lunii": "the Lunii",
@@ -47,6 +60,7 @@ PLAYER = {
     "flam": "the Flam launcher",
     "merlin": "the Merlin story-teller",
     "mp3": "an ordinary audio player",
+    "daisy2": "a DAISY 2.02 player",
 }
 # The two Lunii exports hold the same story; the archive and the pictures differ:
 # STUdio's zip with grey cards, or the layout the card keeps with colour ones.
@@ -284,9 +298,10 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="which player the story is written for: Telmi (default), a Lunii, whose "
         "cards are redrawn in its sixteen greys, a commercial Lunii .pk, the same "
         "story in the layout the card itself keeps, a Flam, a Merlin story-teller "
-        "(beta), whose card holds flat files and a playlist.bin, or an mp3 playlist "
+        "(beta), whose card holds flat files and a playlist.bin, an mp3 playlist "
         "pack: one mp3 per chapter, a spoken chapter name before each, the book's "
-        "text and four playlists, for any player that is not a story-teller",
+        "text and four playlists, or a DAISY 2.02 pack: ncc.html, one .smil and one "
+        ".mp3 per chapter, for a DAISY player",
     )
     parser.add_argument(
         "--merlin-merge",
@@ -501,11 +516,11 @@ def convert(
                 log.info("dropped %s: converting %d chapter(s)", drop, len(book.chapters))
             for chapter in book.chapters:
                 log.debug("  %s -> %s", chapter.title, [str(s.src.name) for s in chapter.segments])
-            # A player shows the folder's name, so the playlist pack is named after
-            # the book; the story formats keep Telmi's `<category>_<age>_<title>_<uuid>`.
+            # A player shows the folder's name, so the packs without cards are named
+            # after the book; the story formats keep Telmi's `<category>_<age>_<title>_<uuid>`.
             name = (
                 playlist.safe_name(book.title)
-                if fmt == "mp3"
+                if fmt in NO_CARDS
                 else story_dir_name(book.title, story_uuid(book), fallback=input_path.stem)
             )
             target = output_dir if output_dir.name == name else output_dir / name
@@ -524,6 +539,14 @@ def convert(
                 written = playlist.export(book, announce, target, input_path, pack.root)
                 archive = shutil.make_archive(
                     str(target.parent / f"{target.name}-mp3"), "zip", target.parent, base_dir=target.name
+                )
+                log.info("wrote %d file(s) to %s", len(written), target)
+            elif fmt == "daisy2":
+                # No cards, no story graph either: the pack is the book itself, in the
+                # layout a DAISY player reads off its own table of contents.
+                written = daisy_writer.export(book, target, announce)
+                archive = shutil.make_archive(
+                    str(target.parent / f"{target.name}-daisy2"), "zip", target.parent, base_dir=target.name
                 )
                 log.info("wrote %d file(s) to %s", len(written), target)
             else:

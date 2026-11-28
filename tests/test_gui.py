@@ -2141,6 +2141,7 @@ def test_the_window_offers_every_player(app: gui.App) -> None:
             "Flam",
             "Merlin (beta)",
             "MP3 playlist",
+            "DAISY 2.02",
         ]
     )
 
@@ -2164,6 +2165,21 @@ def test_an_mp3_pack_hides_the_picture_and_the_emulator(app: gui.App) -> None:
     assert app.cover_card.grid_info(), "the cover and the card text under it"
     assert app.osd_card.grid_info()
     assert app.test_button.instate(["!disabled"])
+
+
+def test_a_daisy_pack_hides_the_picture_and_the_emulator(app: gui.App) -> None:
+    """A DAISY player reads the book off its own table of contents, so the window has
+    no card to draw for it; the book's audio is still spoken where the pack has none,
+    so the pattern stays in reach."""
+    app.root.update_idletasks()
+    app.format_var.set("daisy2")
+    app._show_cover()
+    assert not app.display_card.grid_info(), "the pack is read by the player's own outline"
+    assert not app.crop_preview.grid_info(), "there is no screen to fit a cover into"
+    assert app.test_button.instate(["disabled"]), "there is no story to test"
+    app._show_announce()
+    assert app.announce_box.instate(["!disabled"]), "a book with no audio is spoken"
+    assert app.seconds_box.instate(["disabled"]), "and there is no card to open on an extract"
 
 
 def test_the_negative_is_offered_for_the_grey_screen_only(app: gui.App) -> None:

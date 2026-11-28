@@ -37,7 +37,7 @@ No arguments opens the GUI, and `-v` alone opens it with its log frame carrying 
 | :--- | :--- | :--- |
 | `-v`, `--verbose` | | logs every ffmpeg call |
 | `-f`, `--force` | | writes into a non-empty output folder |
-| `--format` | `telmi` `lunii` `lunii-pk` `flam` `merlin` `mp3` | `telmi` |
+| `--format` | `telmi` `lunii` `lunii-pk` `flam` `merlin` `mp3` `daisy2` | `telmi` |
 | `--merlin-merge` | a `playlist.bin` copied off a Merlin card | |
 | `--version` | | |
 
@@ -101,8 +101,9 @@ Cards get a spoken number only when the cut is by chapter. At paragraph or sente
 | `flam` | `<story>-flam.zip` | the Telmi archive, at the Flam's own screen sizes (320×212 scene, 104×136 thumbnail) |
 | `merlin` | `<story>_merlin.zip` | beta |
 | `mp3` | `<Book title>-mp3.zip` | one folder of MP3s and playlists, for a player that is not a story-teller |
+| `daisy2` | `<Book title>-daisy2.zip` | a DAISY 2.02 pack, for a DAISY player |
 
-The Telmi story folder is always written as well; the archive is made from it.
+For the story formats the Telmi story folder is always written as well; the archive is made from it. The `mp3` and `daisy2` packs have no story folder: what the tool writes is the archive.
 
 ### Telmi story folder
 
@@ -207,6 +208,28 @@ Every player reads an M3U; `.m3u8` is the same file in UTF-8, which is what a ti
 Each line's start comes from the clips its text was read over: a part's spans are laid end to end in order, then scaled to the length of the MP3 that was actually written, because a SMIL rounds the `npt` values it declares. A span with no declared range is timed by probing its own audio file.
 
 The web page writes the same folder, with the same four playlists and the same lyric files; its interludes are the page's recorded announcements. It writes no `source/` copy: the page refuses a pack that has no audio to write.
+
+### DAISY 2.02 pack
+
+No cards and no story graph: the archive holds one folder named after the book, which is the pack a DAISY player opens.
+
+```
+ごんぎつね/
+  ncc.html          the book's metadata, its outline, and the text every SMIL points at
+  book0000.mp3      the front matter's audio, when the pack has any
+  book0000.smil
+  book001.mp3       one MP3 and one SMIL per chapter
+  book001.smil
+  …
+```
+
+`ncc.html` is one XHTML document: the book's `dc:` fields and the `ncc:` counts (`ncc:totalTime`, `ncc:tocItems`, `ncc:depth`, `ncc:files`), then the title as `<h1 class="title">` and one `<h2>` per chapter, each pointing at its SMIL. The chapter's synced text becomes one `<p id="…">` per mark, and the SMIL pairs each of them with the piece of that chapter's MP3 it was read over: `<par><audio clip-begin clip-end/><text src="ncc.html#…"/>`. The last paragraph's clip runs to the end of the chapter's audio, so the tail a joined MP3 carries is not left with nothing highlighted. A chapter whose marks do not add up to the audio written for it is logged and written as one piece of audio with no text sync, rather than a sync that stops short.
+
+The part files are named after the title's letters — `gonrub0001.mp3` for *Gon Ruby no Kitsune*, `book001.mp3` when the title has no Latin letters at all — so a player that sorts by name keeps the order.
+
+The audio is the pack's own MP3 where its clips join whole: the reference pack stays 22050 Hz mono 56 kbps through a `--format daisy2` run. Where a clip has to be trimmed, or a chapter has no audio and is spoken, it is written at this tool's own spec, 44.1 kHz mono 128 kbps.
+
+There is no `package.opf`: the DAISY 2.02 pack in this repository has none, and this tool reads a pack without one. The pack this tool writes reads back through `open_pack` and `extract` as the same book — the same titles, the same chapter text, the same marks at the same times — and re-exporting it joins its MP3s without re-encoding them.
 
 ### Contract, taken from the reference implementations
 

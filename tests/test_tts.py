@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import wave
@@ -888,6 +889,15 @@ def test_the_voice_button_lists_what_each_engine_can_fetch(tmp_path, monkeypatch
     assert tts.downloadable(tts.COQUI, "ar") == [tts.COQUI_MULTILINGUAL]
     assert tts.downloadable(tts.CHATTERBOX, "fr") == [tts.CHATTERBOX_MODEL]
     assert tts.downloadable(tts.SAY, "fr") == []
+
+
+def test_every_piper_voice_the_app_lists_is_one_piper_can_fetch() -> None:
+    """A name the app offers is a name Piper's downloader has to accept and file under
+    the language it is offered for: a wrong one only shows up as a failed install."""
+    for code, names in tts.PIPER_VOICES.items():
+        assert names, f"{code} has no voice to install"
+        for name in names:
+            assert re.fullmatch(rf"{code}_[A-Z]{{2}}-[^-]+-(high|medium|low|x_low)", name), name
 
 
 def test_the_coqui_models_a_language_can_speak_with_are_the_ones_the_page_lists() -> None:

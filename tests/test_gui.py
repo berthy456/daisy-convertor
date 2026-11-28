@@ -960,7 +960,7 @@ def test_every_option_sits_inside_the_page_frame(app: gui.App) -> None:
     pages.append(
         (
             gui.Speech(app),
-            "engine_box voice_box speed_box expression_box "
+            "voice_box speed_box expression_box "
             "device_box clip_box read_voice_box read_speed_box read_expression_box "
             "read_device_box read_clip_box".split(),
         )
@@ -990,9 +990,7 @@ def test_the_main_window_asks_for_the_engine_and_a_page_to_configure_it(app: gui
     assert app.options["tts"] == "espeak"
 
 
-def test_the_speech_page_saves_the_engine_the_device_and_the_speed(
-    app: gui.App, tmp_path, monkeypatch
-) -> None:
+def test_the_speech_page_saves_the_device_and_the_speed(app: gui.App, tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     app.options["tts"] = "chatterbox"
     page = gui.Speech(app)
@@ -1001,6 +999,7 @@ def test_the_speech_page_saves_the_engine_the_device_and_the_speed(
     page.clip_box.insert(0, "/tmp/voice.wav")
     page._close()
 
+    assert app.options["tts"] == "chatterbox", "the page configures the engine, it does not change it"
     assert app.options["device"] == "mps"
     assert app.options["speed"] == "fast"
     assert app.options["clip"] == "/tmp/voice.wav"
@@ -1127,6 +1126,12 @@ def _probed(page: gui.Settings) -> None:
     pytest.fail("the engine never answered")
 
 
+def _speech_page(app: gui.App, engine: str) -> gui.Speech:
+    """The speech page as it opens for one engine: the engine itself is chosen on the card."""
+    app.options["tts"] = engine
+    return gui.Speech(app)
+
+
 def test_the_window_lists_the_engines_without_asking_which_are_installed(app: gui.App, monkeypatch) -> None:
     """The engine box shows names; asking costs a Python per candidate interpreter."""
     asked: list[str] = []
@@ -1178,14 +1183,50 @@ def test_the_options_page_says_what_the_python_field_is_for(app: gui.App, monkey
     page.top.destroy()
 
 
-def test_the_options_page_has_no_install_button(app: gui.App, monkeypatch) -> None:
-    """An engine is installed where it is chosen, not from a settings page."""
+def test_the_options_page_can_install_each_engine(app: gui.App, monkeypatch) -> None:
+    """A machine can be given the voice it wants before a story is opened."""
     monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
     app.options["tts"] = "piper"
     page = gui.Options(app)
     _probed(page)
+    buttons = [w.cget("text") for w in _walk(page.top) if isinstance(w, ttk.Button)]
+    for engine in ("Piper", "Coqui TTS", "Chatterbox"):
+        assert app.t("speech_install").format(engine=engine) in buttons
     assert page.engine_state.cget("text") == app.t("speech_missing").format(engine="Piper")
-    assert not any(w.cget("text") == app.t("speech_install") for w in _walk(page.top) if isinstance(w, ttk.Button))
+    page.top.destroy()
+
+
+def test_an_engine_the_machine_already_has_is_marked_installed(app: gui.App, monkeypatch) -> None:
+    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: name == gui.tts.CHATTERBOX)
+    app.options["tts"] = "piper"
+    page = gui.Options(app)
+    _probed(page)
+    buttons = [w.cget("text") for w in _walk(page.top) if isinstance(w, ttk.Button)]
+    assert app.t("speech_installed").format(engine="Chatterbox") in buttons
+    assert app.t("speech_install").format(engine="Chatterbox") not in buttons
+    page.top.destroy()
+
+
+def test_the_options_page_installs_the_engine_its_button_names(app: gui.App, monkeypatch) -> None:
+    installed: list[str] = []
+    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
+    monkeypatch.setattr(
+        gui.tts, "install_engine",
+        lambda engine, python=None, lang=None: installed.append(engine) or "/opt/venv/bin/python",
+    )
+    app.options["tts"] = "auto"
+    app.options["python"] = None
+    page = gui.Options(app)
+    _probed(page)
+    page.install_buttons[gui.tts.CHATTERBOX].invoke()
+
+    for _ in range(300):
+        page.top.update()
+        if installed and page.python_box.get() == "/opt/venv/bin/python":
+            break
+        time.sleep(0.01)
+    assert installed == [gui.tts.CHATTERBOX]
+    assert page.python_box.get() == "/opt/venv/bin/python", "the Python the app built is written back"
     page.top.destroy()
 
 
@@ -1292,37 +1333,14 @@ def test_a_failing_install_is_reported(app: gui.App, monkeypatch, caplog) -> Non
     pytest.fail("the failed install was never reported")
 
 
-def test_the_speech_page_offers_the_install_for_an_engine_just_chosen(app: gui.App, monkeypatch) -> None:
-    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
-    monkeypatch.setattr(gui.tts, "install_engine", lambda engine, python=None, lang=None: None)
-    asked: list[str] = []
-    monkeypatch.setattr(gui.messagebox, "askokcancel", lambda title, text: asked.append(text) or True)
-    app.options["tts"] = "auto"
-    page = gui.Speech(app)
-    _probed(page)
-    page.engine_box.set(page._label_text(gui.tts.CHATTERBOX))
-    page._show_engine()
-
-    for _ in range(300):
-        page.top.update()
-        if asked:
-            break
-        time.sleep(0.01)
-    assert asked, "the page asked about the engine it was just given"
-    assert gui.tts.LABELS[gui.tts.CHATTERBOX] in asked[0]
-    page.top.destroy()
-
-
-def test_the_speech_page_does_not_ask_about_the_engine_it_opened_with(app: gui.App, monkeypatch) -> None:
-    """The engine was chosen earlier; only a new choice gets an offer."""
-    monkeypatch.setattr(gui.tts, "available", lambda name, python=None: False)
-    asked: list[str] = []
-    monkeypatch.setattr(gui.messagebox, "askokcancel", lambda title, text: asked.append(text) or True)
+def test_the_speech_page_names_the_engine_it_configures_and_offers_no_other(app: gui.App) -> None:
+    """The engine is chosen once, on the Audio card; the page it opens says which one
+    it is here to configure, and holds no second selector."""
     app.options["tts"] = gui.tts.CHATTERBOX
     page = gui.Speech(app)
     _probed(page)
-    page.top.update()
-    assert asked == []
+    assert gui.tts.LABELS[gui.tts.CHATTERBOX] in page.top.title()
+    assert not hasattr(page, "engine_box")
     page.top.destroy()
 
 
@@ -1361,17 +1379,14 @@ def test_an_installed_engine_is_used_without_asking(app: gui.App, monkeypatch) -
 
 
 def test_the_speech_page_greys_out_the_rows_the_engine_cannot_answer_for(app: gui.App) -> None:
-    app.options["tts"] = "piper"
-    page = gui.Speech(app)
+    page = _speech_page(app, "piper")
     assert str(page.speed_box.cget("state")) == "readonly"
     assert str(page.clip_box.cget("state")) == "disabled"
 
-    page.engine_box.set(app.engine_name("espeak"))
-    page._show_engine()
+    page = _speech_page(app, "espeak")
     assert str(page.download_box.cget("state")) == "disabled"
 
-    page.engine_box.set(app.engine_name("chatterbox"))
-    page._show_engine()
+    page = _speech_page(app, "chatterbox")
     assert str(page.clip_box.cget("state")) == "normal"
     assert str(page.device_box.cget("state")) == "readonly"
 
@@ -1432,31 +1447,26 @@ def test_the_voice_lists_hold_the_voices_installed_for_another_language(app: gui
 
 
 def test_the_reading_rows_follow_the_engine(app: gui.App) -> None:
-    app.options["tts"] = "piper"
-    page = gui.Speech(app)
+    page = _speech_page(app, "piper")
     assert str(page.read_speed_box.cget("state")) == "readonly"
     assert str(page.read_device_box.cget("state")) == "disabled"
     assert str(page.read_clip_box.cget("state")) == "disabled"
 
-    page.engine_box.set(app.engine_name("chatterbox"))
-    page._show_engine()
+    page = _speech_page(app, "chatterbox")
     assert str(page.read_device_box.cget("state")) == "readonly"
     assert str(page.read_expression_box.cget("state")) == "readonly"
     assert str(page.read_clip_box.cget("state")) == "normal"
 
-    page.engine_box.set(app.engine_name("command"))
-    page._show_engine()
+    page = _speech_page(app, "command")
     assert str(page.read_speed_box.cget("state")) == "disabled"
     assert str(page.read_clip_box.cget("state")) == "disabled"
 
 
 def test_the_expressiveness_row_follows_the_engine(app: gui.App) -> None:
-    app.options["tts"] = "piper"
-    page = gui.Speech(app)
+    page = _speech_page(app, "piper")
     assert str(page.expression_box.cget("state")) == "disabled"
 
-    page.engine_box.set(app.engine_name("chatterbox"))
-    page._show_engine()
+    page = _speech_page(app, "chatterbox")
     assert str(page.expression_box.cget("state")) == "readonly"
     assert list(page.expression_box.cget("values")) == [app.t("expression_natural"), app.t("expression_expressive")]
     assert page.expression_box.get() == app.t("expression_natural")

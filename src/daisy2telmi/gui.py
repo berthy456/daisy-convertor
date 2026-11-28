@@ -3102,7 +3102,8 @@ class Options(Settings):
     page's worth, and what a card says is asked there beside the voice that says it.
     The engine and the Python it runs on are here, because they are
     one choice for the whole app, and finding a Python is the one thing on that page
-    a user has to go and do themselves.
+    a user has to go and do themselves. Every engine the app can install has its own
+    button here, so a machine can be given the voice it wants before a story is opened.
     """
 
     def __init__(self, app: App) -> None:
@@ -3127,17 +3128,29 @@ class Options(Settings):
         self._row(engine, "opt_python", 0, self.python_box)
         self.engine_state = ttk.Label(engine, text="")
         self.engine_state.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        # Every engine the app can install has its own button, so a machine can be set
+        # up with the voice it wants before a story is opened.
+        installs = ttk.Frame(engine)
+        self.install_buttons = {}
+        for name in tts.PACKAGES:
+            button = ttk.Button(
+                installs,
+                text=app.t("speech_install").format(engine=tts.LABELS[name]),
+                command=lambda chosen=name: self._install_engine(chosen),
+            )
+            button.pack(side="left", padx=(0, 6))
+            self.install_buttons[name] = button
+        installs.grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
         # An engine cannot be installed on a machine with no Python to build it with,
         # so the page says where to get one rather than leave the install to fail.
-        # Installing is not asked here: it is asked where an engine is chosen.
         self.python_button = ttk.Button(engine, text=app.t("speech_get_python"), command=self._get_python)
-        self.python_button.grid(row=2, column=1, sticky="e", pady=(6, 0))
+        self.python_button.grid(row=3, column=1, sticky="e", pady=(6, 0))
         self.python_button.grid_remove()
         ttk.Label(engine, text=app.t("speech_hint"), style="Brand.TLabel", wraplength=380).grid(
-            row=3, column=0, columnspan=2, sticky="w", pady=(6, 0)
+            row=4, column=0, columnspan=2, sticky="w", pady=(6, 0)
         )
-        self.python_box.bind("<FocusOut>", lambda _e: self._show_engine())
-        self._show_engine()
+        self.python_box.bind("<FocusOut>", lambda _e: self._show_engines())
+        self._show_engines()
 
         folders = ttk.Labelframe(self.grid, text=app.t("opt_section_folders"), padding=(10, 6))
         folders.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(14, 0))
@@ -3169,8 +3182,8 @@ class Options(Settings):
         """The engine the speech page left saved: this window installs that one."""
         return self.app.options["tts"]
 
-    def _show_engine(self) -> None:
-        """Ask the engine whether it is there, off the window's own thread.
+    def _show_engines(self) -> None:
+        """Ask every engine the app can install whether it is there, off the window's thread.
 
         Answering means starting a Python per candidate interpreter, which is slow
         enough to leave the window frozen if it is asked here.
@@ -3183,11 +3196,19 @@ class Options(Settings):
         ).start()
 
     def _engine_answers(self, token: int, engine: str, python: str | None) -> None:
-        if engine not in tts.PACKAGES:
-            self.events.put(("engine", (token, True, True)))
-            return
-        found = tts.available(engine, python)
-        self.events.put(("engine", (token, found, found or tts.has_python(python))))
+        states = {name: tts.available(name, python) for name in tts.PACKAGES}
+        found = engine not in tts.PACKAGES or states[engine]
+        self.events.put(("engine", (token, states, found, found or tts.has_python(python))))
+
+    def _install_engine(self, engine: str) -> None:
+        """pip runs in the background: a neural engine is a gigabyte or more."""
+        engine, language, notice = self.app._install_job(engine)
+        self.install_buttons[engine].configure(text=self.app.t("speech_installing"), state="disabled")
+        threading.Thread(target=self._install_answers, args=(engine, language, notice), daemon=True).start()
+
+    def _install_answers(self, engine: str, language: str, notice: str) -> None:
+        self.app._install_answers(engine, language, notice)
+        self.events.put(("installed", engine))
 
     def _engine_text(self, found: bool, has_python: bool = True) -> str:
         engine = self.engine()
@@ -3203,13 +3224,27 @@ class Options(Settings):
         open_url(PYTHON_URL)
 
     def finished(self, kind: str, result: object) -> None:
+        if kind == "installed":
+            built = self.app.options.get("python") or ""
+            if built and self.python_box.get().strip() != built:
+                self.python_box.delete(0, "end")
+                self.python_box.insert(0, built)
+            self._show_engines()
+            return
         if kind != "engine":
             return
-        token, found, has_python = result
+        token, states, found, has_python = result
         self._answered = token
         if token != self._probe:
             return  # an answer about a Python the user has already typed over
         self.engine_state.configure(text=self._engine_text(found, has_python))
+        for name, button in self.install_buttons.items():
+            if states[name]:
+                button.configure(text=self.app.t("speech_installed").format(engine=tts.LABELS[name]))
+                button.state(["disabled"])
+            else:
+                button.configure(text=self.app.t("speech_install").format(engine=tts.LABELS[name]))
+                button.state(["!disabled"])
         if has_python:
             self.python_button.grid_remove()
         else:
@@ -3245,12 +3280,13 @@ class Speech(Settings):
     words, the other is a page of prose, and each gets its own voice, reference
     clip, device, speed and expressiveness. Every reading box starts at "Same as
     the cards", so a book is read with the cards' settings until one is changed.
-    The engine and its installer are one choice for both, so they sit outside the
-    pages, above and below them.
+    The engine is one choice for both pages, and it is made on the window's Audio
+    card: this page configures the engine that card names, and says its name in the
+    window's title.
 
     The voices these pages read with are downloaded from here - a Piper voice, a
-    Coqui model, Chatterbox's model; the engine they belong to is installed from the
-    options, where the Python it runs on is written.
+    Coqui model, Chatterbox's model; the engine they belong to is installed where it
+    is chosen, and the Python it runs on is written in the options.
     A box the chosen engine has nothing to do with is greyed out rather than taken
     away, so the page keeps its shape when the engine changes.
     """
@@ -3273,22 +3309,19 @@ class Speech(Settings):
     def __init__(self, app: App) -> None:
         super().__init__(app, "speech_title")
 
-        self.engine_keys = engine_keys()
         self.device_keys = list(tts.DEVICES)
         self.speed_keys = list(tts.SPEEDS)
         self._try_folder: Path | None = None
         self._playing: subprocess.Popen | None = None
         self._probe = 0
         self._answered = 0
-        # The engine the page opened with: an install is offered for a new choice, not
-        # for the one the page was already showing.
-        self._asked = app.options["tts"]
 
-        self.engine_box = self._combo(self.grid, self.engine_keys, app.options["tts"])
-        self._row(self.grid, "opt_engine", 0, self.engine_box)
+        engine = app.options["tts"]
+        if engine in tts.LABELS:
+            self.top.title(f"{app.t('speech_title')} — {tts.LABELS[engine]}")
 
         self.tabs = ttk.Notebook(self.grid)
-        self.tabs.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(10, 0))
+        self.tabs.grid(row=0, column=0, columnspan=2, sticky="nsew")
         cards = ttk.Frame(self.tabs, padding=(10, 8))
         cards.columnconfigure(1, weight=1)
         reading = ttk.Frame(self.tabs, padding=(10, 8))
@@ -3325,7 +3358,7 @@ class Speech(Settings):
         self._row(cards, "speech_try_label", 6, try_row)
 
         install = ttk.Labelframe(self.grid, text=app.t("speech_section"), padding=(10, 6))
-        install.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        install.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(14, 0))
         install.columnconfigure(1, weight=1)
         download_row = ttk.Frame(install)
         self.download_box = ttk.Combobox(download_row, values=[], state="readonly", width=26)
@@ -3371,11 +3404,14 @@ class Speech(Settings):
         self._row(reading, "speech_try_label", 6, read_try_row)
 
         ttk.Button(self.grid, text=app.t("opt_close"), command=self._close).grid(
-            row=3, column=0, columnspan=2, sticky="e", pady=(12, 0)
+            row=2, column=0, columnspan=2, sticky="e", pady=(12, 0)
         )
 
-        self.engine_box.bind("<<ComboboxSelected>>", lambda _e: self._show_engine())
         self._show_engine()
+
+    def engine(self) -> str:
+        """The engine the Audio card chose: this page configures it, it does not pick it."""
+        return self.app.options["tts"]
 
     def language(self) -> Language:
         return LANGUAGES.get(self.app.speech_language(), LANGUAGES["en"])
@@ -3394,7 +3430,7 @@ class Speech(Settings):
         """
         self._fill_downloads()
         self._show_live()
-        engine = self._chosen(self.engine_box, self.engine_keys)
+        engine = self.engine()
         if engine in (tts.PIPER, tts.COQUI):
             # Both keep their voices where the app can read them without asking: a
             # folder of models on disk, or a table the app already holds.
@@ -3407,7 +3443,7 @@ class Speech(Settings):
         self._probe += 1
         threading.Thread(
             target=self._engine_answers,
-            args=(self._probe, self._chosen(self.engine_box, self.engine_keys), self.language()),
+            args=(self._probe, self.engine(), self.language()),
             daemon=True,
         ).start()
 
@@ -3415,22 +3451,10 @@ class Speech(Settings):
         # None means the window already answered that half on its own thread.
         listed = engine not in (None, "auto", "off", tts.PIPER, tts.COQUI)
         names = tts.voices(engine, language, any_language=True) if listed else None
-        installed = engine not in tts.PACKAGES or tts.available(engine, self.app.options.get("python") or None)
-        self.events.put(("engine", (token, names, installed, engine)))
-
-    def _offer_install(self, engine: str) -> None:
-        """An engine picked from this box that the machine does not have: the install
-        is asked here, where the choice was just made, and not on another page."""
-        if messagebox.askokcancel(self.app.t("speech_title"), self.app.t("engine_needed").format(engine=tts.LABELS[engine])):
-            threading.Thread(target=self._install_now, args=self.app._install_job(engine), daemon=True).start()
-
-    def _install_now(self, engine: str, language: str, notice: str) -> None:
-        """pip runs in the background: a neural engine is a gigabyte or more."""
-        self.app._install_answers(engine, language, notice)
-        self.events.put(("installed", engine))
+        self.events.put(("engine", (token, names)))
 
     def _show_live(self) -> None:
-        engine = self._chosen(self.engine_box, self.engine_keys)
+        engine = self.engine()
         live = self.LIVE.get(engine, ())
         combos = (
             ("voice", self.voice_box), ("speed", self.speed_box), ("device", self.device_box),
@@ -3459,7 +3483,7 @@ class Speech(Settings):
 
     def _fill_downloads(self) -> None:
         """What this engine can fetch for this language and is not set up yet."""
-        engine = self._chosen(self.engine_box, self.engine_keys)
+        engine = self.engine()
         self.download_keys = tts.downloadable(engine, self.language().code)
         self.download_box.configure(values=self.download_keys)
         self.download_box.set(self.download_keys[0] if self.download_keys else "")
@@ -3477,7 +3501,7 @@ class Speech(Settings):
         each one left at "Same as the cards".
         """
         settings = {
-            "engine": self._chosen(self.engine_box, self.engine_keys),
+            "engine": self.engine(),
             "voice": self._chosen(self.voice_box, self.voice_keys),
             "speed": self._chosen(self.speed_box, self.speed_keys, SPEED_KEYS),
             "expression": self._chosen(self.expression_box, self.expression_keys, EXPRESSION_KEYS),
@@ -3541,17 +3565,12 @@ class Speech(Settings):
 
     def finished(self, kind: str, result: object) -> None:
         if kind == "engine":
-            token, names, installed, engine = result
+            token, names = result
             self._answered = token
             if token != self._probe:
                 return  # an answer about an engine the user has already moved on from
             if names is not None:
                 self._fill_voices(names)
-            if not installed and engine != self._asked:
-                self._asked = engine
-                self._offer_install(engine)
-        elif kind == "installed":
-            self._show_engine()
         elif kind == "voice":
             self.download_button.state(["!disabled"])
             self.download_button.configure(text=self.app.t("speech_download"))
@@ -3567,7 +3586,6 @@ class Speech(Settings):
     def _close(self) -> None:
         self._save(
             {
-                "tts": self._chosen(self.engine_box, self.engine_keys),
                 "voice": self._chosen(self.voice_box, self.voice_keys),
                 "speed": self._chosen(self.speed_box, self.speed_keys, SPEED_KEYS),
                 "expression": self._chosen(self.expression_box, self.expression_keys, EXPRESSION_KEYS),
@@ -3582,7 +3600,6 @@ class Speech(Settings):
                 ),
             }
         )
-        self.app._show_engines()
         chapters.stop_preview(self._playing)
         if self._try_folder is not None:
             shutil.rmtree(self._try_folder, ignore_errors=True)
